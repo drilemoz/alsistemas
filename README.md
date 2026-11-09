@@ -1,8 +1,10 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.17 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.18 + legado preservado
 
 A versão **2.0.16** adicionou gerenciamento DNS controlado à Spaceship: criar registros A, CNAME e TXT; editar apenas o TTL de registros personalizados; e excluir registros personalizados não protegidos. Antes de escrever, o servidor consulta a zona novamente e valida os registros; requer login, token CSRF, senha administrativa e confirmação. Nomes críticos (`@`, `painel`, `www`, `mail`, `migrar` e outros) ficam bloqueados. A versão 2.0.16 **não** alterava automaticamente DNS ao criar projetos, nem permite alterar valores de registros existentes. A API exige `dnsrecords:read` e `dnsrecords:write` para essas ações. Nenhuma mudança DNS foi executada em produção durante o desenvolvimento.
 
-**Novo na 2.0.17:** atualizações pelo GitHub ou por ZIP local via painel, com pop-up de progresso, backup, verificação de saúde, rollback e botão de recarregar quando concluído. O envio aceita até 32 MiB, exige sessão, CSRF e senha administrativa. ZIP local não possui prova criptográfica da identidade do autor, portanto verifique sua procedência antes de instalar. O primeiro uso exige que o painel já esteja atualizado para a 2.0.17; veja `vps/docs/ATUALIZACAO-2.0.17.md`.
+**Novo na 2.0.18:** em **Projetos → IguatamaOnline → Manutenção na AWS**, vistoria restrita do código, estimativa da conta PHP padrão, correção de escrita temporária exclusivamente para `VERSION`, `app/updater.php` e `public/admin.php` com registro das permissões originais, restauração, backup privado de código, atualização por ZIP ou Release pública do GitHub, status persistente e reversão de arquivos. As operações críticas exigem senha administrativa e TOTP novo, não modificam o banco ou os uploads e recusam diretórios inseguros. **A presença de PHP-FPM em pool específico e a segurança do atualizador PHP devem ser verificadas no servidor real; nenhuma correção foi aplicada à EC2**. A atualização do projeto NÃO deve ser confundida com a atualização do AL Sistemas. Ver `vps/docs/ATUALIZACAO-2.0.18.md`.
+
+**Na 2.0.17:** atualizações pelo GitHub ou por ZIP local via painel, com pop-up de progresso, backup, verificação de saúde, rollback e botão de recarregar quando concluído. O envio aceita até 32 MiB, exige sessão, CSRF e senha administrativa. ZIP local não possui prova criptográfica da identidade do autor, portanto verifique sua procedência antes de instalar. O primeiro uso exige que o painel já esteja atualizado para a 2.0.17; veja `vps/docs/ATUALIZACAO-2.0.17.md`.
 
 
 A versão 2.0.15 reorganiza a Central de APIs: Spaceship em cartão compacto, gerenciamento de credenciais em janela própria, consulta DNS em modal com ícones, status claro de configuração e cópia segura dos valores. Mantém consultas somente leitura; credenciais já salvas não são expostas nem precisam ser digitadas novamente. As melhorias de auditoria, serviços, dependências, dispositivos e notas de atualizações da 2.0.13 continuam presentes. O atualizador segue exigindo senha, proteção CSRF, SHA-256 e backup; a publicação pelo GitHub Actions depende de permissões no repositório.
@@ -16,6 +18,8 @@ A versão 2.0.15 reorganiza a Central de APIs: Spaceship em cartão compacto, ge
 Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend), **Node.js + Express + MongoDB + Cloudinary** (backend).
 
 ---
+
+> **Guia de atualização 2.0.18:** [vps/docs/ATUALIZACAO-2.0.18.md](vps/docs/ATUALIZACAO-2.0.18.md).
 
 > **Guia de atualização 2.0.17:** [vps/docs/ATUALIZACAO-2.0.17.md](vps/docs/ATUALIZACAO-2.0.17.md).
 

@@ -1,3 +1,12 @@
+## 2.0.18 — Manutenção assistida do IguatamaOnline no painel (09/11/2026)
+
+- Novo acesso em **Projetos → IguatamaOnline → Manutenção na AWS**, sem conceder edição geral aos demais projetos externos.
+- Diagnóstico dos arquivos `VERSION`, `app/updater.php` e `public/admin.php` e proprietário/grupo/mode; informa que a conta PHP detectada é estimativa do pool padrão, não prova da configuração específica do site.
+- Correção assistida de escrita temporária apenas nos três arquivos, com registro root-only das permissões originais e opção de restauração. Confirmação, senha e TOTP novo obrigatórios. Recusa caminhos simbólicos, diretórios de grupo/mundo graváveis e árvores pertencentes ao usuário PHP conhecido.
+- Backups privados limitados ao código, com seleção e restauração; atualização por ZIP ou pela última Release pública do GitHub, estado persistente e progresso real quando disponível. ZIP limitado a 32 MiB, versão superior, estrutura definida e proibição de arquivos secretos, dados, uploads e caminhos especiais.
+- Serviço systemd isolado `alsistemas-project-updater.service` não altera o instalador do próprio painel, os bancos de dados, o Nginx nem a pasta `/var/www/iguatama-teste/`.
+- Testes automatizados com criação de cópias temporárias, rollback, validação de ZIP malicioso e exigência de senha + TOTP. **Implantação real em EC2, configuração específica do pool PHP e execução de atualização do portal ainda não foram validadas.**
+
 ## 2.0.17 — Atualizador acompanhado e upload ZIP (09/11/2026)
 
 - Atualizações pelo GitHub agora registram uma operação única com estados persistidos e progresso de download medido em bytes; a interface exibe janela de acompanhamento até a conclusão, falha ou reversão.

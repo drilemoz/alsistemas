@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.17: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.18: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -140,6 +140,11 @@ chown -R root:root /opt/alsistemas-vps/current
 chmod -R go-w /opt/alsistemas-vps/current
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
+# Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
+for candidate in project_maintenance.py project_updater.py; do
+  [[ ! -L "/usr/local/libexec/$candidate" ]] || fail 'Script de projeto existente é link simbólico.'
+  install -o root -g root -m 0700 "$BASE/vps/admin/$candidate" "/usr/local/libexec/$candidate"
+done
 [[ -f "$BASE/vps/admin/updater.py" ]] || fail 'Atualizador administrativo não incluído no pacote.'
 [[ ! -L /usr/local/libexec/alsistemas-updater ]] || fail 'Arquivo do atualizador é um link simbólico; recusado.'
 install -o root -g root -m 0700 "$BASE/vps/admin/updater.py" /usr/local/libexec/alsistemas-updater
@@ -257,6 +262,28 @@ NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true
 PACKAGE_SERVICE
+# Atualização do código do IguatamaOnline isolada do serviço do próprio painel.
+PROJECT_UNIT='/etc/systemd/system/alsistemas-project-updater.service'
+if [[ -e "$PROJECT_UNIT" ]]; then
+  [[ ! -L "$PROJECT_UNIT" ]] || fail 'Unidade de atualização do projeto é link simbólico.'
+  grep -Fqx 'Description=AL Sistemas VPS - atualizador restrito do IguatamaOnline' "$PROJECT_UNIT" || fail 'Unidade externa não pertence ao painel.'
+fi
+cat > "$PROJECT_UNIT" <<'PROJECT_SERVICE'
+[Unit]
+Description=AL Sistemas VPS - atualizador restrito do IguatamaOnline
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/project_updater.py
+TimeoutStartSec=600
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+PROJECT_SERVICE
 # O teste do Nginx não pode herdar o filesystem read-only da unidade Node.
 # O systemd executa este comando fixo fora do sandbox web, sem argumentos do navegador.
 NGINX_CHECK_UNIT='/etc/systemd/system/alsistemas-nginx-check.service'

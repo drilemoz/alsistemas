@@ -128,8 +128,170 @@ function openProjectDetails(item) {
   }
   content.append(domainBox)
   content.append(node('p', 'Informações de leitura. A identificação de domínio não autoriza modificar configurações externas.', 'small muted'))
+  if (item.name === 'iguatamaonline') {
+    const maintenance = node('button', 'Manutenção na AWS', 'outline')
+    maintenance.type = 'button'
+    maintenance.addEventListener('click', () => { dialog.close(); openExternalProject() })
+    content.append(maintenance)
+  }
   dialog.showModal()
 }
+let externalPoll = null
+const externalRoot = '/api/projects/iguatamaonline'
+function maintenanceMessage(message, problem = false) {
+  const view = $('external-progress-text')
+  view.textContent = message
+  view.classList.toggle('error', problem)
+}
+async function reloadExternalInspection() {
+  const area = $('external-diagnosis')
+  area.replaceChildren(node('p', 'Verificando arquivos e permissões…', 'small muted'))
+  try {
+    const data = await api(externalRoot + '/maintenance')
+    area.replaceChildren()
+    area.append(node('p', `Versão: ${data.version || 'não identificada'} · pool PHP padrão: ${data.phpDefaultPool || 'não identificado'}`, 'small muted'))
+    for (const item of data.files || []) {
+      const line = node('div', '', 'project-detail-field')
+      line.append(node('strong', `${item.safePath ? '✓' : '✕'} ${item.path}`), node('span', item.safePath ?
+        `${item.owner}:${item.group} · modo ${item.mode} · escrita PHP (estimativa): ${item.phpWritableEstimate === true ? 'sim' : item.phpWritableEstimate === false ? 'não' : 'indeterminada'}` :
+        item.problem || 'Caminho inseguro ou inexistente', 'small muted'))
+      area.append(line)
+    }
+    area.append(node('p', data.note || 'O diagnóstico não concede permissões.', 'small muted'))
+    area.append(node('p', data.permissionsGrantActive ? '⚠️ Escrita temporária ainda está ativa.' : 'Permissões temporárias não habilitadas.', data.permissionsGrantActive ? 'error small' : 'small muted'))
+    const select = $('external-backups')
+    select.replaceChildren(new Option('Escolha um backup', ''))
+    for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}`, item.id))
+  } catch (error) { area.replaceChildren(node('p', error.message, 'error')) }
+}
+function stopExternalPolling() {
+  if (externalPoll) clearInterval(externalPoll)
+  externalPoll = null
+}
+async function checkExternalStatus() {
+  try {
+    const response = await api(externalRoot + '/update/status')
+    const state = response.status
+    if (!state) return
+    maintenanceMessage(`${state.stage}: ${state.message || ''}`, state.stage === 'failed')
+    const bar = $('external-progress')
+    if (typeof state.percent === 'number' && Number.isFinite(state.percent)) {
+      bar.hidden = false
+      bar.value = state.percent
+    } else if (!['complete', 'failed'].includes(state.stage)) {
+      bar.hidden = false
+      bar.removeAttribute('value') // Progresso indeterminado é mais honesto que porcentagem inventada.
+    }
+    if (['complete', 'failed'].includes(state.stage)) {
+      stopExternalPolling()
+      $('external-reload').classList.toggle('hidden', state.stage !== 'complete')
+      await reloadExternalInspection()
+    }
+  } catch (error) { maintenanceMessage('Consulta de progresso indisponível: ' + error.message, true) }
+}
+function startExternalPolling() {
+  stopExternalPolling()
+  $('external-reload').classList.add('hidden')
+  void checkExternalStatus()
+  externalPoll = setInterval(checkExternalStatus, 1900)
+}
+async function openExternalProject() {
+  $('external-project-dialog').showModal()
+  await Promise.all([reloadExternalInspection(), checkExternalStatus()])
+  const status = (await api(externalRoot + '/update/status')).status
+  if (status && !['complete', 'failed'].includes(status.stage)) startExternalPolling()
+}
+function externalCredentials() {
+  const password = $('external-password').value
+  const otp = $('external-otp').value.trim()
+  if (!password || !/^\d{6}$/.test(otp)) throw new Error('Informe senha e código TOTP de 6 dígitos.')
+  return { password, otp }
+}
+function clearExternalCredentials() {
+  $('external-password').value = ''
+  $('external-otp').value = ''
+}
+async function externalCritical(mode) {
+  try {
+    const { password, otp } = externalCredentials()
+    const backup = $('external-backups').value
+    if (mode === 'restore_code' && !backup) throw new Error('Selecione um backup de código.')
+    const label = mode === 'allow' ? 'Liberar escrita temporária' : mode === 'restore' ? 'Restaurar permissões originais' : mode === 'backup_code' ? 'Criar backup do código' : 'Reverter código da produção'
+    const detail = mode === 'allow' ? 'Conceder escrita no PHP somente aos três arquivos da vistoria? Essa opção aumenta o risco até revogar as permissões.' :
+      mode === 'restore' ? 'Restaurar os proprietários, grupos e modos registrados na liberação?' :
+      mode === 'backup_code' ? 'Criar cópia privada do código sem banco de dados ou uploads?' :
+      `Restaurar os arquivos da produção a partir de ${backup}? Não restaura banco ou uploads.`
+    if (!await confirmAction(detail, label)) return
+    maintenanceMessage('Executando operação administrativa…')
+    const result = await api(externalRoot + '/maintenance', 'POST', { mode, password, otp, ...(mode === 'restore_code' ? { backup } : {}) })
+    clearExternalCredentials()
+    maintenanceMessage(result.warning || (mode === 'restore_code' ? 'Código restaurado. Reavalie o portal.' : mode === 'backup_code' ? 'Backup de código salvo no servidor.' : 'Permissões atualizadas.'))
+    await reloadExternalInspection()
+  } catch (error) { maintenanceMessage(error.message, true); $('external-otp').value = '' }
+}
+async function externalGithubUpdate() {
+  try {
+    const repo = $('external-repo').value.trim()
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('Informe proprietário/repositório do GitHub.')
+    const credentials = externalCredentials()
+    if (!await confirmAction(`Instalar a última Release pública de ${repo} no IguatamaOnline? Backup do código alterado será gerado.`, 'Iniciar atualização')) return
+    const started = await api(externalRoot + '/update/github', 'POST', { ...credentials, repo })
+    clearExternalCredentials()
+    maintenanceMessage('Atualização iniciada: ' + started.operationId)
+    startExternalPolling()
+  } catch (error) { maintenanceMessage(error.message, true); $('external-otp').value = '' }
+}
+async function externalFileUpdate() {
+  try {
+    const selected = $('external-zip').files?.[0]
+    if (!selected || !selected.name.toLowerCase().endsWith('.zip')) throw new Error('Escolha um arquivo ZIP.')
+    if (selected.size < 512 || selected.size > 32 * 1024 * 1024) throw new Error('ZIP fora do limite de 512 B a 32 MiB.')
+    const { password, otp } = externalCredentials()
+    if (!await confirmAction(`Enviar ${selected.name} e implantar o código no IguatamaOnline, com backup?`, 'Enviar e instalar')) return
+    const button = $('external-upload')
+    button.disabled = true
+    maintenanceMessage('Enviando o ZIP para o servidor…')
+    const result = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', externalRoot + '/update/upload', true)
+      xhr.withCredentials = true
+      xhr.setRequestHeader('Content-Type', 'application/zip')
+      xhr.setRequestHeader('X-CSRF-Token', csrf)
+      xhr.setRequestHeader('X-Update-Password', password)
+      xhr.setRequestHeader('X-Update-Otp', otp)
+      xhr.upload.onprogress = event => {
+        if (!event.lengthComputable) return
+        const percent = Math.floor(event.loaded / event.total * 100)
+        $('external-progress').hidden = false
+        $('external-progress').value = percent
+        maintenanceMessage('Upload do ZIP: ' + percent + '% dos bytes enviados')
+      }
+      xhr.onload = () => {
+        let parsed = {}
+        try { parsed = JSON.parse(xhr.responseText) } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(parsed)
+        else reject(new Error(parsed.error || `Falha HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Falha de rede no upload'))
+      xhr.onabort = () => reject(new Error('Upload cancelado'))
+      xhr.send(selected)
+    })
+    clearExternalCredentials()
+    $('external-zip').value = ''
+    button.disabled = false
+    maintenanceMessage('Atualização iniciada: ' + result.operationId)
+    startExternalPolling()
+  } catch (error) { $('external-upload').disabled = false; $('external-otp').value = ''; maintenanceMessage(error.message, true) }
+}
+$('external-inspect').addEventListener('click', reloadExternalInspection)
+$('external-allow').addEventListener('click', () => externalCritical('allow'))
+$('external-restore-permissions').addEventListener('click', () => externalCritical('restore'))
+$('external-restore-code').addEventListener('click', () => externalCritical('restore_code'))
+$('external-backup-code').addEventListener('click', () => externalCritical('backup_code'))
+$('external-github').addEventListener('click', externalGithubUpdate)
+$('external-upload').addEventListener('click', externalFileUpdate)
+$('external-reload').addEventListener('click', () => window.location.reload())
+$('external-project-dialog').addEventListener('close', stopExternalPolling)
 async function refresh() {
   const [m, p, a] = await Promise.all([api('/api/monitor'), api('/api/projects'), api('/api/audit')])
   renderMetrics(m)

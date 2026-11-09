@@ -17,6 +17,10 @@ import time
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+# Testes importam este arquivo diretamente por spec; em produção os módulos são root-owned no libexec.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, ProjectError,
+    inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root)
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -516,6 +520,13 @@ def list_backups(task, backup_root=BACKUPS):
     return {'ok': True, 'backups': entries[:50]}
 
 
+def ensure_project_worker_idle():
+    status = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
+                             'alsistemas-project-updater.service'], capture_output=True, timeout=6)
+    if status.returncode == 0 or Path('/run/alsistemas-vps/project-request.json').exists():
+        raise TaskError('Atualização do IguatamaOnline em andamento; tente depois.')
+
+
 def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_ENABLED,
                  runner=subprocess.run):
     if not isinstance(task, dict):
@@ -531,6 +542,112 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return backup_project(task, root)
     if action == 'list_backups':
         return list_backups(task)
+    if action == 'inspect_external_project':
+        if set(task) != {'action', 'name'} or task['name'] != PROJECT_NAME:
+            raise TaskError('Projeto não autorizado.')
+        result = inspect_project()
+        result['backups'] = backup_list()
+        result['permissionsGrantActive'] = (PROJECT_BACKUPS / 'permissions-original.json').exists()
+        return result
+    if action == 'backup_external_code':
+        if set(task) != {'action', 'name'} or task['name'] != PROJECT_NAME:
+            raise TaskError('Projeto não autorizado para backup de código.')
+        ensure_project_worker_idle()
+        return backup_code()
+    if action == 'project_permissions':
+        if set(task) != {'action', 'name', 'mode'}:
+            raise TaskError('Parâmetros de correção inválidos.')
+        ensure_project_worker_idle()
+        return permissions_change(task)
+    if action == 'restore_project_code':
+        if set(task) != {'action', 'name', 'backup'} or task['name'] != PROJECT_NAME:
+            raise TaskError('Parâmetros de restauração inválidos.')
+        ensure_project_worker_idle()
+        return restore_code(task['backup'])
+    if action == 'start_project_update':
+        keys = {'action', 'name', 'mode', 'repo'} if task.get('mode') == 'github' else {'action', 'name', 'mode', 'upload', 'sha256'}
+        if set(task) != keys or task.get('name') != PROJECT_NAME:
+            raise TaskError('Tarefa de projeto não autorizada.')
+        if task['mode'] == 'github':
+            repo = task['repo']
+            if not isinstance(repo, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,60}/[A-Za-z0-9_.-]{1,80}', repo) or '..' in repo:
+                raise TaskError('Repositório não autorizado.')
+        elif task['mode'] == 'file':
+            if not isinstance(task['upload'], str) or not re.fullmatch(r'upload-[0-9a-f]{24}\.zip', task['upload']):
+                raise TaskError('Nome do upload inválido.')
+            if not isinstance(task['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', task['sha256']):
+                raise TaskError('Hash de upload inválido.')
+        else:
+            raise TaskError('Modo de atualização inválido.')
+        request_file = Path('/run/alsistemas-vps/project-request.json')
+        existing = DATA / 'project-update-status.json'
+        if request_file.exists() or request_file.is_symlink():
+            raise TaskError('Já existe uma atualização de projeto pendente.')
+        active = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet', 'alsistemas-project-updater.service'],
+                                capture_output=True, timeout=6)
+        if active.returncode == 0:
+            raise TaskError('Outro trabalho de atualização está em andamento.')
+        # Bloqueia ZIP novo enquanto o acesso PHP temporário estiver ativo.
+        if (PROJECT_BACKUPS / 'permissions-original.json').exists():
+            raise TaskError('Restaure as permissões originais antes de atualizar o código.')
+        inspect_project()
+        token = secrets.token_hex(12)
+        request = {'id': token, 'name': PROJECT_NAME, 'mode': task['mode']}
+        staged = None
+        if task['mode'] == 'github':
+            request['repo'] = task['repo']
+        else:
+            source = DATA / task['upload']
+            if source.is_symlink():
+                raise TaskError('Arquivo recebido não é regular.')
+            fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                st = os.fstat(fd)
+                owner = pwd.getpwnam('alsistemas').pw_uid
+                if not stat.S_ISREG(st.st_mode) or st.st_uid != owner or st.st_nlink != 1 or not (512 <= st.st_size <= 32 * 1024 * 1024):
+                    raise TaskError('ZIP recebido não é seguro.')
+                private_backup_root(PROJECT_BACKUPS)
+                staged = PROJECT_BACKUPS / ('project-upload-' + token + '.zip')
+                sha = hashlib.sha256()
+                with os.fdopen(os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as output:
+                    while True:
+                        chunk = os.read(fd, 131072)
+                        if not chunk: break
+                        sha.update(chunk)
+                        output.write(chunk)
+                    output.flush(); os.fsync(output.fileno())
+                if sha.hexdigest() != task['sha256']:
+                    raise TaskError('Hash divergente do upload.')
+                request['archive'] = staged.name
+                request['sha256'] = task['sha256']
+            except Exception:
+                if staged: staged.unlink(missing_ok=True)
+                raise
+            finally:
+                os.close(fd)
+                source.unlink(missing_ok=True)
+        try:
+            with os.fdopen(os.open(request_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as output:
+                json.dump(request, output)
+                output.flush(); os.fsync(output.fileno())
+            temp = DATA / ('.project-status-' + token + '.tmp')
+            status = {'operationId': token, 'project': PROJECT_NAME, 'stage': 'queued',
+                      'message': 'Atualização enfileirada, aguardando serviço root',
+                      'updatedAt': datetime.now(timezone.utc).isoformat()}
+            with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as output:
+                json.dump(status, output, ensure_ascii=False)
+                account = pwd.getpwnam('alsistemas')
+                os.fchown(output.fileno(), account.pw_uid, account.pw_gid)
+            os.replace(temp, existing)
+            result = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block',
+                                     'alsistemas-project-updater.service'], capture_output=True, timeout=12)
+            if result.returncode:
+                raise TaskError('Serviço de atualização do projeto não iniciou.')
+        except Exception:
+            request_file.unlink(missing_ok=True)
+            if staged: staged.unlink(missing_ok=True)
+            raise
+        return {'ok': True, 'operationId': token, 'started': True}
     if action == 'install_package':
         if set(task) != {'action', 'package'}:
             raise TaskError('Parâmetros de instalação inválidos.')
@@ -664,6 +781,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, OSError, subprocess.TimeoutExpired) as err:
+    except (TaskError, ProjectError, OSError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)
