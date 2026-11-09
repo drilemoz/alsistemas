@@ -48,6 +48,8 @@ class UpdaterTests(unittest.TestCase):
                 (data_dir / 'updates-config.json').write_text(json.dumps({'repo': 'owner/repo'}))
                 (data_dir / 'admin.json').write_text('{"passwordHash":"test"}')
                 (current / 'package.json').write_text(json.dumps({'version': '2.0.4'}))
+                (current / 'src').mkdir()
+                (current / 'src/server.js').write_text('// previous functional version')
                 helper, unit, sudoers = (root / name for name in ('helper', 'unit', 'sudoers'))
                 for f in (helper, unit, sudoers): f.write_text('original')
                 mem = io.BytesIO()
@@ -75,7 +77,7 @@ class UpdaterTests(unittest.TestCase):
                 real_run = subprocess.run
                 with patch.multiple(u, DATA=data_dir, BACKUP=backups, TARGET=current, HELPER=helper, UNIT=unit, SUDOERS=sudoers), \
                      patch.object(u, 'fetch', fake_fetch), patch.object(u, 'status', lambda name, message, **kwargs: events.append(name)), \
-                     patch.object(u, 'run_installer', fake_installer), patch.object(u, 'health', lambda: True), patch.object(u, 'wait_healthy', lambda version: True), patch.object(u.os, 'geteuid', lambda: 0), \
+                     patch.object(u, 'run_installer', fake_installer), patch.object(u, 'health', lambda: True), patch.object(u, 'wait_healthy', lambda version, timeout=65: True), patch.object(u.os, 'geteuid', lambda: 0), \
                      patch.object(u.subprocess, 'run', wraps=subprocess.run) as mocked_run:
                     # Evita iniciar ou reiniciar serviços reais no teste de rollback.
                     actual_run = real_run
@@ -94,6 +96,25 @@ class UpdaterTests(unittest.TestCase):
                         self.assertEqual(json.loads((current / 'package.json').read_text())['version'], '2.0.5')
                         self.assertIn('completed', events)
                         self.assertTrue(any((x / 'data' / 'admin.json').exists() for x in backups.iterdir() if x.is_dir()))
+
+    def test_rollback_staging_error_never_deletes_active_code(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            active = root / 'current'
+            saved = root / 'saved'
+            for d in (active / 'src', saved / 'src'):
+                d.mkdir(parents=True)
+            (active / 'src/server.js').write_text('new code')
+            (saved / 'src/server.js').write_text('old code')
+            (saved / 'package.json').write_text('{"version":"2.0.20"}')
+            with patch.object(u.shutil, 'copytree', side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):
+                    u.restore_core_safely(saved, active)
+            self.assertEqual((active / 'src/server.js').read_text(), 'new code')
+            failed = u.restore_core_safely(saved, active)
+            self.assertEqual((active / 'src/server.js').read_text(), 'old code')
+            self.assertEqual((failed / 'src/server.js').read_text(), 'new code')
 
     def test_rejects_tampered_zip_before_install(self):
         import hashlib

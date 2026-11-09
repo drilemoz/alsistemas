@@ -12,7 +12,7 @@ const password = 'SenhaForte!Teste-217'
 const secret = base32(crypto.randomBytes(20))
 fs.writeFileSync(path.join(dir, 'admin.json'), JSON.stringify({ passwordHash: hashPassword(password), totpSecret: secret }))
 
-test('upload ZIP: sessão, CSRF, senha, hash, tamanho e limite restrito', async () => {
+test('upload ZIP: sessão, CSRF, hash, tamanho e limite restrito', async () => {
   const calls = []
   const server = createServer({ taskRunner: async task => {
     if (task.upload) {
@@ -37,11 +37,10 @@ test('upload ZIP: sessão, CSRF, senha, hash, tamanho e limite restrito', async 
     const cookie = login.headers.get('set-cookie').split(';')[0]
     const send = (payload, extra = {}) => fetch(url + '/api/updates/upload', {
       method: 'POST', headers: { ...headers, Cookie: cookie, 'X-CSRF-Token': csrf,
-        'X-Update-Password': password, ...extra }, body: payload
+        ...extra }, body: payload
     })
     assert.equal((await fetch(url + '/api/updates/upload', { method: 'POST', headers, body: file })).status, 401)
     assert.equal((await send(file, { 'X-CSRF-Token': 'invalido' })).status, 403)
-    assert.equal((await send(file, { 'X-Update-Password': 'incorreta' })).status, 401)
     assert.equal((await send(file, { 'Content-Type': 'text/plain' })).status, 415)
     assert.equal((await send(Buffer.alloc(200))).status, 413)
     const accepted = await send(file)

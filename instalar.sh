@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.18: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.21: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -110,8 +110,8 @@ if [[ ! -e /var/lib/alsistemas/updates-config.json ]]; then
   log 'Repositório GitHub padrão registrado: drilemoz/alsistemas (Releases com SHA-256).'
 fi
 # Backups criptografados nunca devem ficar no webroot nem acessíveis ao Node sem sudo.
-[[ ! -L /var/backups/alsistemas-vps ]] || fail 'Destino de backups é link simbólico; recusado.'
-install -d -o root -g root -m 0700 /var/backups/alsistemas-vps
+[[ ! -L /var/backups/alsistemas-vps && ! -L /var/backups/alsistemas ]] || fail 'Destino de backups é link simbólico; recusado.'
+install -d -o root -g root -m 0700 /var/backups/alsistemas-vps /var/backups/alsistemas
 # Não alterar as permissões de uma raiz de projetos que já exista.
 if [[ ! -e /var/www/projetos ]]; then
   install -d -m 0755 /var/www/projetos
@@ -120,24 +120,32 @@ elif [[ ! -d /var/www/projetos || -L /var/www/projetos ]]; then
 fi
 [[ ! -L /opt/alsistemas-vps && ! -L /opt/alsistemas-vps/current ]] || fail 'Diretório de instalação é um link simbólico; recusado.'
 install -d -m 0755 /opt/alsistemas-vps /usr/local/libexec
-install -d -m 0755 /opt/alsistemas-vps/current
+# Um diretório incompleto nunca deve ser usado como a nova versão.
+# Copie e valide todos os arquivos ANTES de substituir `current`.
+STAGED_CORE="$(python3 "$BASE/vps/admin/core_switch.py" stage "$BASE/vps" /opt/alsistemas-vps "$BASE/tutorial-instalacao.html")" || fail 'Falha ao preparar núcleo em pasta separada.'
+PREVIOUS_CORE=''
+CORE_ACTIVATED=0
+core_restore_on_error() {
+  rc=$?
+  trap - EXIT
+  if (( rc != 0 && CORE_ACTIVATED )); then
+    log 'Falha de instalação: tentando restaurar a pasta anterior de forma controlada.'
+    if [[ -n "$PREVIOUS_CORE" && "$PREVIOUS_CORE" != '-' && -d "$PREVIOUS_CORE" ]]; then
+      python3 "$BASE/vps/admin/core_switch.py" restore /opt/alsistemas-vps/current "$PREVIOUS_CORE" || log 'ALERTA: restauração automática falhou; cópia anterior mantida.'
+      systemctl daemon-reload || true
+      systemctl restart alsistemas-vps || true
+    fi
+  fi
+  exit "$rc"
+}
+trap core_restore_on_error EXIT
 # Backup de código de versões anteriores fora do diretório da versão ativa.
 if [[ -f /opt/alsistemas-vps/current/src/server.js ]]; then
-  backup="/var/backups/alsistemas/code-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-  install -d -m 0700 /var/backups/alsistemas
+  backup="/var/backups/alsistemas/code-$(date -u +%Y%m%dT%H%M%SZ)-$$.tar.gz"
   tar -czf "$backup" -C /opt/alsistemas-vps/current .
   chmod 0600 "$backup"
   log "Backup do núcleo anterior: $backup"
 fi
-install -d -m 0755 /opt/alsistemas-vps/current/{src,public}
-cp -a "$BASE/vps/src/." /opt/alsistemas-vps/current/src/
-cp -a "$BASE/vps/public/." /opt/alsistemas-vps/current/public/
-if [[ -f "$BASE/tutorial-instalacao.html" ]]; then
-  install -m 0644 "$BASE/tutorial-instalacao.html" /opt/alsistemas-vps/current/public/tutorial-instalacao.html
-fi
-install -m 0644 "$BASE/vps/package.json" /opt/alsistemas-vps/current/package.json
-chown -R root:root /opt/alsistemas-vps/current
-chmod -R go-w /opt/alsistemas-vps/current
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
 # Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
@@ -200,7 +208,7 @@ RestartSec=5
 UMask=0077
 ProtectSystem=strict
 ExecStartPre=+/usr/bin/install -d -o root -g root -m 0700 /run/alsistemas-vps
-ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled
+ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
@@ -319,6 +327,10 @@ fi
 install -d -o root -g root -m 0700 /run/alsistemas-vps
 # Preserva a origem em upgrades de instalações HTTPS existentes.
 sed -i "/^Environment=ALS_PORT=/a Environment=ALS_ORIGIN=$ORIGIN" /etc/systemd/system/alsistemas-vps.service
+# Troca por renomeação no mesmo filesystem, nunca por cp para a versão ativa.
+# Caso falhe a ativação, a rotina de estágio restaura o diretório anterior.
+PREVIOUS_CORE="$(python3 "$BASE/vps/admin/core_switch.py" activate "$STAGED_CORE" /opt/alsistemas-vps/current)" || fail 'Não foi possível ativar a versão preparada.'
+CORE_ACTIVATED=1
 systemctl daemon-reload
 systemctl enable --now alsistemas-vps
 systemctl restart alsistemas-vps
@@ -394,6 +406,23 @@ server {
  ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
  add_header Strict-Transport-Security "max-age=31536000" always;
  client_max_body_size 64k;
+ # Somente os dois endpoints autenticados aceitam ZIPs de até 32 MiB.
+ location = /api/updates/upload {
+   client_max_body_size 32m;
+   proxy_pass http://127.0.0.1:8181;
+   proxy_set_header Host \$host;
+   proxy_set_header X-Real-IP \$remote_addr;
+   proxy_set_header X-Forwarded-Proto https;
+   proxy_read_timeout 120s;
+ }
+ location = /api/projects/iguatamaonline/update/upload {
+   client_max_body_size 32m;
+   proxy_pass http://127.0.0.1:8181;
+   proxy_set_header Host \$host;
+   proxy_set_header X-Real-IP \$remote_addr;
+   proxy_set_header X-Forwarded-Proto https;
+   proxy_read_timeout 120s;
+ }
  location / {
    proxy_pass http://127.0.0.1:8181;
    proxy_set_header Host \$host;
@@ -425,6 +454,28 @@ HOOK
     log "Acesso HTTPS previsto: https://$DOMAIN (confirme DNS e portas no provedor)."
   fi
 fi
+# Atualizações do núcleo normalmente não repetem --domain; migrar apenas o vhost
+# com marcador do AL Sistemas. Nenhum vhost de terceiros será editado.
+if ((CORE_UPGRADE)) && [[ -z "$DOMAIN" ]]; then
+  PANEL_CONF='/etc/nginx/sites-available/alsistemas-panel.conf'
+  if [[ -f "$PANEL_CONF" && ! -L "$PANEL_CONF" && "$(head -n 1 "$PANEL_CONF")" == '# AL-SISTEMAS-MANAGED' ]]; then
+    PANEL_BACKUP="$(mktemp /var/backups/alsistemas/panel-upload-XXXXXXXX.conf)"
+    cp -p "$PANEL_CONF" "$PANEL_BACKUP"
+    # Um script puro e isolado evita alterações em configurações Nginx externas.
+    if ! python3 "$BASE/vps/admin/nginx_upload.py" "$PANEL_CONF"; then
+      cp -p "$PANEL_BACKUP" "$PANEL_CONF"
+      fail 'Vhost do painel fora do formato conhecido; revisão manual necessária.'
+    fi
+    if ! nginx -t || ! systemctl reload nginx; then
+      cp -p "$PANEL_BACKUP" "$PANEL_CONF"
+      nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
+      fail 'Nginx rejeitou mudança de upload, configuração anterior restaurada.'
+    fi
+    log 'Limite de 32 MiB aplicado apenas aos endpoints de atualização do painel.'
+  else
+    log 'AVISO: vhost do painel ausente ou não gerenciado; upload por ZIP exige configuração manual do proxy.'
+  fi
+fi
 if ((UFW)); then
   apt-get install -y ufw
   if command -v sshd >/dev/null; then
@@ -434,6 +485,26 @@ if ((UFW)); then
   while read -r port; do [[ -n "$port" ]] && ufw allow "${port}/tcp"; done <<< "$ports"
   ufw allow 80/tcp; ufw allow 443/tcp
   ufw --force enable
+fi
+# Não considerar a instalação concluída só porque systemd respondeu active.
+# A API deve responder com a versão efetivamente instalada.
+EXPECTED_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' /opt/alsistemas-vps/current/package.json)"
+if ! python3 - "$EXPECTED_VERSION" <<'HEALTH'
+import json, sys, time, urllib.request
+expected = sys.argv[1]
+for i in range(35):
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8181/api/health', timeout=2) as response:
+            state = json.load(response)
+            if state.get('ok') is True and state.get('version') == expected:
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(1)
+sys.exit(1)
+HEALTH
+then
+  fail 'A nova versão não respondeu ao teste de saúde; restauração do núcleo anterior acionada.'
 fi
 log 'Verificações finais:'
 /usr/bin/node --version

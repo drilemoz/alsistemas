@@ -225,3 +225,81 @@ label{font-size:.82rem;margin-bottom:11px}
 #external-project-dialog input, #external-project-dialog select { max-width: 100%; min-width: 0; box-sizing: border-box; }
 #external-project-dialog .button-row { display: flex; gap: 8px; flex-wrap: wrap; }
 #external-progress { width: 100%; height: 13px; }
+
+/* v2.0.19: ações lado a lado; novidades e relatórios só em janelas dedicadas. */
+#page-updates .update-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+#page-updates .update-actions button{min-width:0;width:100%;padding:10px 5px;white-space:nowrap;font-size:clamp(.72rem,2.8vw,.9rem);overflow:hidden;text-overflow:ellipsis}
+#page-updates .release-help{flex:0 0 auto;border-radius:50%;width:36px;height:36px;min-width:36px;min-height:36px;padding:0;font-size:1.1rem;font-weight:750}
+#page-updates .heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#page-updates .heading h2{margin-right:auto}
+.update-info-dialog{width:min(94vw,620px);max-height:90dvh;overflow-y:auto}
+.update-info-dialog .release-notes{margin-top:8px;padding-top:0;border-top:0}
+.update-info-dialog .release-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55dvh;overflow-y:auto}
+.update-report-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:50dvh;overflow-y:auto;padding:14px;border:1px solid var(--border);background:var(--bg);border-radius:10px;font-size:.8rem;line-height:1.5;user-select:text}
+.update-info-dialog .dialog-actions{display:flex;flex-wrap:wrap;gap:8px}
+.update-info-dialog .dialog-actions button{flex:1 1 auto}
+
+/* v2.0.20 — páginas de projetos e manutenção AWS, sem modais aninhados. */
+.project-page{max-width:1050px;margin-inline:auto;min-width:0;}
+.project-page .project-crumb{margin:0 0 16px;display:flex;align-items:center;min-height:36px}
+.project-back{background:transparent;border:0;color:var(--accent);font-size:.85rem;font-weight:700;min-height:38px;padding:7px 3px;text-align:left}
+.project-back:hover{text-decoration:underline}
+.project-page-heading{margin:3px 0 20px}
+.project-page-heading h1{margin:3px 0 5px;font-size:clamp(1.4rem,4vw,1.95rem);line-height:1.22;overflow-wrap:anywhere}
+.project-page-heading p{margin:0;line-height:1.5}
+.project-page .panel{margin:0 0 15px;padding:clamp(15px,3vw,22px);min-width:0}
+.project-page .panel h2{font-size:1.06rem;margin:0 0 13px}
+.project-page .panel label{display:grid;gap:7px;font-size:.87rem;line-height:1.4}
+.project-page .panel input,.project-page .panel select{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.project-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.project-summary-field{min-width:0;display:grid;gap:5px;padding:14px;border-radius:11px;background:var(--bg)}
+.project-summary-field strong{font-size:.91rem;overflow-wrap:anywhere;word-break:break-word}
+.project-actions-stack{display:grid;gap:9px;margin-top:12px}
+.project-actions-stack>button{width:100%}
+.project-technical summary{cursor:pointer;font-weight:700;font-size:.93rem;min-height:30px}
+.project-technical[open] summary{margin-bottom:14px}
+.project-env-note{background:color-mix(in srgb,var(--accent) 7%,var(--surface));border:1px solid var(--border);padding:13px 15px;border-radius:13px;margin-bottom:15px;display:grid;gap:4px;min-width:0}
+.project-env-note>strong{font-size:.83rem}
+.project-env-note code{font-size:.81rem;white-space:normal;overflow-wrap:anywhere}
+.project-env-note p{margin:2px 0}
+.project-tool-list{display:grid;gap:8px}
+.project-tool{font:inherit;display:flex;align-items:center;gap:12px;text-align:left;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px;min-height:68px;width:100%;cursor:pointer;min-width:0;box-shadow:none}
+.project-tool:hover,.project-tool:focus-visible{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,var(--surface));outline-offset:2px}
+.project-tool-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--accent);border-radius:12px;font-size:1.3rem;font-weight:800}
+.project-tool>span:nth-child(2){min-width:0;display:grid;flex:1;gap:4px}
+.project-tool strong{font-size:.91rem;line-height:1.25}
+.project-tool small{font-size:.76rem;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+.project-tool>span:last-child{font-size:1.45rem;color:var(--muted);flex-shrink:0}
+.project-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+.project-action-grid button{width:100%;min-width:0;white-space:normal}
+.project-inline-result{padding:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55}
+.project-version-row{display:flex;gap:15px;align-items:center;justify-content:space-between}
+.project-version-row>div{display:grid;gap:5px}
+.project-version-row strong{font-size:1.23rem}
+.project-update-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:stretch}
+.project-update-grid .panel{display:flex;flex-direction:column;gap:10px;margin:0 0 15px}
+.project-update-grid .panel h2{margin:0}
+.project-update-grid .panel p{margin:0}
+.project-update-grid .panel button{margin-top:auto;width:100%}
+.project-update-grid input[type=file]{padding:7px;font-size:.8rem;border:1px solid var(--border);border-radius:10px}
+.project-progress-state{font-size:1rem;font-weight:700;overflow-wrap:anywhere}
+#external-progress{display:block;width:100%;margin:14px 0;height:14px;accent-color:var(--accent)}
+#external-progress[hidden]{display:none}
+.project-report{font:inherit;font-size:.78rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:var(--bg);border:1px solid var(--border);padding:14px;border-radius:12px;max-height:65dvh;overflow-y:auto;user-select:text}
+.project-auth-dialog{width:min(94vw,490px);max-height:90dvh;overflow-y:auto}
+.project-auth-dialog .dialog-body{display:grid;gap:12px}
+.project-auth-dialog label{display:grid;gap:6px}
+.project-page button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:680px){
+  .project-summary-grid{grid-template-columns:1fr}
+  .project-update-grid{grid-template-columns:1fr;gap:0}
+  .project-tool{padding:11px 12px;gap:10px}
+  .project-tool-icon{flex-basis:36px;width:36px;height:36px}
+  .project-page-heading{margin-bottom:15px}
+  .project-page .panel{margin-bottom:12px}
+  .project-action-grid button{font-size:.82rem;padding:9px 8px}
+}
+@media(max-width:360px){.project-action-grid{grid-template-columns:1fr}.project-tool small{font-size:.73rem}}
+.project-entry{width:100%;background:transparent;color:var(--text);border:0;border-bottom:1px solid var(--border);border-radius:0;text-align:left;justify-content:flex-start;min-height:65px}
+.project-entry:hover,.project-entry:focus-visible{background:color-mix(in srgb,var(--accent) 5%,var(--surface));border-radius:9px}
+.project-entry-chevron{font-size:1.5rem;color:var(--muted);margin-left:auto}

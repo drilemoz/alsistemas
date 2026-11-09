@@ -12,7 +12,7 @@ const secret = base32(crypto.randomBytes(20))
 const password = 'TesteSeguro#1234567890'
 fs.writeFileSync(path.join(dir, 'admin.json'), JSON.stringify({ passwordHash: hashPassword(password), totpSecret: secret }))
 
-test('atualização exige sessão, CSRF, senha administrativa e repositório configurado', async () => {
+test('atualização usa sessão, CSRF e repositório, sem senha repetida', async () => {
   const calls = []
   const server = createServer({ taskRunner: async (task) => { calls.push(task); return { ok: true, message: 'Atualização iniciada no teste' } } })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -37,9 +37,9 @@ test('atualização exige sessão, CSRF, senha administrativa e repositório con
     const otpNext = totp(secret, Date.now() + 30000)
     const config = await call('/api/updates/configure', 'POST', { repo: 'owner/repo', password, otp: otpNext }, cookie, csrf)
     assert.equal(config.code, 200)
-    assert.equal((await call('/api/updates/apply', 'POST', { password: 'senha-errada' }, cookie, csrf)).code, 401)
-    assert.equal((await call('/api/updates/apply', 'POST', { password, otp: totp(secret) }, cookie, csrf)).code, 400)
-    const accepted = await call('/api/updates/apply', 'POST', { password }, cookie, csrf)
+    assert.equal((await call('/api/updates/apply', 'POST', { password }, cookie, csrf)).code, 400)
+    assert.equal((await call('/api/updates/apply', 'POST', {}, undefined, csrf)).code, 401)
+    const accepted = await call('/api/updates/apply', 'POST', {}, cookie, csrf)
     assert.equal(accepted.code, 202)
     assert.deepEqual(calls, [{ action: 'start_update' }])
   } finally { await new Promise(resolve => server.close(resolve)); fs.rmSync(dir, { recursive: true, force: true }) }

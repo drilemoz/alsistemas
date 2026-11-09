@@ -35,7 +35,7 @@ async function api(url, method = 'GET', payload) {
     ...(csrf ? { 'X-CSRF-Token': csrf } : {})
   }, body: payload === undefined ? undefined : JSON.stringify(payload) })
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+  if (!response.ok) { const error = new Error(data.error || `HTTP ${response.status}`); error.httpStatus = response.status; throw error }
   return data
 }
 function node(tag, text, className = '') {
@@ -98,27 +98,78 @@ function renderMetrics(m) {
     serviceCard($('overview-services'), name, status)
   }
 }
-function openProjectDetails(item) {
-  const dialog = $('project-details-dialog')
+// v2.0.20: projetos são páginas navegáveis. Nenhum dado sensível é colocado no endereço.
+let knownProjects = new Map()
+let currentAppRoute = 'overview'
+const mainTabs = new Set(['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'security', 'audit', 'help'])
+const projectSections = new Set(['diagnostics', 'permissions', 'updates', 'backups', 'logs', 'progress'])
+function appRouteFromUrl() {
+  try { return decodeURIComponent(location.hash.replace(/^#/, '')) || 'overview' }
+  catch { return 'overview' }
+}
+function validAppRoute(route) {
+  if (mainTabs.has(route)) return true
+  const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
+  return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
+}
+function showAppRoute(route) {
+  if (!validAppRoute(route)) route = 'projects'
+  currentAppRoute = route
+  const matched = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
+  const page = matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
+  for (const section of document.querySelectorAll('.tab-page')) section.classList.toggle('hidden', section.id !== `page-${page}`)
+  const navTab = matched ? 'projects' : route
+  for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === navTab)
+  if ($('more-dialog').open) $('more-dialog').close()
+  if (matched && page === 'project-detail') renderProjectPage(matched[1])
+  if (matched && matched[1] === 'iguatamaonline') {
+    if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus()
+    if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
+    if (page === 'project-logs') void loadExternalReport()
+  }
+  if (route === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
+  if (route === 'dependencies') refreshDependencies().catch(e => notice(e.message, true))
+  if (route === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
+  if (route === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
+  window.scrollTo({ top: 0, behavior: 'instant' })
+}
+function navigateApp(route, { replace = false } = {}) {
+  if (!validAppRoute(route)) route = 'projects'
+  const url = '#' + encodeURI(route)
+  if (replace) history.replaceState({ alRoute: route }, '', url)
+  else if (location.hash !== url) history.pushState({ alRoute: route }, '', url)
+  clearNotice()
+  showAppRoute(route)
+}
+window.addEventListener('popstate', () => showAppRoute(appRouteFromUrl()))
+window.addEventListener('hashchange', () => { if (appRouteFromUrl() !== currentAppRoute) showAppRoute(appRouteFromUrl()) })
+for (const button of document.querySelectorAll('[data-project-back]')) button.addEventListener('click', () => navigateApp(button.dataset.projectBack))
+for (const button of document.querySelectorAll('[data-project-route]')) button.addEventListener('click', () => navigateApp('project/iguatamaonline/aws/' + button.dataset.projectRoute))
+function renderProjectPage(name) {
+  const item = knownProjects.get(name)
+  if (!item) {
+    $('project-details-title').textContent = 'Projeto não encontrado'
+    $('project-detail-subtitle').textContent = 'Volte à lista e atualize os projetos.'
+    $('project-summary').replaceChildren()
+    $('project-detail-actions').replaceChildren()
+    $('project-details-content').replaceChildren()
+    return
+  }
   $('project-details-title').textContent = item.name
+  $('project-detail-subtitle').textContent = `${{ php:'PHP', node:'Node.js', static:'HTML / estático' }[item.type] || 'Tecnologia não identificada'} · ${item.managed ? 'Gerenciado pelo AL Sistemas' : 'Projeto externo · acesso restrito'}`
+  const summary = $('project-summary')
+  summary.replaceChildren()
+  for (const [label, value] of [['Diretório', item.path], ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Não identificado']]) {
+    const block = node('div', '', 'project-summary-field')
+    block.append(node('span', label, 'small muted'), node('strong', value))
+    summary.append(block)
+  }
   const content = $('project-details-content')
   content.replaceChildren()
-  const fields = [
-    ['Tecnologia', { php: 'PHP', node: 'Node.js', static: 'HTML / estático' }[item.type] || 'Não identificada'],
-    ['Diretório', item.path],
-    ['Gerenciamento', item.managed ? 'Gerenciado pelo AL Sistemas' : 'Projeto externo · somente leitura'],
-    ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Estado não identificado']
-  ]
-  for (const [label, value] of fields) {
-    const block = node('div', '', 'project-detail-field')
-    block.append(node('span', label, 'small muted'), node('strong', value))
-    content.append(block)
-  }
-  const domains = Array.isArray(item.domains) ? item.domains : []
-  if (item.domain && !domains.includes(item.domain)) domains.unshift(item.domain)
+  const domains = [...new Set([...(item.domain ? [item.domain] : []), ...(Array.isArray(item.domains) ? item.domains : [])])]
   const domainBox = node('div', '', 'project-detail-field')
-  domainBox.append(node('span', 'Domínios identificados (Nginx)', 'small muted'))
-  if (!domains.length) domainBox.append(node('strong', 'Não identificado'))
+  domainBox.append(node('span', 'Domínios identificados pelo Nginx', 'small muted'))
+  if (!domains.length) domainBox.append(node('strong', 'Nenhum domínio identificado'))
   for (const domain of domains) {
     const link = node('a', domain)
     link.href = `https://${domain}`
@@ -126,22 +177,51 @@ function openProjectDetails(item) {
     link.rel = 'noopener noreferrer'
     domainBox.append(link)
   }
-  content.append(domainBox)
-  content.append(node('p', 'Informações de leitura. A identificação de domínio não autoriza modificar configurações externas.', 'small muted'))
+  content.append(domainBox, node('p', 'Domínios detectados não autorizam modificar configurações externas.', 'small muted'))
+  const actions = $('project-detail-actions')
+  actions.replaceChildren()
   if (item.name === 'iguatamaonline') {
-    const maintenance = node('button', 'Manutenção na AWS', 'outline')
-    maintenance.type = 'button'
-    maintenance.addEventListener('click', () => { dialog.close(); openExternalProject() })
-    content.append(maintenance)
+    const aws = node('button', '', 'project-tool')
+    aws.type = 'button'
+    aws.append(node('span', '☁', 'project-tool-icon'))
+    const labels = node('span')
+    labels.append(node('strong', 'Manutenção na AWS'), node('small', 'Diagnóstico, permissões, atualizações, backups e relatórios'))
+    aws.append(labels, node('span', '›'))
+    aws.addEventListener('click', () => openExternalProject())
+    actions.append(aws)
   }
-  dialog.showModal()
+  if (item.managed) {
+    const backup = node('button', 'Criar backup criptografado', 'outline')
+    backup.type = 'button'
+    backup.addEventListener('click', () => openBackup(item.name))
+    actions.append(backup)
+    if (item.domain && typeof item.enabled === 'boolean') {
+      const toggle = node('button', item.enabled ? 'Desativar site' : 'Ativar site', 'outline')
+      toggle.type = 'button'
+      toggle.addEventListener('click', async () => {
+        const enabled = !item.enabled
+        if (!await confirmAction(`${enabled ? 'Ativar' : 'Desativar'} o site ${item.name} (${item.domain}) no Nginx? Os arquivos serão preservados.`, enabled ? 'Ativar site' : 'Desativar site')) return
+        toggle.disabled = true
+        try {
+          await api('/api/tasks', 'POST', { action: 'set_site_state', name: item.name, enabled })
+          await refresh()
+          notice(`Site ${item.name} ${enabled ? 'ativado' : 'desativado'} no Nginx.`)
+        } catch (error) { notice(error.message, true); toggle.disabled = false }
+      })
+      actions.append(toggle)
+    }
+  }
 }
+function openProjectDetails(item) { navigateApp(`project/${item.name}`) }
 let externalPoll = null
+let externalLastError = ''
 const externalRoot = '/api/projects/iguatamaonline'
+let externalUploading = false
 function maintenanceMessage(message, problem = false) {
   const view = $('external-progress-text')
   view.textContent = message
   view.classList.toggle('error', problem)
+  if (problem) externalLastError = String(message).slice(0, 1000)
 }
 async function reloadExternalInspection() {
   const area = $('external-diagnosis')
@@ -150,6 +230,7 @@ async function reloadExternalInspection() {
     const data = await api(externalRoot + '/maintenance')
     area.replaceChildren()
     area.append(node('p', `Versão: ${data.version || 'não identificada'} · pool PHP padrão: ${data.phpDefaultPool || 'não identificado'}`, 'small muted'))
+    $('external-current-version').textContent = data.version || 'Não identificada'
     for (const item of data.files || []) {
       const line = node('div', '', 'project-detail-field')
       line.append(node('strong', `${item.safePath ? '✓' : '✕'} ${item.path}`), node('span', item.safePath ?
@@ -172,8 +253,12 @@ async function checkExternalStatus() {
   try {
     const response = await api(externalRoot + '/update/status')
     const state = response.status
-    if (!state) return
+    if (!state) { if (!externalUploading) { $('external-project-status').textContent = 'Nenhuma atualização registrada.'; $('external-update-summary').textContent = 'Nenhuma atualização registrada.' }; return }
+    if (externalUploading) return
     maintenanceMessage(`${state.stage}: ${state.message || ''}`, state.stage === 'failed')
+    $('external-project-status').textContent = 'Última atualização: ' + state.stage + ' · ' + (state.message || '')
+    $('external-update-summary').textContent = 'Estado: ' + state.stage + ' · ' + (state.message || '')
+    $('external-progress-step').textContent = state.stage === 'failed' ? 'A atualização falhou. Consulte Histórico e relatórios.' : state.stage === 'complete' ? 'Atualização concluída.' : 'Etapa atual: ' + state.stage
     const bar = $('external-progress')
     if (typeof state.percent === 'number' && Number.isFinite(state.percent)) {
       bar.hidden = false
@@ -183,6 +268,8 @@ async function checkExternalStatus() {
       bar.removeAttribute('value') // Progresso indeterminado é mais honesto que porcentagem inventada.
     }
     if (['complete', 'failed'].includes(state.stage)) {
+      bar.hidden = state.stage === 'failed'
+
       stopExternalPolling()
       $('external-reload').classList.toggle('hidden', state.stage !== 'complete')
       await reloadExternalInspection()
@@ -196,75 +283,105 @@ function startExternalPolling() {
   externalPoll = setInterval(checkExternalStatus, 1900)
 }
 async function openExternalProject() {
-  $('external-project-dialog').showModal()
-  await Promise.all([reloadExternalInspection(), checkExternalStatus()])
-  const status = (await api(externalRoot + '/update/status')).status
-  if (status && !['complete', 'failed'].includes(status.stage)) startExternalPolling()
+  navigateApp('project/iguatamaonline/aws')
+  try {
+    const status = (await api(externalRoot + '/update/status')).status
+    if (status && !['complete', 'failed'].includes(status.stage)) startExternalPolling()
+  } catch (error) { maintenanceMessage('Falha ao consultar operação: ' + error.message, true) }
 }
-function externalCredentials() {
+let externalAuthResolve = null
+const authDialog = $('external-auth-dialog')
+function closeExternalAuth() { if (authDialog.open) authDialog.close() }
+function requestExternalCredentials(label, description) {
+  if (externalAuthResolve) return Promise.reject(new Error('Já existe uma confirmação aberta.'))
+  $('external-auth-form').reset()
+  $('external-auth-title').textContent = label
+  $('external-auth-description').textContent = description
+  authDialog.showModal()
+  $('external-password').focus()
+  return new Promise(resolve => { externalAuthResolve = resolve })
+}
+$('external-auth-form').addEventListener('submit', event => {
+  event.preventDefault()
   const password = $('external-password').value
   const otp = $('external-otp').value.trim()
-  if (!password || !/^\d{6}$/.test(otp)) throw new Error('Informe senha e código TOTP de 6 dígitos.')
-  return { password, otp }
-}
-function clearExternalCredentials() {
-  $('external-password').value = ''
-  $('external-otp').value = ''
+  if (!password || !/^\d{6}$/.test(otp)) { $('external-otp').setCustomValidity('Informe um código TOTP de 6 dígitos.'); $('external-otp').reportValidity(); return }
+  $('external-otp').setCustomValidity('')
+  const resolve = externalAuthResolve
+  externalAuthResolve = null
+  $('external-auth-form').reset()
+  closeExternalAuth()
+  if (resolve) resolve({ password, otp })
+})
+$('external-otp').addEventListener('input', () => $('external-otp').setCustomValidity(''))
+authDialog.addEventListener('close', () => {
+  $('external-auth-form').reset()
+  if (externalAuthResolve) { const resolve = externalAuthResolve; externalAuthResolve = null; resolve(null) }
+})
+$('external-auth-close').addEventListener('click', closeExternalAuth)
+$('external-auth-cancel').addEventListener('click', closeExternalAuth)
+function externalResult(message, error = false) {
+  const section = currentAppRoute.split('/').at(-1)
+  const dest = section === 'permissions' ? $('external-permission-result') : section === 'backups' ? $('external-backup-result') : section === 'updates' ? $('external-update-summary') : $('external-progress-text')
+  dest.textContent = message
+  dest.classList.toggle('error', error)
 }
 async function externalCritical(mode) {
+  const backup = $('external-backups').value
+  if (mode === 'restore_code' && !backup) { externalResult('Selecione um backup de código.', true); return }
+  const label = mode === 'allow' ? 'Liberar escrita temporária' : mode === 'restore' ? 'Restaurar permissões originais' : mode === 'backup_code' ? 'Criar backup do código' : 'Restaurar código da produção'
+  const detail = mode === 'allow' ? 'Conceder escrita ao PHP somente aos três arquivos da vistoria? Aumenta o risco até restaurar as permissões.' :
+    mode === 'restore' ? 'Restaurar os proprietários, grupos e modos registrados na liberação?' :
+    mode === 'backup_code' ? 'Criar cópia privada do código sem banco de dados ou uploads?' :
+    `Restaurar os arquivos da produção a partir de ${backup}? Banco de dados e uploads não serão restaurados.`
+  const credentials = await requestExternalCredentials(label, detail)
+  if (!credentials) return
   try {
-    const { password, otp } = externalCredentials()
-    const backup = $('external-backups').value
-    if (mode === 'restore_code' && !backup) throw new Error('Selecione um backup de código.')
-    const label = mode === 'allow' ? 'Liberar escrita temporária' : mode === 'restore' ? 'Restaurar permissões originais' : mode === 'backup_code' ? 'Criar backup do código' : 'Reverter código da produção'
-    const detail = mode === 'allow' ? 'Conceder escrita no PHP somente aos três arquivos da vistoria? Essa opção aumenta o risco até revogar as permissões.' :
-      mode === 'restore' ? 'Restaurar os proprietários, grupos e modos registrados na liberação?' :
-      mode === 'backup_code' ? 'Criar cópia privada do código sem banco de dados ou uploads?' :
-      `Restaurar os arquivos da produção a partir de ${backup}? Não restaura banco ou uploads.`
-    if (!await confirmAction(detail, label)) return
-    maintenanceMessage('Executando operação administrativa…')
-    const result = await api(externalRoot + '/maintenance', 'POST', { mode, password, otp, ...(mode === 'restore_code' ? { backup } : {}) })
-    clearExternalCredentials()
-    maintenanceMessage(result.warning || (mode === 'restore_code' ? 'Código restaurado. Reavalie o portal.' : mode === 'backup_code' ? 'Backup de código salvo no servidor.' : 'Permissões atualizadas.'))
+    externalResult('Executando operação administrativa…')
+    const result = await api(externalRoot + '/maintenance', 'POST', { mode, ...credentials, ...(mode === 'restore_code' ? { backup } : {}) })
+    externalResult(result.warning || (mode === 'restore_code' ? 'Código restaurado. Reavalie o portal.' : mode === 'backup_code' ? 'Backup de código salvo no servidor.' : 'Permissões atualizadas.'))
     await reloadExternalInspection()
-  } catch (error) { maintenanceMessage(error.message, true); $('external-otp').value = '' }
+  } catch (error) { externalResult(error.message, true) }
 }
 async function externalGithubUpdate() {
+  const repo = $('external-repo').value.trim()
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { externalResult('Informe proprietário/repositório do GitHub.', true); return }
+  const credentials = await requestExternalCredentials('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código?`)
+  if (!credentials) return
   try {
-    const repo = $('external-repo').value.trim()
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('Informe proprietário/repositório do GitHub.')
-    const credentials = externalCredentials()
-    if (!await confirmAction(`Instalar a última Release pública de ${repo} no IguatamaOnline? Backup do código alterado será gerado.`, 'Iniciar atualização')) return
     const started = await api(externalRoot + '/update/github', 'POST', { ...credentials, repo })
-    clearExternalCredentials()
     maintenanceMessage('Atualização iniciada: ' + started.operationId)
+    navigateApp('project/iguatamaonline/aws/progress')
     startExternalPolling()
-  } catch (error) { maintenanceMessage(error.message, true); $('external-otp').value = '' }
+  } catch (error) { externalResult(error.message, true) }
 }
 async function externalFileUpdate() {
+  const selected = $('external-zip').files?.[0]
+  if (!selected || !selected.name.toLowerCase().endsWith('.zip') || selected.size < 512 || selected.size > 32 * 1024 * 1024) {
+    externalResult('Escolha um ZIP válido de 512 B a 32 MiB.', true); return
+  }
+  const credentials = await requestExternalCredentials('Atualizar pelo ZIP', `Enviar ${selected.name} e instalar no IguatamaOnline? Será criado backup do código.`)
+  if (!credentials) return
+  const button = $('external-upload')
+  button.disabled = true
+  externalUploading = true
+  navigateApp('project/iguatamaonline/aws/progress')
+  maintenanceMessage('Enviando ZIP para a VPS…')
   try {
-    const selected = $('external-zip').files?.[0]
-    if (!selected || !selected.name.toLowerCase().endsWith('.zip')) throw new Error('Escolha um arquivo ZIP.')
-    if (selected.size < 512 || selected.size > 32 * 1024 * 1024) throw new Error('ZIP fora do limite de 512 B a 32 MiB.')
-    const { password, otp } = externalCredentials()
-    if (!await confirmAction(`Enviar ${selected.name} e implantar o código no IguatamaOnline, com backup?`, 'Enviar e instalar')) return
-    const button = $('external-upload')
-    button.disabled = true
-    maintenanceMessage('Enviando o ZIP para o servidor…')
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', externalRoot + '/update/upload', true)
       xhr.withCredentials = true
       xhr.setRequestHeader('Content-Type', 'application/zip')
       xhr.setRequestHeader('X-CSRF-Token', csrf)
-      xhr.setRequestHeader('X-Update-Password', password)
-      xhr.setRequestHeader('X-Update-Otp', otp)
+      xhr.setRequestHeader('X-Update-Password', credentials.password)
+      xhr.setRequestHeader('X-Update-Otp', credentials.otp)
       xhr.upload.onprogress = event => {
         if (!event.lengthComputable) return
         const percent = Math.floor(event.loaded / event.total * 100)
         $('external-progress').hidden = false
         $('external-progress').value = percent
-        maintenanceMessage('Upload do ZIP: ' + percent + '% dos bytes enviados')
+        maintenanceMessage('Envio do ZIP: ' + percent + '% dos bytes')
       }
       xhr.onload = () => {
         let parsed = {}
@@ -272,16 +389,16 @@ async function externalFileUpdate() {
         if (xhr.status >= 200 && xhr.status < 300) resolve(parsed)
         else reject(new Error(parsed.error || `Falha HTTP ${xhr.status}`))
       }
-      xhr.onerror = () => reject(new Error('Falha de rede no upload'))
+      xhr.onerror = () => reject(new Error('Falha de rede no envio'))
       xhr.onabort = () => reject(new Error('Upload cancelado'))
       xhr.send(selected)
     })
-    clearExternalCredentials()
     $('external-zip').value = ''
-    button.disabled = false
     maintenanceMessage('Atualização iniciada: ' + result.operationId)
+    externalUploading = false
     startExternalPolling()
-  } catch (error) { $('external-upload').disabled = false; $('external-otp').value = ''; maintenanceMessage(error.message, true) }
+  } catch (error) { maintenanceMessage(error.message, true) }
+  finally { button.disabled = false }
 }
 $('external-inspect').addEventListener('click', reloadExternalInspection)
 $('external-allow').addEventListener('click', () => externalCritical('allow'))
@@ -291,53 +408,67 @@ $('external-backup-code').addEventListener('click', () => externalCritical('back
 $('external-github').addEventListener('click', externalGithubUpdate)
 $('external-upload').addEventListener('click', externalFileUpdate)
 $('external-reload').addEventListener('click', () => window.location.reload())
-$('external-project-dialog').addEventListener('close', stopExternalPolling)
+$('external-check-progress').addEventListener('click', () => void checkExternalStatus())
+$('external-refresh-version').addEventListener('click', () => void reloadExternalInspection())
+$('external-preview-permissions').addEventListener('click', async () => {
+  const preview = $('external-permission-preview')
+  preview.textContent = 'Consultando permissões atuais…'
+  try {
+    const data = await api(externalRoot + '/maintenance')
+    const files = (data.files || []).map(f => `${f.path}: ${f.safePath ? 'caminho validado' : 'caminho inseguro'}; escrita PHP estimada: ${f.phpWritableEstimate === true ? 'sim' : f.phpWritableEstimate === false ? 'não' : 'indeterminada'}`).join('\n')
+    preview.textContent = `Prévia apenas, nenhuma alteração aplicada.\n${files}\nA conta do pool real precisa ser confirmada antes de liberar escrita.`
+  } catch (error) { preview.textContent = error.message }
+})
+$('external-refresh-logs').addEventListener('click', () => void loadExternalReport())
+$('external-copy-report').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('external-report-text').textContent); notice('Relatório copiado.') }
+  catch { notice('Cópia indisponível neste navegador.', true) }
+})
+$('external-download-report').addEventListener('click', () => {
+  const blob = new Blob([$('external-report-text').textContent], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url; link.download = 'IguatamaOnline-relatorio-' + new Date().toISOString().slice(0,10) + '.txt'
+  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+async function loadExternalReport() {
+  const out = $('external-report-text')
+  out.textContent = 'Consultando…'
+  try {
+    const [status, auditData] = await Promise.all([api(externalRoot + '/update/status'), api('/api/audit')])
+    const s = status.status
+    const events = (auditData.events || []).filter(ev => ev.name === 'iguatamaonline' || (typeof ev.action === 'string' && /project_update|project_permissions|restore_project_code|backup_external_code/.test(ev.action)))
+    const lines = ['AL Sistemas · IguatamaOnline', 'Relatório consultado: ' + new Date().toLocaleString('pt-BR'), '', 'Última atualização:', s ? JSON.stringify(s, null, 2) : 'Nenhuma atualização registrada.', '', ...(externalLastError ? ['Último erro observado na interface:', externalLastError, ''] : []), 'Eventos administrativos recentes:']
+    if (!events.length) lines.push('Nenhum evento relacionado ao projeto encontrado no histórico disponível.')
+    for (const ev of events.slice(0, 30)) lines.push(JSON.stringify(ev))
+    out.textContent = lines.join('\n')
+  } catch (error) { out.textContent = 'Falha ao consultar o relatório: ' + error.message }
+}
+
 async function refresh() {
   const [m, p, a] = await Promise.all([api('/api/monitor'), api('/api/projects'), api('/api/audit')])
   renderMetrics(m)
   await updateDiagnostics()
   await updateBackups()
   $('projects').replaceChildren()
+  knownProjects = new Map(p.projects.map(item => [item.name, item]))
   $('project-count').textContent = String(p.projects.length)
   for (const item of p.projects) {
-    const line = node('div', '', 'project-line project-tile')
+    const line = node('button', '', 'project-line project-tile project-entry')
+    line.type = 'button'
+    line.setAttribute('aria-label', 'Abrir projeto ' + item.name)
+    line.addEventListener('click', () => openProjectDetails(item))
     const emblem = node('span', '', 'project-emblem')
     emblem.append(iconGraphic(item.type === 'php' ? 'code' : item.type === 'node' ? 'server' : 'folder'))
     line.append(emblem)
     const info = node('div', '', 'project-info')
-    info.append(node('strong', item.name), node('div', `${item.type} • ${item.domain || 'domínio não identificado'} • ${item.managed ? 'AL Sistemas' : 'somente leitura'}`, 'small muted'))
+    info.append(node('strong', item.name), node('div', `${item.type} • ${item.domain || 'domínio não identificado'} • ${item.managed ? 'AL Sistemas' : item.name === 'iguatamaonline' ? 'manutenção restrita' : 'somente leitura'}`, 'small muted'))
     line.append(info)
-    const details = node('button', 'Ver detalhes', 'outline project-details-button')
-    details.type = 'button'
-    details.addEventListener('click', () => openProjectDetails(item))
-    line.append(details)
-    if (item.managed && item.domain && typeof item.enabled === 'boolean') {
-      const actions = node('div', '', 'project-actions')
-      const state = node('span', item.enabled ? 'Ativo (HTTP)' : 'Desativado', item.enabled ? 'good small' : 'muted small')
-      const action = node('button', item.enabled ? 'Desativar' : 'Ativar', 'outline')
-      action.type = 'button'
-      action.addEventListener('click', async () => {
-        const enabled = !item.enabled
-        if (!await confirmAction(`${enabled ? 'Ativar' : 'Desativar'} o site ${item.name} (${item.domain}) no Nginx? A pasta e os arquivos do projeto serão preservados.`, enabled ? 'Ativar site' : 'Desativar site')) return
-        action.disabled = true
-        try {
-          const result = await api('/api/tasks', 'POST', { action: 'set_site_state', name: item.name, enabled })
-          await refresh()
-          notice(result.unchanged ? 'O site já estava nesse estado.' : `Site ${item.name} ${enabled ? 'ativado' : 'desativado'} no Nginx.`)
-        } catch (error) { notice(error.message, true); action.disabled = false }
-      })
-      actions.append(state, action)
-      line.append(actions)
-    }
-    if (item.managed) {
-      const backup = node('button', 'Backup criptografado', 'outline')
-      backup.type = 'button'
-      backup.addEventListener('click', () => openBackup(item.name))
-      line.append(backup)
-    }
+    line.append(node('span', '›', 'project-entry-chevron'))
     $('projects').append(line)
   }
   if (!p.projects.length) $('projects').append(node('p', 'Nenhum projeto localizado em /var/www/projetos.', 'muted'))
+  if (currentAppRoute.startsWith('project/')) showAppRoute(currentAppRoute)
   auditEvents = Array.isArray(a.events) ? a.events : []
   renderAudit()
 
@@ -405,7 +536,7 @@ async function bootstrapPage() {
     const sess = await api('/api/session')
     csrf = sess.csrf
     shown('dashboard'); $('logout').classList.remove('hidden')
-    activateTab('overview')
+    activateTab(validAppRoute(appRouteFromUrl()) ? appRouteFromUrl() : 'overview', {record:false})
     await refresh()
     await resumeUpdateIfNeeded()
   } catch { shown('login') }
@@ -465,7 +596,7 @@ $('login-form').addEventListener('submit', e => {
     const sess = await api('/api/login', 'POST', { password: data.password, otp: data.otp || '', trustDevice: data.trustDevice === 'yes' })
     csrf = sess.csrf
     e.target.reset(); shown('dashboard'); $('logout').classList.remove('hidden')
-    activateTab('overview')
+    activateTab(validAppRoute(appRouteFromUrl()) ? appRouteFromUrl() : 'overview', {record:false})
     await refresh()
     await resumeUpdateIfNeeded()
   })
@@ -609,17 +740,10 @@ $('package-form').addEventListener('submit', async e => {
   finally { submitButton.disabled = false }
 })
 
-function activateTab(tab) {
-  clearNotice()
-  if (!['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'security', 'audit', 'help'].includes(tab)) return
-  for (const page of document.querySelectorAll('.tab-page')) page.classList.toggle('hidden', page.id !== `page-${tab}`)
-  for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === tab)
-  if ($('more-dialog').open) $('more-dialog').close()
-  if (tab === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
-  if (tab === 'dependencies') refreshDependencies().catch(e => notice(e.message, true))
-  if (tab === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
-  if (tab === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
-  window.scrollTo({ top: 0, behavior: 'instant' })
+function activateTab(tab, { record = true } = {}) {
+  if (!mainTabs.has(tab) && !validAppRoute(tab)) return
+  if (record) navigateApp(tab)
+  else showAppRoute(tab)
 }
 for (const nav of document.querySelectorAll('[data-tab]')) nav.addEventListener('click', () => activateTab(nav.dataset.tab))
 $('more-nav').addEventListener('click', () => $('more-dialog').showModal())
@@ -699,14 +823,17 @@ $('revoke-devices').addEventListener('submit', e => {
 
 let lastRelease = null
 function showReleaseNotes(data) {
-  const wrapper = $('update-notes')
+  const button = $('update-release-help')
   const content = $('update-notes-content')
   content.replaceChildren()
+  $('update-readme-content').textContent = ''
+  $('update-readme-link').replaceChildren()
+  $('update-readme-button').classList.add('hidden')
   if (!data || data.releaseStatus !== 'published') {
-    wrapper.classList.add('hidden')
+    button.classList.add('hidden')
     return
   }
-  wrapper.classList.remove('hidden')
+  button.classList.remove('hidden')
   const note = String(data.releaseNotes || '').trim()
   const readme = String(data.readme || '').trim()
   if (note) {
@@ -720,19 +847,27 @@ function showReleaseNotes(data) {
     content.append(block)
   }
   if (readme) {
-    const details = node('details', '', 'release-block')
-    details.append(node('summary', 'Ler README.md desta versão'), node('pre', readme, 'release-text'))
+    $('update-readme-content').textContent = readme
+    $('update-readme-button').classList.remove('hidden')
     if (data.readmeUrl && /^https:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/blob\/v\d+\.\d+\.\d+\/README\.md$/i.test(data.readmeUrl)) {
       const link = node('a', 'Ver README completo no GitHub')
       link.href = data.readmeUrl
       link.target = '_blank'
       link.rel = 'noopener noreferrer'
-      details.append(link)
+      $('update-readme-link').append(link)
     }
-    content.append(details)
   }
   if (!note && !readme && !data.changes) content.append(node('p', 'Esta Release não possui notas nem README disponível na tag.', 'small muted'))
 }
+$('update-release-help').addEventListener('click', () => $('update-release-dialog').showModal())
+$('update-readme-button').addEventListener('click', () => {
+  $('update-release-dialog').close()
+  $('update-readme-dialog').showModal()
+})
+$('update-readme-back').addEventListener('click', () => {
+  $('update-readme-dialog').close()
+  $('update-release-dialog').showModal()
+})
 function rowInfo(container, title, value) { appendLine(container, title, value) }
 async function loadUpdateInfo() {
   const data = await api('/api/updates')
@@ -747,7 +882,6 @@ async function loadUpdateInfo() {
   const inProgress = updateBusy.has(data.status?.stage)
   $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady)
   $('upload-update').disabled = inProgress
-  if (data.status && updateBusy.has(data.status.stage)) $('view-update-progress').classList.remove('hidden')
   return data
 }
 $('check-update').addEventListener('click', async () => {
@@ -788,6 +922,29 @@ const updateBusy = new Set(['queued', 'checking', 'uploading', 'downloading', 'v
 let updateMethod = 'github'
 let updatePollingTimeout = null
 let currentOperation = null
+let latestUpdateReport = ''
+function composeUpdateReport(state) {
+  const when = state?.time || new Date().toISOString()
+  const error = String(state?.message || 'Falha sem mensagem do serviço.').slice(0, 1200)
+  const status = state?.httpStatus ? `HTTP ${state.httpStatus}` : 'não informado'
+  const hint = state?.httpStatus === 413
+    ? 'O servidor recusou o tamanho do envio. Verifique client_max_body_size no Nginx do painel (incluindo proxy intermediário).'
+    : /verificação de saúde/i.test(error)
+      ? 'Verifique a versão instalada, a resposta de /api/health e os logs de alsistemas-vps e alsistemas-updater na EC2.'
+      : 'Confira os logs de alsistemas-updater.service na VPS para identificar a causa.'
+  return [
+    'AL Sistemas | Relatório de erro de atualização',
+    `Data/hora (UTC): ${when}`,
+    `Método: ${state?.mode === 'file' ? 'Arquivo ZIP' : state?.mode === 'github' ? 'GitHub Releases' : updateMethod}`,
+    `Operação: ${state?.id || currentOperation || 'não iniciada'}`,
+    `Etapa: ${state?.stage || 'desconhecida'}`,
+    `Código HTTP: ${status}`,
+    `Versão do painel (navegador): ${document.querySelector('footer')?.textContent?.match(/v\d+\.\d+\.\d+/)?.[0] || 'não confirmada'}`,
+    `Mensagem: ${error}`,
+    `Orientação: ${hint}`,
+    'Observação: o relatório não substitui os logs da EC2; remova informações privadas antes de compartilhá-lo.'
+  ].join('\n')
+}
 function openProgress() {
   if (!$('update-progress-dialog').open) $('update-progress-dialog').showModal()
   $('view-update-progress').classList.remove('hidden')
@@ -812,6 +969,9 @@ function showUpdateProgress(state) {
     if (i === index && stage !== 'completed') li.classList.add('active')
     $('update-step-list').append(li)
   }
+  if (stage === 'failed' || stage === 'stalled') latestUpdateReport = composeUpdateReport(state)
+  else if (updateBusy.has(stage) || stage === 'completed') latestUpdateReport = ''
+  $('update-report-open').classList.toggle('hidden', !(stage === 'failed' || stage === 'stalled'))
   const terminal = ['completed', 'failed', 'up_to_date', 'stalled'].includes(stage)
   $('update-progress-reload').classList.toggle('hidden', stage !== 'completed')
   $('update-progress-reload').textContent = 'Atualizar página'
@@ -887,21 +1047,59 @@ $('update-cancel').addEventListener('click', () => $('update-dialog').close())
 $('update-progress-hide').addEventListener('click', () => $('update-progress-dialog').close())
 $('update-progress-close').addEventListener('click', () => $('update-progress-dialog').close())
 $('update-progress-reload').addEventListener('click', () => window.location.reload())
-$('view-update-progress').addEventListener('click', () => { openProgress(); beginUpdatePolling() })
-function sendZip(file, password, onProgress) {
+$('update-report-open').addEventListener('click', () => {
+  if (!latestUpdateReport) return
+  $('update-report-text').textContent = latestUpdateReport
+  $('update-report-dialog').showModal()
+})
+$('update-report-copy').addEventListener('click', async () => {
+  if (!latestUpdateReport) return
+  try {
+    await navigator.clipboard.writeText(latestUpdateReport)
+    notice('Relatório copiado. Revise antes de compartilhá-lo.')
+  } catch {
+    const selection = window.getSelection()
+    selection?.selectAllChildren($('update-report-text'))
+    notice('Selecione e copie o texto do relatório manualmente.', true)
+  }
+})
+$('update-report-download').addEventListener('click', () => {
+  if (!latestUpdateReport) return
+  const blob = new Blob([latestUpdateReport + '\n'], { type:'text/plain;charset=utf-8' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.href = url
+  link.download = `AL-Sistemas-erro-atualizacao-${new Date().toISOString().slice(0, 10)}.txt`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+$('view-update-progress').addEventListener('click', async () => {
+  openProgress()
+  try {
+    const info = await loadUpdateInfo()
+    if (info.status) {
+      updateMethod = info.status.mode || updateMethod
+      currentOperation = info.status.id || null
+      showUpdateProgress(info.status)
+      if (updateBusy.has(info.status.stage)) beginUpdatePolling()
+    } else showUpdateProgress({stage:'idle', message:'Nenhuma atualização registrada neste servidor.'})
+  } catch (error) { showUpdateProgress({stage:'failed', message:error.message, httpStatus:error.httpStatus}) }
+})
+function sendZip(file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/updates/upload')
     xhr.withCredentials = true
     xhr.setRequestHeader('Content-Type', 'application/zip')
     xhr.setRequestHeader('X-CSRF-Token', csrf)
-    xhr.setRequestHeader('X-Update-Password', password)
     xhr.upload.onprogress = event => { if (event.lengthComputable) onProgress(Math.min(100, Math.floor(100 * event.loaded / event.total))) }
     xhr.onload = () => {
       let result
       try { result = JSON.parse(xhr.responseText) } catch { result = {} }
       if (xhr.status >= 200 && xhr.status < 300) resolve(result)
-      else reject(new Error(result.error || `Falha no envio: HTTP ${xhr.status}`))
+      else { const error = new Error(result.error || `Falha no envio: HTTP ${xhr.status}`); error.httpStatus = xhr.status; reject(error) }
     }
     xhr.onerror = () => reject(new Error('Conexão perdida durante envio do arquivo'))
     xhr.ontimeout = () => reject(new Error('Tempo limite do envio excedido'))
@@ -918,18 +1116,17 @@ $('update-apply-form').addEventListener('submit', async e => {
     notice('Selecione um arquivo .zip válido de até 32 MiB.', true)
     return
   }
-  const password = form.elements.password.value
   button.disabled = true
   $('update-dialog').close()
   openProgress()
   showUpdateProgress({ stage:updateMethod === 'file' ? 'uploading' : 'queued', message:'Preparando solicitação…', percent:0 })
   try {
     const result = updateMethod === 'file'
-      ? await sendZip(file, password, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))
-      : await api('/api/updates/apply', 'POST', { password })
+      ? await sendZip(file, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))
+      : await api('/api/updates/apply', 'POST', {})
     form.reset()
     beginTrackedUpdate(result)
   } catch (error) {
-    showUpdateProgress({ stage:'failed', message:error.message })
-  } finally { button.disabled = false; form.elements.password.value = '' }
+    showUpdateProgress({ stage:'failed', message:error.message, mode:updateMethod, httpStatus:error.httpStatus })
+  } finally { button.disabled = false }
 })

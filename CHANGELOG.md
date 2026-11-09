@@ -1,3 +1,33 @@
+## 2.0.21 — Autoatualização sem senha repetida e instalação reversível (09/11/2026)
+
+- Atualização do próprio painel pelo GitHub ou ZIP passa a exigir apenas **sessão de administrador válida, origem confiável e token CSRF**. A senha não é solicitada novamente ao clicar em Instalar ou enviar o arquivo. O login existente continua obrigatório; mudar o repositório autorizado e outras ações privilegiadas permanecem separadamente protegidas.
+- `instalar.sh` prepara o núcleo em diretório temporário dentro de `/opt/alsistemas-vps/`, valida a estrutura e só então substitui `current` por renomeação. Mantém cópia anterior, tenta restaurá-la em erro e aguarda a API `/api/health` responder com a versão esperada.
+- A reversão do atualizador deixa de apagar `current` antes da cópia: prepara e verifica o backup em pasta irmã, move a instalação atual para quarentena e restaura o código anterior; se uma renomeação falhar, tenta devolver a pasta ativa.
+- Corrigida permanentemente a incompatibilidade observada na EC2: `/var/backups/alsistemas` é criado como root-only e explicitamente incluído em `ReadWritePaths` de `alsistemas-vps.service`, sem desativar `ProtectSystem=strict`.
+- Upload passa a limpar os listeners de erro/dreno da stream corretamente, evitando acúmulo de `error listeners` em uploads longos.
+- Novos testes de ativação/reversão simuladas, falha de cópia, autenticação de upload/instalação por sessão e integridade dos arquivos. **Não foi efetuada instalação real na EC2.**
+
+## 2.0.20 — Navegação por páginas nos projetos e manutenção da AWS (09/11/2026)
+
+- A listagem de **Projetos** abre uma página própria ao tocar em qualquer projeto, com visão geral, informações técnicas expansíveis, domínios e ações apropriadas para projetos gerenciados.
+- **IguatamaOnline → Manutenção na AWS** agora é uma página, com entradas organizadas para Diagnóstico, Permissões, Atualizações, Backups e Histórico/relatórios; cada categoria abre sua própria página e tem botão Voltar.
+- Diagnóstico mostra dados reais disponíveis na API de vistoria, distinguindo estimativa do pool PHP de verificação do ambiente efetivo; prévia de permissões não executa alterações.
+- Atualizações GitHub e ZIP permanecem isoladas do atualizador do próprio painel; o progresso fica em página independente, consultável depois de sair e voltar.
+- Senha administrativa e TOTP novo passam a ser solicitados em janela pequena somente após selecionar uma operação crítica; não permanecem expostos no formulário de manutenção. Cada operação consome um TOTP uma vez no servidor, mantendo o comportamento seguro da versão anterior.
+- Backups/reversão e relatório de último status/eventos auditados ganharam páginas próprias; relatórios podem ser copiados ou baixados, sem afirmar acesso a logs integrais do systemd.
+- Navegação por fragmentos de URL com histórico Voltar/Avançar e recuperação após recarregamento; rotas AWS só são válidas para o projeto IguatamaOnline. Sem alterar os endpoints administrativos, permissões, bancos de dados, o Nginx ou o diretório de testes.
+- Testes de regressão, verificação de rotas/estrutura e simulação visual em navegador móvel. Implantação na EC2 e validação no PHP-FPM real continuam pendentes.
+
+## 2.0.19 — Interface compacta, relatório de erros e correção HTTP 413 (09/11/2026)
+
+- Notas da versão em botão `?`, abrindo modal de novidades; README.md da Release em janela separada, sem cards extensos na tela principal.
+- Botões **GitHub**, **Arquivo ZIP** e **Andamento** em uma única linha compacta; acompanhamento fica sempre acessível, inclusive para falhas anteriores.
+- Após falha, pop-up de relatório contendo data/hora, origem, código HTTP, operação, etapa, mensagem e orientação; permite copiar ou baixar TXT. Não divulga credenciais ou os logs do sistema automaticamente.
+- Upload por arquivo volta a ser possível após implantação: Nginx mantém `64k` por padrão, mas libera exatamente as rotas autenticadas `/api/updates/upload` e `/api/projects/iguatamaonline/update/upload` com `32m`. Migração segura do vhost do painel em `--core-upgrade`, com backup e reversão de configuração em erro de `nginx -t`/reload; não altera vhosts externos.
+- Se o novo serviço falhar na verificação de saúde, o atualizador registra versão esperada, versão em disco, resposta do endpoint e estado do systemd antes da reversão. Diagnóstico de EC2 real ainda necessário.
+- Atualização do AL Sistemas segue exigindo senha uma vez por instalação, sem novo TOTP. Configurar GitHub e operações privilegiadas do IguatamaOnline continuam exigindo TOTP novo uma vez por operação.
+- Novos testes de interface, URLs restritas do Nginx e cenários de vhosts legados; validação real de upload, atualização e reinício na EC2 permanece pendente.
+
 ## 2.0.18 — Manutenção assistida do IguatamaOnline no painel (09/11/2026)
 
 - Novo acesso em **Projetos → IguatamaOnline → Manutenção na AWS**, sem conceder edição geral aos demais projetos externos.

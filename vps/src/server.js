@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { finished } from 'node:stream/promises'
 import { findTrusted, rememberDevice, revokeDevice, revokeAllDevices, trustedDevices, TRUST_MS } from './trusted.js'
 import { updateInfo, checkRelease, validateRepo, configureRepo } from './updates.js'
 import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
@@ -12,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.18'
+const VERSION = '2.0.21'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -102,13 +104,11 @@ async function uploadZip(req, onPercent = () => {}) {
       if (count > maximum || count > length)
         throw Object.assign(new Error('Upload excede o limite informado'), { status: 413 })
       digest.update(chunk)
-      if (!output.write(chunk)) await new Promise((resolve, reject) => {
-        output.once('drain', resolve)
-        output.once('error', reject)
-      })
+      if (!output.write(chunk)) await once(output, 'drain')
     }
     if (count !== length) throw Object.assign(new Error('Upload incompleto'), { status: 400 })
-    await new Promise((resolve, reject) => { output.end(resolve); output.once('error', reject) })
+    output.end()
+    await finished(output)
     return { name, sha256: digest.digest('hex') }
   } catch (error) {
     output.destroy()
@@ -326,10 +326,9 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/updates/apply' && req.method === 'POST') {
         if (!limit(ip, 'update-apply', 5)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
-        // A sessão já exige autenticação; a ação crítica solicita novamente a senha.
-        if (Object.keys(input).sort().join(',') !== 'password') return fail(res, 400, 'Parâmetros inválidos')
-        const admin = readJson('admin.json')
-        if (!admin || !verifyPassword(input.password, admin.passwordHash)) return fail(res, 401, 'Senha administrativa incorreta')
+        // Sessão válida e token CSRF já foram verificados acima.
+        // Para atualizar o núcleo, não exigir novamente a senha do login.
+        if (Object.keys(input).length !== 0) return fail(res, 400, 'Parâmetros inesperados')
         if (!updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
         if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(updateInfo(VERSION).status?.stage))
           return fail(res, 409, 'Atualização já está em andamento')
@@ -339,11 +338,8 @@ export function createServer({ taskRunner = runTask } = {}) {
       }
       if (path === '/api/updates/upload' && req.method === 'POST') {
         if (!limit(ip, 'update-upload', 5)) return fail(res, 429, 'Muitas tentativas de envio')
-        const password = req.headers['x-update-password']
-        if (typeof password !== 'string' || password.length < 1 || password.length > 256)
-          return fail(res, 400, 'Senha administrativa obrigatória')
-        const admin = readJson('admin.json')
-        if (!admin || !verifyPassword(password, admin.passwordHash)) return fail(res, 401, 'Senha administrativa incorreta')
+        // Upload requer sessão autenticada + mesma origem + CSRF,
+        // sem credenciais repetidas em cabeçalhos HTTP.
         const active = updateInfo(VERSION).status?.stage
         if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(active))
           return fail(res, 409, 'Atualização já está em andamento')

@@ -157,6 +157,29 @@ def wait_healthy(version, timeout=65):
     return False
 
 
+def health_diagnostics(expected):
+    """Informações mínimas e seguras para distinguir falha de API, serviço e versão."""
+    result = {'expectedVersion': expected}
+    try:
+        result['diskVersion'] = read_current()
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        result['diskVersion'] = 'indisponível'
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8181/api/health', timeout=4) as response:
+            data = json.loads(response.read(4096))
+            result['httpStatus'] = response.status
+            result['healthVersion'] = str(data.get('version', 'ausente'))[:30]
+            result['healthOk'] = data.get('ok') is True
+    except Exception as error:
+        result['healthErrorType'] = type(error).__name__
+    try:
+        probe = subprocess.run(['/usr/bin/systemctl', 'is-active', 'alsistemas-vps'], capture_output=True, text=True, timeout=5)
+        result['service'] = probe.stdout.strip()[:30] or 'indisponível'
+    except (OSError, subprocess.TimeoutExpired):
+        result['service'] = 'indisponível'
+    return result
+
+
 def trusted_local_archive(archive):
     if archive.is_symlink() or not archive.is_file():
         return False
@@ -188,6 +211,31 @@ def run_installer(root):
     proc = subprocess.run(['/usr/bin/bash', str(root / 'instalar.sh'), '--allow-existing-host', '--core-upgrade'], cwd=root, capture_output=True, timeout=330)
     if proc.returncode != 0:
         raise RuntimeError('Instalador falhou: ' + proc.stderr.decode('utf-8', 'replace')[-350:])
+
+
+def restore_core_safely(saved, target):
+    """Preparar cópia íntegra antes de trocar o diretório ativo.
+
+    Em falha durante a preparação, mantém `current` intacto. Na falha de
+    renomeação, devolve a pasta ativa ao caminho original.
+    """
+    if saved.is_symlink() or not saved.is_dir() or not (saved / 'src/server.js').is_file():
+        raise RuntimeError('Backup anterior incompleto; instalação atual preservada')
+    if target.is_symlink() or not target.is_dir():
+        raise RuntimeError('Caminho do núcleo ativo não é um diretório seguro')
+    staged = target.parent / f'.restore-staged-{os.getpid()}-{int(time.time() * 1000)}'
+    failed = target.parent / f'.failed-update-{os.getpid()}-{int(time.time() * 1000)}'
+    # Não excluir `target` antes de termos um destino pronto e validado.
+    shutil.copytree(saved, staged, symlinks=True)
+    if not (staged / 'src/server.js').is_file() or not (staged / 'package.json').is_file():
+        raise RuntimeError('Cópia temporária da reversão está incompleta')
+    os.rename(target, failed)
+    try:
+        os.rename(staged, target)
+    except Exception:
+        os.rename(failed, target)
+        raise
+    return failed
 
 
 def apply(request=None):
@@ -269,18 +317,32 @@ def apply(request=None):
             run_installer(unpack)
             status('verifying', 'Aguardando nova versão responder à verificação de saúde', target=installed)
             if read_current() != installed or not wait_healthy(installed):
-                raise RuntimeError('A nova versão não passou na verificação de saúde')
+                raise RuntimeError('A nova versão não passou na verificação de saúde: ' + json.dumps(health_diagnostics(installed), ensure_ascii=False))
         except Exception as err:
-            status('rolling_back', 'Instalação falhou; restaurando versão anterior', target=installed)
-            shutil.rmtree(TARGET)
-            shutil.copytree(snapshot / 'current', TARGET, symlinks=True)
+            status('rolling_back', 'Instalação falhou; preparando restauração segura', target=installed)
+            rollback_errors = []
+            try:
+                restore_core_safely(snapshot / 'current', TARGET)
+            except Exception as restore_error:
+                rollback_errors.append('código: ' + str(restore_error))
             for dest, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers'),
                                (Path('/usr/local/libexec/alsistemas-updater'), 'updater'),
                                (Path('/etc/systemd/system/alsistemas-updater.service'), 'updater-service')):
-                if (snapshot / name).is_file(): shutil.copy2(snapshot / name, dest)
-            subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], timeout=15, check=True)
-            subprocess.run(['/usr/bin/systemctl', 'restart', 'alsistemas-vps'], timeout=30, check=True)
-            raise RuntimeError('Instalação revertida: ' + str(err)) from err
+                if (snapshot / name).is_file():
+                    try:
+                        shutil.copy2(snapshot / name, dest)
+                    except OSError as restore_error:
+                        rollback_errors.append(name + ': ' + str(restore_error))
+            try:
+                subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], timeout=15, check=True)
+                subprocess.run(['/usr/bin/systemctl', 'restart', 'alsistemas-vps'], timeout=30, check=True)
+                if not wait_healthy(current, timeout=30):
+                    rollback_errors.append('versão anterior não respondeu à verificação de saúde')
+            except Exception as restore_error:
+                rollback_errors.append('serviço: ' + str(restore_error))
+            if rollback_errors:
+                raise RuntimeError('Falha na instalação (' + str(err) + '); reversão não confirmada: ' + '; '.join(rollback_errors)) from err
+            raise RuntimeError('Instalação revertida e versão anterior verificada: ' + str(err)) from err
         status('completed', 'Versão instalada e verificada. Atualize a página para carregar a nova interface.',
                installed=installed, percent=100)
 
