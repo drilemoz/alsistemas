@@ -1,0 +1,49 @@
+name: AL Sistemas VPS - validacao
+on:
+  push:
+    paths:
+      - 'vps/**'
+      - 'instalar.sh'
+      - 'inicio-termux.sh'
+      - 'bootstrap-vps.sh'
+      - 'tutorial-instalacao.html'
+      - 'tools/assinar-release.sh'
+      - 'vps/admin/packages.py'
+      - '.github/workflows/vps-signed-release.yml'
+      - 'CHANGELOG.md'
+      - '.github/workflows/vps-tests.yml'
+  pull_request:
+    paths:
+      - 'vps/**'
+      - 'instalar.sh'
+      - 'inicio-termux.sh'
+      - 'bootstrap-vps.sh'
+      - 'tutorial-instalacao.html'
+      - 'tools/assinar-release.sh'
+      - 'vps/admin/packages.py'
+      - '.github/workflows/vps-signed-release.yml'
+      - 'CHANGELOG.md'
+      - '.github/workflows/vps-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check JavaScript
+        run: cd vps && npm run check && node --check public/app.js && node --check src/dependencies.js
+      - name: Node tests
+        run: cd vps && npm test
+      - name: Ensure GPG for encrypted-backup tests
+        run: command -v gpg || (sudo apt-get update && sudo apt-get install -y gnupg)
+      - name: Python helper unit tests
+        run: python3 -m unittest discover -s vps/tests -p 'test_*.py' -v
+      - name: Bash syntax
+        run: bash -n instalar.sh inicio-termux.sh bootstrap-vps.sh tools/assinar-release.sh
+      - name: Tutorial integrity
+        run: cmp tutorial-instalacao.html vps/public/tutorial-instalacao.html

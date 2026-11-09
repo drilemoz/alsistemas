@@ -1,0 +1,81 @@
+name: AL Sistemas VPS - Release assinada
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versao estavel x.y.z (igual vps/package.json)'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: als-vps-signed-release
+  cancel-in-progress: false
+jobs:
+  signed-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validar versao e codigo
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          value = os.environ['VERSION']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', value), 'Versao invalida'
+          assert json.loads(Path('vps/package.json').read_text())['version'] == value, 'Tag diverge da versao do codigo'
+          PY
+          cd vps && npm run check && npm test
+          cd ..
+          python3 -m unittest discover -s vps/tests -p 'test_*.py' -q
+          bash -n instalar.sh inicio-termux.sh bootstrap-vps.sh tools/assinar-release.sh
+      - name: Criar ZIP com arquivos rastreados
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, zipfile
+          from pathlib import Path
+          version = os.environ['VERSION']
+          out = Path(os.environ['RUNNER_TEMP']) / f'AL-Sistemas-v{version}-VPS.zip'
+          files = [os.fsdecode(x) for x in subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0') if x]
+          with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              for file in sorted(files):
+                  if Path(file).is_symlink(): raise SystemExit('Link nao permitido: '+file)
+                  z.write(file, file)
+          print('ZIP gerado para assinatura com', len(files), 'arquivos')
+          PY
+      - name: Assinar pacote com chave privada do GitHub Secret
+        env:
+          VERSION: ${{ inputs.version }}
+          SIGNING_KEY_B64: ${{ secrets.ALS_RELEASE_ED25519_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SIGNING_KEY_B64" ]] || { echo 'Configure ALS_RELEASE_ED25519_PRIVATE_KEY_B64 antes de publicar.' >&2; exit 1; }
+          key="$RUNNER_TEMP/als-private-signing.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077; printf '%s' "$SIGNING_KEY_B64" | base64 --decode > "$key")
+          ./tools/assinar-release.sh "$key" "$RUNNER_TEMP/AL-Sistemas-v${VERSION}-VPS.zip" "$RUNNER_TEMP/signed-release"
+      - name: Publicar Release no GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ ! -z "$VERSION" ]]
+          gh release view "v$VERSION" >/dev/null 2>&1 && { echo 'Release ja existe; a operacao nao sobrescreve publicacoes.'; exit 1; }
+          gh release create "v$VERSION" \
+            "$RUNNER_TEMP/signed-release/AL-Sistemas-v$VERSION-VPS.zip" \
+            "$RUNNER_TEMP/signed-release/update-manifest.json" \
+            "$RUNNER_TEMP/signed-release/update-manifest.json.sig" \
+            --target "$GITHUB_SHA" --title "AL Sistemas VPS v$VERSION" \
+            --notes "Atualizacao assinada do AL Sistemas VPS. Verifique o CHANGELOG do repositorio antes de instalar."

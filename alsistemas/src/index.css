@@ -1,0 +1,9 @@
+/* index.css — ponto de entrada de estilos.
+ * Não adicionar regras aqui. Editar os arquivos individuais:
+ *   styles/base.css   — Tailwind + reset global
+ *   styles/public.css — componentes do site público (.btn, .card, .prose-news…)
+ *   styles/admin.css  — design system do painel (.admin-shell, .adm-*)
+ */
+@import './styles/base.css';
+@import './styles/public.css';
+@import './styles/admin.css';

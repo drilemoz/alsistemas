@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: 'Nunito', sans-serif; scroll-behavior: smooth; }
+  body { @apply bg-sand-50 text-gray-900 antialiased; }
+
+  /* Títulos públicos usam Fraunces (display serif) */
+  h1, h2, h3, h4, h5, h6 { font-family: 'Fraunces', 'Georgia', serif; font-weight: 700; }
+
+  /* Admin mantém Geist/Nunito (sobrescrito pelo .admin-shell) */
+  .admin-shell h1, .admin-shell h2, .admin-shell h3,
+  .admin-shell h4, .admin-shell h5, .admin-shell h6 {
+    font-family: var(--adm-font); font-weight: 600;
+  }
+}

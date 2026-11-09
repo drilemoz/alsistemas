@@ -1,0 +1,269 @@
+/*
+ * ds-extensions.css — Complemento do Design System do AL Sistemas.
+ *
+ * ┌──────────────────────────────────────────────────────────────┐
+ * │  Importe APÓS admin.css em main.jsx ou App.jsx               │
+ * │  import './styles/admin.css'                                  │
+ * │  import './styles/ds-extensions.css'                          │
+ * └──────────────────────────────────────────────────────────────┘
+ *
+ * Este arquivo:
+ *   1. Corrige inconsistências de espaçamento do admin.css base.
+ *   2. Adiciona variantes de badge que faltavam.
+ *   3. Padroniza o modal de overlay.
+ *   4. Define a escala de espaçamento como custom properties.
+ *   5. Adiciona utilitários de layout ausentes.
+ */
+
+/* ══════════════════════════════════════════════════════════════
+   ESCALA DE ESPAÇAMENTO — Custom Properties
+   ══════════════════════════════════════════════════════════════ */
+.admin-shell {
+  --ds-space-xs:   4px;
+  --ds-space-sm:   6px;
+  --ds-space-md:   8px;
+  --ds-space-lg:   12px;
+  --ds-space-xl:   16px;
+  --ds-space-xl2:  20px;
+  --ds-space-xl3:  24px;
+  --ds-space-xl4:  32px;
+  --ds-space-xl5:  48px;
+
+  /* Escala de border-radius padronizada */
+  --ds-radius-xs:  4px;
+  --ds-radius-sm:  6px;
+  --ds-radius-md:  8px;
+  --ds-radius-lg:  10px;   /* = var(--adm-radius) */
+  --ds-radius-xl:  12px;
+  --ds-radius-xl2: 14px;
+  --ds-radius-pill:20px;
+
+  /* Escala tipográfica */
+  --ds-font-xs:   10px;
+  --ds-font-sm:   11px;
+  --ds-font-base: 12px;
+  --ds-font-md:   13px;
+  --ds-font-lg:   15px;
+  --ds-font-xl:   18px;
+  --ds-font-page: 20px;
+  --ds-font-stat: 28px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BADGE — Variantes faltantes e correções
+   ══════════════════════════════════════════════════════════════ */
+
+/* Variante roxo */
+.adm-badge-purple {
+  background: rgba(139,92,246,.12);
+  color: #a78bfa;
+}
+
+/* Variante laranja */
+.adm-badge-orange {
+  background: rgba(249,115,22,.12);
+  color: #fb923c;
+}
+
+/* Variante verde explícita (complementa adm-badge-green) */
+.adm-badge-green {
+  background: rgba(34,197,94,.12);
+  color: #4ade80;
+}
+
+/* Normaliza padding e border-radius de todos os badges */
+.adm-badge {
+  border-radius: var(--ds-radius-xs);
+  padding: 2px var(--ds-space-sm);
+  font-size: var(--ds-font-sm);
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ALERT BOX — caixa de informação/alerta semântica
+   ══════════════════════════════════════════════════════════════ */
+.ds-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-md);
+  padding: var(--ds-space-md) var(--ds-space-lg);
+  border-radius: var(--ds-radius-md);
+  font-size: var(--ds-font-base);
+  line-height: 1.55;
+}
+.ds-alert-info   { background: rgba(37,99,235,.10); border: 1px solid rgba(37,99,235,.20); }
+.ds-alert-warn   { background: rgba(217,119,6,.10); border: 1px solid rgba(217,119,6,.20); }
+.ds-alert-danger { background: rgba(220,38,38,.10); border: 1px solid rgba(220,38,38,.20); }
+.ds-alert-success{ background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.20); }
+
+/* ══════════════════════════════════════════════════════════════
+   MODAL OVERLAY — padrão unificado
+   ══════════════════════════════════════════════════════════════ */
+.ds-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ds-space-xl);
+}
+
+.ds-modal {
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--adm-shadow-md);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
+}
+.ds-modal-sm { max-width: 400px; }
+.ds-modal-md { max-width: 520px; }
+.ds-modal-lg { max-width: 700px; }
+.ds-modal-xl { max-width: 900px; }
+
+.ds-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ds-space-lg) var(--ds-space-xl);
+  border-bottom: 1px solid var(--adm-border);
+  flex-shrink: 0;
+}
+.ds-modal-title {
+  font-size: var(--ds-font-lg);
+  font-weight: 700;
+  color: var(--adm-text);
+}
+.ds-modal-body {
+  padding: var(--ds-space-xl);
+  overflow-y: auto;
+  flex: 1;
+}
+.ds-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-space-sm);
+  padding: var(--ds-space-lg) var(--ds-space-xl);
+  border-top: 1px solid var(--adm-border);
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   STAT CARD — posicionamento da barra de cor superior
+   ══════════════════════════════════════════════════════════════ */
+.adm-stat-card { position: relative; overflow: hidden; }
+.ds-stat-accent-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: var(--ds-radius-lg) var(--ds-radius-lg) 0 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PAGE HEADER — padding corrigido (era inconsistente)
+   ══════════════════════════════════════════════════════════════ */
+.adm-page-header {
+  margin-bottom: var(--ds-space-xl2);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION LABEL — padrão único para todos os títulos de seção
+   ══════════════════════════════════════════════════════════════ */
+.ds-section-label {
+  font-size: var(--ds-font-sm);
+  font-weight: 700;
+  color: var(--adm-muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GRID DE STATS — responsivo corrigido
+   ══════════════════════════════════════════════════════════════ */
+.adm-stats-grid {
+  margin-bottom: var(--ds-space-xl2);
+}
+@media (max-width: 900px) {
+  .adm-stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .adm-stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SERVICE CHIP — indicador de saúde de serviço
+   ══════════════════════════════════════════════════════════════ */
+.ds-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-sm);
+  margin-bottom: var(--ds-space-lg);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CODE BLOCK — código inline padronizado
+   ══════════════════════════════════════════════════════════════ */
+.admin-shell code {
+  font-family: var(--adm-mono);
+  font-size: .92em;
+  background: var(--adm-surface2);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--ds-radius-xs);
+  padding: 1px 5px;
+  color: var(--adm-text);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DIVIDER — separador semântico
+   ══════════════════════════════════════════════════════════════ */
+.ds-divider {
+  border: none;
+  border-top: 1px solid var(--adm-border);
+  margin: var(--ds-space-xl) 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UTILITÁRIOS DE LAYOUT
+   ══════════════════════════════════════════════════════════════ */
+.ds-flex      { display: flex; }
+.ds-flex-col  { display: flex; flex-direction: column; }
+.ds-items-center { align-items: center; }
+.ds-justify-between { justify-content: space-between; }
+.ds-gap-sm    { gap: var(--ds-space-sm); }
+.ds-gap-md    { gap: var(--ds-space-md); }
+.ds-gap-lg    { gap: var(--ds-space-lg); }
+.ds-mb-lg     { margin-bottom: var(--ds-space-lg); }
+.ds-mb-xl     { margin-bottom: var(--ds-space-xl); }
+.ds-w-full    { width: 100%; }
+.ds-text-muted { font-size: var(--ds-font-base); color: var(--adm-muted); }
+.ds-text-mono  { font-family: var(--adm-mono); font-size: var(--ds-font-base); }
+.ds-truncate   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════════════
+   FOCO ACESSÍVEL — anel de foco visível em navegação por teclado
+   ══════════════════════════════════════════════════════════════ */
+.admin-shell :focus-visible {
+  outline: 2px solid var(--adm-accent);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-sm);
+}
+.admin-shell button:focus:not(:focus-visible),
+.admin-shell a:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PRINT — oculta elementos de UI ao imprimir
+   ══════════════════════════════════════════════════════════════ */
+@media print {
+  .adm-topnav, .adm-hamburger, .adm-page-actions, .adm-tabs { display: none !important; }
+  .adm-main { margin-top: 0 !important; padding: 0 !important; }
+}
