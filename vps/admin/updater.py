@@ -81,7 +81,7 @@ def fetch(url, repo, limit, asset=None):
     handler = SafeRedirect()
     handler.repo, handler.asset = repo, asset
     opener = urllib.request.build_opener(handler)
-    req = urllib.request.Request(url, headers={'User-Agent': 'AL-Sistemas-VPS/2.0.9', 'Accept': 'application/vnd.github+json'})
+    req = urllib.request.Request(url, headers={'User-Agent': 'AL-Sistemas-VPS/2.0.10', 'Accept': 'application/vnd.github+json'})
     with opener.open(req, timeout=25) as res:
         length = res.headers.get('Content-Length')
         if length and int(length) > limit:

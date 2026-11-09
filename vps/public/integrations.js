@@ -52,9 +52,9 @@ function renderDns(payload) {
     empty.className = 'small muted'
     empty.textContent = 'Nenhum registro retornado. Verifique o domínio e as permissões da API.'
     container.append(empty)
-    return 0
+    return { shown: 0, total: Number.isInteger(payload?.total) && payload.total >= 0 ? payload.total : 0 }
   }
-  for (const record of records.slice(0, 200)) {
+  for (const record of records.slice(0, 500)) {
     const card = document.createElement('div')
     card.className = 'dns-record'
     const title = document.createElement('strong')
@@ -63,12 +63,15 @@ function renderDns(payload) {
     host.textContent = String(record.name ?? record.host ?? '@')
     const detail = document.createElement('div')
     const value = document.createElement('code')
-    value.textContent = typeof record.value === 'string' ? record.value : JSON.stringify(record.value ?? record.data ?? record)
+    const { type, name, ttl, group, ...other } = record
+    const details = Object.keys(other).length ? other : { ttl: ttl ?? 'não informado' }
+    value.textContent = Object.entries(details).map(([field, data]) => `${field}: ${typeof data === 'string' ? data : JSON.stringify(data)}`).join(' · ')
+    if (ttl !== undefined) value.textContent += ` · TTL: ${ttl}s`
     detail.append(value)
     card.append(title, host, detail)
     container.append(card)
   }
-  return records.length
+  return { shown: Math.min(records.length, 500), total: Number.isInteger(payload?.total) && payload.total >= 0 ? payload.total : records.length }
 }
 $('spaceship-dns').addEventListener('click', async () => {
   const domain = spaceshipDomain.value.trim().toLowerCase()
@@ -82,8 +85,10 @@ $('spaceship-dns').addEventListener('click', async () => {
   $('spaceship-results').replaceChildren()
   try {
     const result = await api(`/api/integrations/spaceship/dns?domain=${encodeURIComponent(domain)}`)
-    const count = renderDns(result.records)
-    $('spaceship-query-status').textContent = `Conexão autorizada. ${count} registro(s) retornado(s).`
+    const { shown, total } = renderDns(result.records)
+    $('spaceship-query-status').textContent = total > shown
+      ? `Conexão autorizada. Exibindo ${shown} de ${total} registros. Esta versão consulta somente a primeira página.`
+      : `Conexão autorizada. ${shown} registro(s) retornado(s).`
     $('spaceship-status').textContent = '● Configurada · conexão validada nesta sessão'
   } catch (error) {
     $('spaceship-query-status').textContent = `Falha na consulta: ${error.message}`

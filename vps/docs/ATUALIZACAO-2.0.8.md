@@ -1,5 +1,4 @@
-# AL Sistemas 2.0.9
+# AL Sistemas 2.0.8
 
-Central APIs e Integrações: credenciais Spaceship protegidas com AES-256-GCM, consulta DNS, remoção e auditoria. Não altera DNS nem cria sites automaticamente.
-
-Reinicie o serviço após a atualização. Faça backup de `/var/lib/alsistemas`, incluindo `integrations.key`, pois sem essa chave as credenciais não podem ser recuperadas.
+Primeira versão do menu de Integrações com armazenamento criptografado e consulta inicial DNS da Spaceship.
+A consulta foi aprimorada e corrigida nas versões posteriores. Não usar esta versão para validar a conectividade real.

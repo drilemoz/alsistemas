@@ -4,7 +4,7 @@ import { dataPath, readJson, writeJson } from './store.js'
 
 const FILE = 'integrations-spaceship.json'
 const KEY_FILE = 'integrations.key'
-const API = 'https://api.spaceship.com'
+const API = 'https://spaceship.dev/api'
 function key() {
   const file = dataPath(KEY_FILE)
   try {
@@ -50,11 +50,42 @@ export async function spaceshipRequest(endpoint, { fetchImpl = fetch } = {}) {
   const timer = setTimeout(() => controller.abort(), 10000)
   try {
     const response = await fetchImpl(`${API}${endpoint}`, { headers: { 'X-API-Key': credentials.apiKey, 'X-API-Secret': credentials.apiSecret, Accept: 'application/json' }, signal: controller.signal, redirect: 'error' })
-    if (!response.ok) throw new Error(`Spaceship retornou HTTP ${response.status}`)
+    if (!response.ok) {
+      const explanations = {
+        400: 'consulta DNS rejeitada; verifique os parâmetros',
+        401: 'API Key ou API Secret não autorizadas',
+        403: 'a chave não possui permissão dnsrecords:read',
+        404: 'domínio ou zona DNS não encontrados nesta conta',
+        422: 'consulta DNS não processável para este domínio',
+        429: 'limite de consultas da API atingido; tente novamente mais tarde'
+      }
+      const detail = explanations[response.status] || (response.status >= 500 ? 'serviço temporariamente indisponível' : 'falha de consulta')
+      const error = new Error(`Spaceship HTTP ${response.status}: ${detail}`)
+      error.status = response.status === 429 ? 429 : 502
+      throw error
+    }
     return await response.json()
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeout = new Error('Spaceship não respondeu em 10 segundos')
+      timeout.status = 504
+      throw timeout
+    }
+    if (error.status) throw error
+    const unavailable = new Error('Não foi possível conectar à Spaceship; verifique a rede da VPS e tente novamente')
+    unavailable.status = 502
+    throw unavailable
   } finally { clearTimeout(timer) }
 }
 export async function listSpaceshipDns(domain, options) {
   if (typeof domain !== 'string' || domain.length > 253 || !/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(domain)) throw new Error('Domínio inválido')
-  return spaceshipRequest(`/v1/dns/records/${encodeURIComponent(domain)}`, options)
+  // A API exige take e skip. Uma página de 500 cobre a maioria das zonas;
+  // o campo total permite informar ao operador se há registros além dessa página.
+  const result = await spaceshipRequest(`/v1/dns/records/${encodeURIComponent(domain)}?take=500&skip=0`, options)
+  if (!result || !Array.isArray(result.items) || !Number.isSafeInteger(result.total) || result.total < 0) {
+    const error = new Error('A Spaceship retornou uma lista DNS em formato inesperado')
+    error.status = 502
+    throw error
+  }
+  return { items: result.items.slice(0, 500), total: result.total }
 }

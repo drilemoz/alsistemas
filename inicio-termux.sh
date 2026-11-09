@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.9 — envio e instalação assistidos a partir do Termux.
+# AL Sistemas VPS 2.0.10 — envio e instalação assistidos a partir do Termux.
 # Nunca desabilita verificação da chave do host SSH nem publica a porta 8181.
 set -Eeuo pipefail
 umask 077
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ZIP="$HOME/storage/downloads/AL-Sistemas-v2.0.9-VPS.zip"
+ZIP="$HOME/storage/downloads/AL-Sistemas-v2.0.10-VPS.zip"
 HOST='' USER_NAME='ubuntu' KEY='' PORT='22'
 SERVER_ARGS=() AUTO_YES=0
 usage() {
   cat <<'HELP'
 Uso: bash inicio-termux.sh --host IP_OU_DOMINIO [opções]
-  --zip CAMINHO           ZIP completo (padrão: Downloads/AL-Sistemas-v2.0.9-VPS.zip)
+  --zip CAMINHO           ZIP completo (padrão: Downloads/AL-Sistemas-v2.0.10-VPS.zip)
   --key CAMINHO           chave SSH privada guardada no Termux
   --user USUARIO          usuário SSH (padrão: ubuntu)
   --ssh-port PORTA        porta do SSH (padrão: 22)

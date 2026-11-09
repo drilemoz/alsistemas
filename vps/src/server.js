@@ -12,7 +12,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.9'
+const VERSION = '2.0.10'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -102,7 +102,7 @@ function acceptedOrigin(req) {
 }
 function serveUi(req, res) {
   const pathname = new URL(req.url, 'http://localhost').pathname
-  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
+  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
   const asset = paths[pathname]
   if (!asset) return fail(res, 404, 'Não encontrado')
   const source = path.join(publicDir, asset[0])
@@ -249,7 +249,7 @@ export function createServer({ taskRunner = runTask } = {}) {
         try {
           const domain = new URL(req.url, 'http://localhost').searchParams.get('domain')
           return json(res, 200, { records: await listSpaceshipDns(domain) })
-        } catch (e) { return fail(res, 400, e.message) }
+        } catch (e) { return fail(res, e.status || 400, e.message) }
       }
       if (path === '/api/updates' && req.method === 'GET') return json(res, 200, updateInfo(VERSION))
       if (path === '/api/updates/check' && req.method === 'POST') {

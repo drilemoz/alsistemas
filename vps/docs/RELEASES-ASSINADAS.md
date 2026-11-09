@@ -13,13 +13,13 @@ openssl pkey -in signing-private.pem -pubout -out update-public-key.pem
 chmod 600 signing-private.pem
 ```
 
-Guarde a chave **privada** com backup criptografado. Não a envie ao ChatGPT, ao Google Drive nem para o repositório. Envie **somente a chave pública** para a VPS por SCP e instale com o instalador do pacote 2.0.9:
+Guarde a chave **privada** com backup criptografado. Não a envie ao ChatGPT, ao Google Drive nem para o repositório. Envie **somente a chave pública** para a VPS por SCP e instale com o instalador do pacote 2.0.10:
 
 ```bash
 sudo bash instalar.sh --allow-existing-host --update-key-file /home/ubuntu/update-public-key.pem
 ```
 
-O comando acima só vale se você estiver dentro da pasta extraída da versão 2.0.9 e o arquivo público já tiver sido enviado. Ele preserva a origem HTTPS do painel durante atualizações existentes.
+O comando acima só vale se você estiver dentro da pasta extraída da versão 2.0.10 e o arquivo público já tiver sido enviado. Ele preserva a origem HTTPS do painel durante atualizações existentes.
 
 ## Opção A: assinatura manual
 
@@ -27,12 +27,12 @@ Após compilar e testar a nova versão, utilize em ambiente confiável:
 
 ```bash
 ./tools/assinar-release.sh /local/seguro/signing-private.pem \
-  AL-Sistemas-v2.0.9-VPS.zip /local/saida-release
+  AL-Sistemas-v2.0.10-VPS.zip /local/saida-release
 ```
 
-O script verifica a versão interna e caminhos do ZIP e gera um diretório com exatamente três assets a publicar na Release `v2.0.9`:
+O script verifica a versão interna e caminhos do ZIP e gera um diretório com exatamente três assets a publicar na Release `v2.0.10`:
 
-- `AL-Sistemas-v2.0.9-VPS.zip`
+- `AL-Sistemas-v2.0.10-VPS.zip`
 - `update-manifest.json`
 - `update-manifest.json.sig`
 
@@ -42,9 +42,9 @@ O script verifica a versão interna e caminhos do ZIP e gera um diretório com e
 
 O projeto inclui `.github/workflows/vps-signed-release.yml`, com acionamento manual (`workflow_dispatch`) somente a partir da branch `main`. Ele valida o código, cria o ZIP do commit e assina com a chave privada obtida de um GitHub Secret chamado `ALS_RELEASE_ED25519_PRIVATE_KEY_B64`.
 
-- Faça commit do código-fonte da 2.0.9 no GitHub antes de iniciar o workflow; a versão em `vps/package.json` deve coincidir com `2.0.9`.
+- Faça commit do código-fonte da 2.0.10 no GitHub antes de iniciar o workflow; a versão em `vps/package.json` deve coincidir com `2.0.10`.
 - Configure **uma vez** o Secret com a chave privada codificada em base64 de uma linha. No Termux, `base64 -w0 /local/seguro/signing-private.pem` cria o valor, que não deve aparecer em capturas, logs ou Git.
-- Acione o workflow manualmente informando `2.0.9` na versão; acompanhe o Actions e confirme a Release pública antes de usar o painel.
+- Acione o workflow manualmente informando `2.0.10` na versão; acompanhe o Actions e confirme a Release pública antes de usar o painel.
 - Em caso de falha, não publique manualmente assets incompletos ou assinatura diferente daquela da VPS.
 
 O workflow usa permissão `contents: write` apenas na tarefa de publicar e não sobrescreve Releases existentes. Configure proteção para a branch principal, pois qualquer código executado com acesso ao Secret de assinatura precisa ser confiável.

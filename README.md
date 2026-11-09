@@ -1,6 +1,6 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.9 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.10 + legado preservado
 
-A versão 2.0.9 corrige a identificação de versões no GitHub Manager e os testes CI de permissões e assinatura digital sem enfraquecer as restrições de produção. Mantém a verificação Nginx em unidade systemd separada, o catálogo limitado de pacotes e o atualizador de Releases assinadas da 2.0.6. Preserva o refinamento móvel, pop-ups e instalação assistida da 2.0.5. Mantém o núcleo da 2.0.4, autenticador/dispositivos confiáveis, backups limitados e atualizador de Releases assinadas. O legado React/Express/MongoDB é preservado, mas **não é executado** pelo painel VPS leve.
+A versão 2.0.10 corrige o carregamento real da Central de APIs e ajusta as consultas à API oficial da Spaceship (URL, paginação obrigatória e erros), sem alterar serviços existentes ou permissões de produção. Mantém a verificação Nginx em unidade systemd separada, o catálogo limitado de pacotes e o atualizador de Releases assinadas da 2.0.6. Preserva o refinamento móvel, pop-ups e instalação assistida da 2.0.5. Mantém o núcleo da 2.0.4, autenticador/dispositivos confiáveis, backups limitados e atualizador de Releases assinadas. O legado React/Express/MongoDB é preservado, mas **não é executado** pelo painel VPS leve.
 
 **Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave privada, e as atualizações continuam exigindo Release assinada e chave pública instalada).
 
@@ -12,7 +12,7 @@ Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend)
 
 ---
 
-> **Guia de atualização 2.0.9:** [vps/docs/ATUALIZACAO-2.0.9.md](vps/docs/ATUALIZACAO-2.0.9.md).
+> **Guia de atualização 2.0.10:** [vps/docs/ATUALIZACAO-2.0.10.md](vps/docs/ATUALIZACAO-2.0.10.md).
 
 > **Histórico 2.0.4:** leia [vps/docs/ATUALIZACAO-2.0.4.md](vps/docs/ATUALIZACAO-2.0.4.md).
 
@@ -158,7 +158,7 @@ Consulte o [CAPACITOR.md](./CAPACITOR.md) para build manual.
 O serviço "adormece" após 15 minutos sem uso — a primeira requisição pode levar 30–60 s.  
 Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14 minutos e manter sempre ativo.
 
-## Novos recursos da 2.0.9
+## Recursos de versões anteriores preservados
 
 - **Nginx:** unit systemd `alsistemas-nginx-check.service` executa `/usr/sbin/nginx -t` fora do isolamento de montagem do backend, sem conceder privilégios adicionais ao Node. A operação continua somente leitura em relação aos arquivos de configuração.
 - **Dependências:** inventário real com `dpkg-query` e instalação opcional de um catálogo limitado (PHP 8.3 cURL, mbstring, XML, MySQL, ZIP, GD, Intl e Composer) pelo serviço dedicado `alsistemas-package-installer.service`, exigindo senha e um TOTP novo. Não executa comandos livres, nem instala npm/pip arbitrários.
@@ -168,5 +168,5 @@ Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14
 Leia `vps/docs/RELEASES-ASSINADAS.md` e `vps/docs/PACOTES.md`. Não execute o atualizador em produção sem homologar uma Release assinada em uma VPS de teste.
 
 
-### Novidade 2.0.9
-Central de APIs e Integrações com Spaceship para salvar/remover credenciais e consultar registros DNS. Provisionamento automático ainda não implementado.
+### Correções da 2.0.10
+A Central de APIs agora carrega o script no servidor (HTTP 200), usa o endpoint oficial da Spaceship e a paginação obrigatória. O tutorial de configuração pelo botão ? foi mantido e ganhou acesso direto ao API Manager. Provisionamento automático e escrita DNS ainda não foram implementados.

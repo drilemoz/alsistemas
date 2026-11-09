@@ -1,4 +1,4 @@
-# Dependências e Pacotes: escopo da 2.0.9
+# Dependências e Pacotes: escopo da 2.0.10
 
 A tela **Mais → Dependências** mostra o inventário real de oito pacotes do APT via `dpkg-query`, consultado somente quando o usuário entra no módulo ou solicita atualização.
 

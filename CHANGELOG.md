@@ -1,3 +1,12 @@
+## 2.0.10 — 09/11/2026 — Correções verificadas de implantação e Spaceship
+
+- Corrigido HTTP 404 na entrega de `integrations.js`, que impedia o funcionamento da Central de APIs após abrir o painel.
+- Base HTTPS da Spaceship corrigida conforme documentação oficial; consulta DNS agora envia `take` e `skip` obrigatórios.
+- Respostas HTTP da Spaceship têm erros específicos e timeout; limite de 500 registros por página informado ao usuário.
+- Melhoria na apresentação de valores dos registros DNS, sem `innerHTML` de conteúdo externo.
+- Testes de recurso público real, contrato de consulta DNS, respostas de erro, sintaxe e documentação.
+- Versões e arquivos ZIP sincronizados em 2.0.10; nenhuma alteração foi aplicada na AWS EC2.
+
 ## 2.0.9 — 09/11/2026
 - Central de APIs: tutorial contextual da Spaceship com botão ? e passo a passo.
 - Exibição segura de registros DNS, status de consulta e diagnóstico de erros sem imprimir credenciais.

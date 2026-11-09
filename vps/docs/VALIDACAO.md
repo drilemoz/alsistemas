@@ -1,6 +1,6 @@
-# Validação — AL Sistemas VPS 2.0.9
+# Validação — AL Sistemas VPS 2.0.10
 
-Data: 2026-11-09. Fonte derivada da 2.0.6. **Nenhuma alteração foi aplicada na EC2.**
+Data: 2026-11-09. Código auditado a partir da versão 2.0.9. **Nenhuma alteração foi aplicada na EC2.**
 
 ## Diagnóstico do workflow fornecido
 
@@ -14,14 +14,23 @@ O arquivo `alsistemas-AL-Sistemas-VPS-validacao-2-logs.zip` aponta 4 falhas na e
 
 ## Resultados locais
 
-- 23/23 testes Node.js aprovados (Node 22.16 local, CI configurado para Node 24).
+- 30/30 testes Node.js aprovados (Node 22.16 local, CI configurado para Node 24), incluindo requisições HTTP reais para os scripts da interface e simulação da Spaceship com contrato oficial.
 - 27/27 testes Python aprovados **como usuário não privilegiado**, simulando o runner GitHub Actions (Python 3.13 local; workflow Ubuntu 24.04 usa Python 3.12).
 - Sintaxe JavaScript, Bash e cópia do tutorial HTML confirmadas.
-- O SHA-256 do ZIP é registrado em arquivo anexo `.sha256`.
+- Integridade do ZIP e manifesto `SHA256SUMS.txt` verificados localmente; API Spaceship não consultada com credenciais de produção.
 
 ## Ainda pendente
 
 - Rodar o workflow corrigido no GitHub Actions e registrar novo run de sucesso.
-- Testar a instalação da 2.0.9 e atualização de Release assinada no Ubuntu 24.04 real.
+- Testar a instalação da 2.0.10 e atualização de Release assinada no Ubuntu 24.04 real.
 - Confirmar no GitHub Manager que o ZIP e a branch `main` mostram versão após publicar os arquivos novos.
 - Nenhum pacote APT, atualização de VPS, alteração de site ou migração de bancos foi executada por estes testes.
+
+## Erros encontrados na versão 2.0.9
+
+- `/integrations.js` retornava HTTP 404, impedindo a inicialização da Central de APIs.
+- Endpoint configurado como `https://api.spaceship.com` em vez de `https://spaceship.dev/api`.
+- Requisição DNS não incluía `take` e `skip`, exigidos pela documentação do provedor.
+- Guia de atualização da 2.0.9 era referenciado em README, mas não existia sob esse nome.
+
+Todos foram corrigidos na 2.0.10, sem alterar a configuração ou os dados da EC2. Testes Ubuntu real, atualização pelo GitHub e conexão autenticada com Spaceship permanecem pendentes.
