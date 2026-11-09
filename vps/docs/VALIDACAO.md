@@ -1,4 +1,4 @@
-# Validação — AL Sistemas VPS 2.0.10
+# Validação — AL Sistemas VPS 2.0.11
 
 Data: 2026-11-09. Código auditado a partir da versão 2.0.9. **Nenhuma alteração foi aplicada na EC2.**
 
@@ -22,7 +22,7 @@ O arquivo `alsistemas-AL-Sistemas-VPS-validacao-2-logs.zip` aponta 4 falhas na e
 ## Ainda pendente
 
 - Rodar o workflow corrigido no GitHub Actions e registrar novo run de sucesso.
-- Testar a instalação da 2.0.10 e atualização de Release assinada no Ubuntu 24.04 real.
+- Testar a instalação da 2.0.11 e atualização de Release assinada no Ubuntu 24.04 real.
 - Confirmar no GitHub Manager que o ZIP e a branch `main` mostram versão após publicar os arquivos novos.
 - Nenhum pacote APT, atualização de VPS, alteração de site ou migração de bancos foi executada por estes testes.
 
@@ -33,4 +33,4 @@ O arquivo `alsistemas-AL-Sistemas-VPS-validacao-2-logs.zip` aponta 4 falhas na e
 - Requisição DNS não incluía `take` e `skip`, exigidos pela documentação do provedor.
 - Guia de atualização da 2.0.9 era referenciado em README, mas não existia sob esse nome.
 
-Todos foram corrigidos na 2.0.10, sem alterar a configuração ou os dados da EC2. Testes Ubuntu real, atualização pelo GitHub e conexão autenticada com Spaceship permanecem pendentes.
+Todos foram corrigidos na 2.0.11, sem alterar a configuração ou os dados da EC2. Testes Ubuntu real, atualização pelo GitHub e conexão autenticada com Spaceship permanecem pendentes.

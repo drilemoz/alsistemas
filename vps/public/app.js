@@ -414,6 +414,8 @@ async function loadUpdateInfo() {
   if (data.status) rowInfo($('update-summary'), 'Última operação', `${data.status.stage}: ${data.status.message}`)
   $('update-repo').value = data.repo || 'drilemoz/alsistemas'
   document.querySelector('.repo-url').textContent = `https://github.com/${$('update-repo').value}`
+  const repo = data.repo || 'drilemoz/alsistemas'
+  $('github-releases-link').href = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\/[a-zA-Z0-9_.-]+$/.test(repo) ? `https://github.com/${repo}/releases` : 'https://github.com/drilemoz/alsistemas/releases'
   const inProgress = ['checking', 'downloading', 'validating', 'installing', 'rolling_back'].includes(data.status?.stage)
   $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady && data.signingReady)
   return data

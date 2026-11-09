@@ -1,4 +1,4 @@
-# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.10
+# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.11
 
 ## Superfícies e permissões
 
@@ -59,7 +59,7 @@ Faça backup completo fora da VPS antes de atualizar. Não crie hosts multiusuá
 - O bootstrap via Termux mantém verificação de host SSH ativa, usa lista de opções permitidas, valida pacote ZIP na VPS antes de executar e solicita confirmação após `--plan`.
 - Nenhum token nem senha SSH é incluído no ZIP.
 
-## 2.0.10: serviços privilegiados de função única
+## 2.0.11: serviços privilegiados de função única
 
 O helper web continua sendo executado com sudoers limitado. As verificações Nginx usam `systemctl start alsistemas-nginx-check.service`, unidade estática root-owned com `ExecStart=/usr/sbin/nginx -t`. O backend não define comandos.
 

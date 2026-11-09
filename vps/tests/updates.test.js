@@ -40,13 +40,45 @@ test('consulta GitHub apenas informa disponibilidade, não valida assinatura no 
 })
 
 
-test('GitHub sem Releases informa ausência, sem simular atualização', async () => {
+test('repositório público sem Release tem diagnóstico específico e não habilita instalação', async () => {
   configureRepo('drilemoz/alsistemas')
-  const result = await checkRelease('2.0.6', async (url) => {
-    assert.equal(url, 'https://api.github.com/repos/drilemoz/alsistemas/releases/latest')
-    return { ok: false, status: 404, headers: { get() { return null } } }
+  const urls = []
+  const result = await checkRelease('2.0.10', async (url) => {
+    urls.push(url)
+    if (url.endsWith('/releases/latest')) return { ok: false, status: 404 }
+    if (url === 'https://api.github.com/repos/drilemoz/alsistemas') return { ok: true, status: 200 }
+    throw new Error('URL inesperada: ' + url)
   })
+  assert.equal(urls.length, 2)
   assert.equal(result.available, false)
   assert.equal(result.assetsReady, false)
-  assert.match(result.message, /ainda não há Release/)
+  assert.equal(result.repoAccessible, true)
+  assert.equal(result.releaseStatus, 'no_stable_release')
+  assert.match(result.message, /não há Release estável pública/)
+})
+
+test('404 de repositório ausente ou privado não afirma que está acessível', async () => {
+  const result = await checkRelease('2.0.10', async (url) => ({ ok: false, status: 404 }))
+  assert.equal(result.available, false)
+  assert.equal(result.repoAccessible, false)
+  assert.equal(result.releaseStatus, 'repo_unavailable')
+  assert.match(result.message, /não encontrado ou privado/)
+})
+
+test('falha de rede ou rate limit não é confundida com ausência de Release', async () => {
+  await assert.rejects(checkRelease('2.0.10', async () => {
+    throw new Error('Falha de rede simulada')
+  }), /Falha de rede/)
+  await assert.rejects(checkRelease('2.0.10', async () => ({
+    ok: false, status: 403, headers: { get: key => key === 'x-ratelimit-remaining' ? '0' : null }
+  })), /Limite de consultas públicas/)
+})
+
+test('não usa fallback para ZIP da branch sem manifesto assinado', async () => {
+  const data = await checkRelease('2.0.10', async url => ({
+    ok: url.endsWith('/repos/drilemoz/alsistemas'), status: url.endsWith('/releases/latest') ? 404 : 200
+  }))
+  assert.equal(data.available, false)
+  assert.equal(data.assetsReady, false)
+  assert.equal(data.latest, undefined)
 })

@@ -1,3 +1,11 @@
+## 2.0.11 — 09/11/2026 — Diagnóstico de 404 em atualizações GitHub
+
+- HTTP 404 em `releases/latest` agora verifica também se o repositório existe e é acessível, distinguindo ausência de Release pública de repositório ausente/privado.
+- Limite de API (HTTP 403 com cota esgotada) ganha mensagem específica; falha de rede não é disfarçada de versão inexistente.
+- Tela de Atualizações mostra link para Releases e tutorial de assinatura Ed25519.
+- Não instala ZIP de branch não assinado: manifesto, assinatura e chave pública continuam obrigatórios.
+- Testes automatizados para os caminhos de erro e regressão; não houve instalação na EC2 nem publicação remota de Release.
+
 ## 2.0.10 — 09/11/2026 — Correções verificadas de implantação e Spaceship
 
 - Corrigido HTTP 404 na entrega de `integrations.js`, que impedia o funcionamento da Central de APIs após abrir o painel.

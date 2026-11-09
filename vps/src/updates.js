@@ -28,9 +28,30 @@ export async function checkRelease(version, fetcher = fetch) {
   const response = await fetcher(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'AL-Sistemas-VPS' }, signal: controller, redirect: 'error'
   })
-  if (response.status === 404) return {
-    installed: version, repo, available: false, signingReady, assetsReady: false,
-    message: 'Repositório acessível, mas ainda não há Release publicada (ou o repositório não é público). Publique uma Release assinada para habilitar atualizações.'
+  // O GitHub responde 404 quando não há Release estável, mas também para repositório
+  // inexistente/privado. Confirme a existência antes de diagnosticar a causa.
+  if (response.status === 404) {
+    const repository = await fetcher(`https://api.github.com/repos/${repo}`, {
+      headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'AL-Sistemas-VPS' },
+      signal: controller, redirect: 'error'
+    })
+    if (repository.ok) return {
+      installed: version, repo, available: false, signingReady, assetsReady: false,
+      repoAccessible: true, releaseStatus: 'no_stable_release',
+      message: 'Repositório encontrado, mas ainda não há Release estável pública. Envie o código e publique uma Release assinada com ZIP, manifesto e assinatura para habilitar a atualização.'
+    }
+    if (repository.status === 404) return {
+      installed: version, repo, available: false, signingReady, assetsReady: false,
+      repoAccessible: false, releaseStatus: 'repo_unavailable',
+      message: 'Repositório não encontrado ou privado. Confira o endereço em Configurações e o acesso público às Releases.'
+    }
+    if (repository.status === 403 && repository.headers?.get('x-ratelimit-remaining') === '0') {
+      throw Object.assign(new Error('Limite de consultas públicas do GitHub atingido. Tente novamente após a renovação da cota.'), { status: 502 })
+    }
+    throw Object.assign(new Error(`GitHub: HTTP ${repository.status}. Não foi possível verificar o repositório.`), { status: 502 })
+  }
+  if (response.status === 403 && response.headers?.get('x-ratelimit-remaining') === '0') {
+    throw Object.assign(new Error('Limite de consultas públicas do GitHub atingido. Tente novamente após a renovação da cota.'), { status: 502 })
   }
   if (!response.ok) throw Object.assign(new Error(`GitHub: HTTP ${response.status}. Falha na consulta de Releases.`), { status: 502 })
   const size = response.headers?.get('content-length')
@@ -44,7 +65,7 @@ export async function checkRelease(version, fetcher = fetch) {
   const assetsReady = expected.every(name => assets.includes(name))
   return {
     installed: version, latest: target, repo, available: order > 0,
-    signingReady, assetsReady,
+    signingReady, assetsReady, repoAccessible: true, releaseStatus: 'published',
     message: order > 0 ? (assetsReady ? 'Pacote encontrado. A assinatura será validada antes de instalar.' : 'Release sem os três arquivos obrigatórios para atualização segura.') : 'Nenhuma versão mais recente encontrada.'
   }
 }

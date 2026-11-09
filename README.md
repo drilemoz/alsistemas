@@ -1,6 +1,6 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.10 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.11 + legado preservado
 
-A versão 2.0.10 corrige o carregamento real da Central de APIs e ajusta as consultas à API oficial da Spaceship (URL, paginação obrigatória e erros), sem alterar serviços existentes ou permissões de produção. Mantém a verificação Nginx em unidade systemd separada, o catálogo limitado de pacotes e o atualizador de Releases assinadas da 2.0.6. Preserva o refinamento móvel, pop-ups e instalação assistida da 2.0.5. Mantém o núcleo da 2.0.4, autenticador/dispositivos confiáveis, backups limitados e atualizador de Releases assinadas. O legado React/Express/MongoDB é preservado, mas **não é executado** pelo painel VPS leve.
+A versão 2.0.11 aprimora o diagnóstico de HTTP 404 ao verificar o GitHub Releases e indicar separadamente repositório inacessível ou ausência de Release estável. Mantém as correções anteriores no carregamento real da Central de APIs e ajusta as consultas à API oficial da Spaceship (URL, paginação obrigatória e erros), sem alterar serviços existentes ou permissões de produção. Mantém a verificação Nginx em unidade systemd separada, o catálogo limitado de pacotes e o atualizador de Releases assinadas da 2.0.6. Preserva o refinamento móvel, pop-ups e instalação assistida da 2.0.5. Mantém o núcleo da 2.0.4, autenticador/dispositivos confiáveis, backups limitados e atualizador de Releases assinadas. O legado React/Express/MongoDB é preservado, mas **não é executado** pelo painel VPS leve.
 
 **Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave privada, e as atualizações continuam exigindo Release assinada e chave pública instalada).
 
@@ -12,7 +12,7 @@ Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend)
 
 ---
 
-> **Guia de atualização 2.0.10:** [vps/docs/ATUALIZACAO-2.0.10.md](vps/docs/ATUALIZACAO-2.0.10.md).
+> **Guia de atualização 2.0.11:** [vps/docs/ATUALIZACAO-2.0.11.md](vps/docs/ATUALIZACAO-2.0.11.md).
 
 > **Histórico 2.0.4:** leia [vps/docs/ATUALIZACAO-2.0.4.md](vps/docs/ATUALIZACAO-2.0.4.md).
 
@@ -168,5 +168,5 @@ Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14
 Leia `vps/docs/RELEASES-ASSINADAS.md` e `vps/docs/PACOTES.md`. Não execute o atualizador em produção sem homologar uma Release assinada em uma VPS de teste.
 
 
-### Correções da 2.0.10
+### Correções da 2.0.11
 A Central de APIs agora carrega o script no servidor (HTTP 200), usa o endpoint oficial da Spaceship e a paginação obrigatória. O tutorial de configuração pelo botão ? foi mantido e ganhou acesso direto ao API Manager. Provisionamento automático e escrita DNS ainda não foram implementados.

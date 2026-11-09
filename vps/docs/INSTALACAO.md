@@ -1,4 +1,4 @@
-## Instalação rápida com Termux (2.0.10)
+## Instalação rápida com Termux (2.0.11)
 
 O caminho mais curto depois de configurar o primeiro SSH e baixar o ZIP no Android é:
 
@@ -6,13 +6,13 @@ O caminho mais curto depois de configurar o primeiro SSH e baixar o ZIP no Andro
 pkg install -y openssh unzip
 termux-setup-storage
 mkdir -p ~/als-instalador
-unzip -oq ~/storage/downloads/AL-Sistemas-v2.0.10-VPS.zip inicio-termux.sh bootstrap-vps.sh -d ~/als-instalador
+unzip -oq ~/storage/downloads/AL-Sistemas-v2.0.11-VPS.zip inicio-termux.sh bootstrap-vps.sh -d ~/als-instalador
 bash ~/als-instalador/inicio-termux.sh --host IP_DA_VPS --key ~/.ssh/minha-chave.pem
 ```
 
 A transferência ocorre por SCP. O script remoto usa Python 3 pré-instalado no Ubuntu 24.04 para validar integridade e extrair o ZIP, exibe `--plan` e solicita confirmação antes do `sudo`. Use `--existing` se já existir um dos sites protegidos, `--with-php` e `--with-mariadb` para pacotes opcionais. O script não cria chaves SSH, não abre 8181 à internet e não configura um domínio sem os parâmetros próprios. Se a VPS não oferecer Python 3 ou SSH, configure-os primeiro. Sem domínio, acesse por túnel SSH. As etapas detalhadas continuam abaixo e no `tutorial-instalacao.html`.
 
-# AL Sistemas VPS 2.0.10 — Instalação Ubuntu Server 24.04 LTS
+# AL Sistemas VPS 2.0.11 — Instalação Ubuntu Server 24.04 LTS
 
 > **Estado da validação:** instalador testado com `bash -n` e revisão estática. Ainda não executado em uma VPS Ubuntu 24.04 real; instale primeiro em uma VPS de homologação ou snapshot restaurável. O comando `--plan` não altera nada.
 
