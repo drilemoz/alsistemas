@@ -102,13 +102,13 @@ class UpdaterTests(unittest.TestCase):
             for p in (data, backup, current): p.mkdir()
             (data / 'updates-config.json').write_text(json.dumps({'repo': 'owner/repo'}))
             (current / 'package.json').write_text(json.dumps({'version': '2.0.5'}))
-            names = ['AL-Sistemas-v2.0.12-VPS.zip', 'update-manifest.json']
-            urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.12/{name}' for name in names}
-            manifest = json.dumps({'schema': 1, 'version': '2.0.12', 'asset': names[0], 'sha256': hashlib.sha256(b'original').hexdigest()}).encode()
+            names = ['AL-Sistemas-v2.0.13-VPS.zip', 'update-manifest.json']
+            urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.13/{name}' for name in names}
+            manifest = json.dumps({'schema': 1, 'version': '2.0.13', 'asset': names[0], 'sha256': hashlib.sha256(b'original').hexdigest()}).encode()
             called = []
             def fake_fetch(url, repo, limit, asset=None):
                 if url.startswith('https://api.github.com/'):
-                    return json.dumps({'tag_name': 'v2.0.12', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
+                    return json.dumps({'tag_name': 'v2.0.13', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
                 return manifest if url == urls[names[1]] else b'tampered'
             with patch.multiple(u, DATA=data, BACKUP=backup, TARGET=current), \
                  patch.object(u, 'fetch', fake_fetch), patch.object(u, 'status', lambda *a, **k: None), \
@@ -127,12 +127,12 @@ class UpdaterTests(unittest.TestCase):
             for p in (data, backup, current): p.mkdir()
             (data / 'updates-config.json').write_text(json.dumps({'repo': 'owner/repo'}))
             (current / 'package.json').write_text(json.dumps({'version': '2.0.5'}))
-            names = ['AL-Sistemas-v2.0.12-VPS.zip', 'update-manifest.json']
-            urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.12/{name}' for name in names}
+            names = ['AL-Sistemas-v2.0.13-VPS.zip', 'update-manifest.json']
+            urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.13/{name}' for name in names}
             manifest = json.dumps({'schema': 1, 'version': '9.9.9', 'asset': names[0], 'sha256': hashlib.sha256(b'bad').hexdigest()}).encode()
             def fake_fetch(url, repo, limit, asset=None):
                 if url.startswith('https://api.github.com/'):
-                    return json.dumps({'tag_name': 'v2.0.12', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
+                    return json.dumps({'tag_name': 'v2.0.13', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
                 if url == urls[names[1]]: return manifest
                 raise AssertionError('ZIP must not download after version mismatch')
             with patch.multiple(u, DATA=data, BACKUP=backup, TARGET=current), \

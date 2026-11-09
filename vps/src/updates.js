@@ -19,6 +19,37 @@ export function updateInfo(version) {
   try { status = readJson('update-status.json') } catch { /* estado ainda não disponível */ }
   return { installed: version, repo, status }
 }
+// Documentação pública é um complemento informativo, nunca parte da validação de instalação.
+// Limite de bytes e timeout evitam que README arbitrário esgote a RAM da VPS.
+async function releaseDocument(repo, tag, file, fetcher) {
+  if (!['README.md', 'CHANGELOG.md'].includes(file)) return null
+  const url = `https://raw.githubusercontent.com/${repo}/${tag}/${file}`
+  try {
+    const response = await fetcher(url, { signal: AbortSignal.timeout(6000), redirect: 'error' })
+    if (!response.ok || Number(response.headers?.get('content-length') || 0) > 32768) return null
+    let text = ''
+    if (response.body?.getReader) {
+      const reader = response.body.getReader()
+      const chunks = []
+      let total = 0
+      try {
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          total += value.byteLength
+          if (total > 32768) return null
+          chunks.push(value)
+        }
+      } finally { await reader.cancel().catch(() => {}) }
+      text = new TextDecoder().decode(Buffer.concat(chunks.map(c => Buffer.from(c))))
+    } else if (typeof response.text === 'function') {
+      text = await response.text()
+      if (Buffer.byteLength(text, 'utf8') > 32768) return null
+    }
+    return text.trim().slice(0, 4500) || null
+  } catch { return null }
+}
+
 export async function checkRelease(version, fetcher = fetch) {
   const { repo } = updateInfo(version)
   if (!repo) return { installed: version, available: false, message: 'Configure o repositório GitHub autorizado.' }
@@ -61,9 +92,26 @@ export async function checkRelease(version, fetcher = fetch) {
   const assets = Array.isArray(release.assets) ? release.assets.map(a => a.name) : []
   const expected = [`AL-Sistemas-v${target}-VPS.zip`, 'update-manifest.json']
   const assetsReady = expected.every(name => assets.includes(name))
+  const releaseNotes = typeof release.body === 'string' ? release.body.slice(0, 4000).trim() : ''
+  const [readme, changelogText] = await Promise.all([
+    releaseDocument(repo, `v${target}`, 'README.md', fetcher),
+    releaseDocument(repo, `v${target}`, 'CHANGELOG.md', fetcher)
+  ])
+  let changes = null
+  if (changelogText) {
+    // Exibe somente o bloco da versão, sem misturar mudanças de releases antigas.
+    const lines = changelogText.split('\n')
+    const header = new RegExp(`^#{1,3}\\s+\\[?v?${target.replaceAll('.', '\\.')}\\]?\\b`, 'i')
+    const start = lines.findIndex(line => header.test(line))
+    if (start !== -1) {
+      const end = lines.findIndex((line, idx) => idx > start && /^#{1,3}\s+/.test(line))
+      changes = lines.slice(start, end === -1 ? undefined : end).join('\n').trim().slice(0, 2500)
+    }
+  }
   return {
     installed: version, latest: target, repo, available: order > 0,
     assetsReady, repoAccessible: true, releaseStatus: 'published',
+    releaseNotes, changes, readme, readmeUrl: readme ? `https://github.com/${repo}/blob/v${target}/README.md` : null,
     message: order > 0 ? (assetsReady ? 'Pacote disponível. SHA-256 e estrutura serão conferidos antes de instalar.' : 'Release sem ZIP e manifesto SHA-256 necessários para atualização.') : 'Nenhuma versão mais recente encontrada.'
   }
 }

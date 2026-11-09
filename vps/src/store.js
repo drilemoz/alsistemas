@@ -22,7 +22,8 @@ export function writeJson(name, value) {
 export function audit(event, data = {}) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const allowed = ['name', 'action', 'success', 'ip', 'reason', 'enabled', 'package']
-  const safe = Object.fromEntries(allowed.filter(k => Object.hasOwn(data, k)).map(k => [k, String(data[k]).slice(0, 160)]))
+  const safe = Object.fromEntries(allowed.filter(k => Object.hasOwn(data, k) && data[k] !== undefined && data[k] !== null)
+    .map(k => [k, String(data[k]).slice(0, 160)]))
   const file = dataPath('audit.jsonl')
   try {
     if (fs.statSync(file).size > 1024 * 1024) {

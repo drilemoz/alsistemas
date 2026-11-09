@@ -1,8 +1,8 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.12 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.13 + legado preservado
 
-A versão 2.0.12 simplifica o atualizador: não há SHA-256 nem chave pública na VPS. A instalação ocorre com sessão autenticada, CSRF, senha, ZIP de Release e SHA-256, com backup e tentativa de rollback. O GitHub Actions gera automaticamente ZIP e manifesto quando o arquivo VERSION muda em main. Mantém a Central de APIs/Spaceship, gestão de projetos, serviços e painel móvel.
+A versão 2.0.13 aprimora a auditoria com ícones e filtros, os cartões de serviços, as dependências e os dispositivos confiáveis, e passa a apresentar notas da Release, alterações do CHANGELOG e README da tag publicada. O atualizador continua exigindo sessão autenticada, CSRF, senha administrativa, manifesto SHA-256 e backup; não exige assinatura Ed25519. O workflow do GitHub Actions foi preparado para publicar ZIP e manifesto quando o arquivo VERSION muda na branch main, desde que o workflow esteja presente e tenha permissão de gravação. Mantém a integração Spaceship em modo de consulta DNS.
 
-**Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave de assinatura; publica Releases automaticamente pela workflow).
+**Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave Ed25519; a Release depende da execução bem-sucedida do workflow do GitHub Actions).
 
 **Instalação rápida em nova VPS Ubuntu 24.04:** extraia os scripts `inicio-termux.sh` e `bootstrap-vps.sh` do ZIP na pasta do Termux; execute `bash inicio-termux.sh --host IP --key ~/.ssh/CHAVE.pem`. O script transfere o ZIP, valida o plano e pede confirmação antes do `sudo`. Leia o [tutorial HTML](tutorial-instalacao.html), seção Instalação rápida.
 
@@ -12,7 +12,7 @@ Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend)
 
 ---
 
-> **Guia de atualização 2.0.12:** [vps/docs/ATUALIZACAO-2.0.12.md](vps/docs/ATUALIZACAO-2.0.12.md).
+> **Guia de atualização 2.0.13:** [vps/docs/ATUALIZACAO-2.0.13.md](vps/docs/ATUALIZACAO-2.0.13.md).
 
 > **Histórico 2.0.4:** leia [vps/docs/ATUALIZACAO-2.0.4.md](vps/docs/ATUALIZACAO-2.0.4.md).
 
@@ -165,8 +165,8 @@ Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14
 - **GitHub:** repositório padrão `drilemoz/alsistemas`, aviso amigável para ausência de Releases e workflow automático que publica Releases com SHA-256 quando VERSION muda. Não são necessários Secrets de assinatura.
 - **Testes:** validações locais de SHA-256 e adulteração, código de retorno do verificador Nginx, lista de pacotes, esquemas e verificações de segurança.
 
-Leia `vps/docs/RELEASES-ASSINADAS.md` e `vps/docs/PACOTES.md`. Não execute o atualizador em produção sem homologar uma Release com SHA-256 em uma VPS de teste.
+Para esta versão, consulte `vps/docs/ATUALIZACAO-2.0.13.md` e `vps/docs/PACOTES.md`. O arquivo `RELEASES-ASSINADAS.md` é histórico e não descreve o mecanismo atual. Não execute o atualizador em produção sem testar uma Release e seu SHA-256 em ambiente controlado.
 
 
-### Correções da 2.0.12
-A Central de APIs agora carrega o script no servidor (HTTP 200), usa o endpoint oficial da Spaceship e a paginação obrigatória. O tutorial de configuração pelo botão ? foi mantido e ganhou acesso direto ao API Manager. Provisionamento automático e escrita DNS ainda não foram implementados.
+### Melhorias da 2.0.13
+Auditoria com ícones, filtros e correção de valores indefinidos; cartões visuais para serviços, dependências e dispositivos. A busca de atualização lê notas da Release, seção correspondente do CHANGELOG e README da tag, quando disponíveis. A integração Spaceship continua somente leitura; edição DNS e provisionamento automático ainda não foram implementados.

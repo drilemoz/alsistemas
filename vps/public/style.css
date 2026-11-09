@@ -123,3 +123,29 @@ label{font-size:.82rem;margin-bottom:11px}
 
 /* Central de APIs: resultados DNS e ajuda responsivos */
 .dns-results{margin-top:12px;overflow-wrap:anywhere}.dns-record{padding:11px;border:1px solid var(--border);border-radius:9px;margin:7px 0;background:var(--bg)}.dns-record strong{display:inline-block;margin-right:8px}.dns-record code{white-space:pre-wrap;overflow-wrap:anywhere}.help-steps{padding-left:22px;line-height:1.65}.help-steps li{margin-bottom:8px}#spaceship-help-dialog{max-width:min(580px,calc(100vw - 24px));max-height:85vh;overflow:auto}
+
+/* 2.0.13: cartões de serviços, auditoria, dependências e dispositivos */
+.service-card,.trusted-card{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--border);min-width:0}
+.service-card:last-child,.trusted-card:last-child{border-bottom:0}
+.service-icon,.package-icon{flex:0 0 36px;width:36px;height:36px;border-radius:11px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));color:var(--accent);display:grid;place-items:center}
+.service-icon .icon,.package-icon .icon{width:19px;height:19px}
+.service-main,.trusted-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;overflow-wrap:anywhere}
+.service-main strong,.trusted-main strong{font-size:.87rem}
+.status-chip{flex-shrink:0;border-radius:100px;font-size:.69rem;padding:5px 8px;font-weight:700}
+.status-ok{background:color-mix(in srgb,var(--success) 12%,var(--surface));color:var(--success)}
+.status-issue{background:color-mix(in srgb,var(--danger) 11%,var(--surface));color:var(--danger)}
+.package-icon{flex-basis:35px;width:35px;height:35px}.package-info{display:flex;flex-direction:column;gap:1px}.package-info strong{font-size:.86rem}
+.audit-toolbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.audit-toolbar button{font-size:.78rem;min-height:34px;padding:6px 10px}
+.audit-toolbar .active{color:var(--accent);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+.audit-item{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+.audit-item:last-child{border-bottom:0}.audit-content{min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.audit-content strong{font-size:.85rem}.audit-icon{flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:var(--bg);color:var(--muted)}
+.audit-icon .icon{width:18px;height:18px}.audit-ok{background:color-mix(in srgb,var(--success) 12%,var(--surface));color:var(--success)}.audit-issue{background:color-mix(in srgb,var(--danger) 10%,var(--surface));color:var(--danger)}
+.audit-detail{color:var(--text);opacity:.82}
+.trusted-raw{margin-top:4px}.trusted-raw summary{font-size:.72rem;cursor:pointer;color:var(--accent)}.trusted-raw p{margin:4px 0 0}
+.release-notes{border-top:1px solid var(--border);margin-top:14px;padding-top:14px}.release-notes h3{font-size:1rem;margin:0 0 10px}
+.release-block{padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);margin:8px 0;min-width:0}
+.release-block h4{font-size:.87rem;margin:0 0 7px}.release-block summary{font-weight:650;cursor:pointer}.release-block a{display:inline-block;margin-top:9px;font-size:.79rem}
+.release-text{font:inherit;font-size:.78rem;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:210px;overflow-y:auto;margin:0}
+@media(max-width:420px){.service-card,.trusted-card{gap:8px}.service-icon{width:32px;flex-basis:32px;height:32px}.status-chip{font-size:.65rem}.package-icon{width:30px;flex-basis:30px;height:30px}.trusted-card .status-chip{max-width:80px;text-align:center}}

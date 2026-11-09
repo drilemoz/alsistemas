@@ -3,13 +3,23 @@ const $ = id => document.getElementById(id)
 let csrf = ''
 let bootstrap = ''
 let challenge = ''
+let noticeTimeout = null
+let auditEvents = []
+let auditFilter = 'all'
 const shown = name => { for (const id of ['setup', 'login', 'dashboard']) $(id).classList.toggle('hidden', id !== name) }
 function notice(text, error = false) {
+  if (noticeTimeout) clearTimeout(noticeTimeout)
   $('message').textContent = text
   $('message').className = 'message' + (error ? ' error' : '')
+  // Feedback transitório: não permanece em todas as abas após a ação.
+  if (!error) noticeTimeout = setTimeout(clearNotice, 7000)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-function clearNotice() { $('message').classList.add('hidden') }
+function clearNotice() {
+  if (noticeTimeout) clearTimeout(noticeTimeout)
+  noticeTimeout = null
+  $('message').classList.add('hidden')
+}
 function confirmAction(detail, label) {
   return new Promise(resolve => {
     const dialog = $('confirm-dialog')
@@ -39,6 +49,23 @@ function appendLine(where, left, right, rightClass = '') {
   row.append(node('div', left), node('div', right, rightClass))
   where.append(row)
 }
+const serviceVisuals = {
+  nginx: { icon: 'globe', label: 'Nginx', description: 'Servidor web' },
+  'php8.3-fpm': { icon: 'code', label: 'PHP 8.3-FPM', description: 'Processamento PHP' },
+  mariadb: { icon: 'database', label: 'MariaDB', description: 'Banco de dados' },
+  'alsistemas-vps': { icon: 'server', label: 'AL Sistemas VPS', description: 'Painel administrativo' }
+}
+function serviceCard(container, name, state, extra = '') {
+  const service = serviceVisuals[name] || { icon: 'server', label: name, description: 'Serviço do sistema' }
+  const active = state === 'active'
+  const card = node('div', '', 'service-card')
+  const glyph = node('span', '', 'service-icon')
+  glyph.append(iconGraphic(service.icon))
+  const body = node('div', '', 'service-main')
+  body.append(node('strong', service.label), node('span', service.description + (extra ? ` · ${extra}` : ''), 'small muted'))
+  card.append(glyph, body, node('span', active ? 'Ativo' : (state === 'inactive/unknown' ? 'Indisponível' : state), active ? 'status-chip status-ok' : 'status-chip status-issue'))
+  container.append(card)
+}
 const bytes = n => n >= 1073741824 ? `${(n/1073741824).toFixed(1)} GiB` : `${(n/1048576).toFixed(0)} MiB`
 function iconGraphic(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -67,8 +94,8 @@ function renderMetrics(m) {
   $('services').replaceChildren()
   $('overview-services').replaceChildren()
   for (const [name, status] of Object.entries(m.services)) {
-    appendLine($('services'), name, status, status === 'active' ? 'good' : 'bad')
-    appendLine($('overview-services'), name, status === 'active' ? 'Ativo' : status, status === 'active' ? 'good' : 'bad')
+    serviceCard($('services'), name, status)
+    serviceCard($('overview-services'), name, status)
   }
 }
 async function refresh() {
@@ -110,14 +137,63 @@ async function refresh() {
     $('projects').append(line)
   }
   if (!p.projects.length) $('projects').append(node('p', 'Nenhum projeto localizado em /var/www/projetos.', 'muted'))
-  $('audit').replaceChildren()
-  for (const item of a.events) {
-    const detail = item.enabled === undefined ? (item.name || item.reason || '') : `${item.name || ''} • ${item.enabled === 'true' ? 'ativar' : 'desativar'}`
-    const friendly = { login_success: 'Login realizado', login_failed: 'Login recusado', setup_complete: 'Configuração concluída', device_trusted: 'Dispositivo confiável', device_revoked: 'Dispositivo revogado', all_devices_revoked: 'Sessões e dispositivos revogados', task_success: 'Tarefa concluída', task_failed: 'Tarefa recusada', update_requested: 'Atualização solicitada', update_repo_configured: 'Repositório configurado', package_install_requested: 'Instalação de pacote solicitada', package_install_rejected: 'Instalação de pacote recusada', logout: 'Saída da conta' }
-    appendLine($('audit'), `${new Date(item.time).toLocaleString('pt-BR')} • ${friendly[item.event] || item.event}`, detail)
-  }
-  if (!a.events.length) $('audit').append(node('p', 'Sem eventos registrados.', 'muted'))
+  auditEvents = Array.isArray(a.events) ? a.events : []
+  renderAudit()
+
 }
+const auditLabels = {
+  login_success: ['Login realizado', 'login', 'access', 'ok'],
+  login_failed: ['Login recusado', 'alert', 'access', 'issue'],
+  setup_complete: ['Configuração concluída', 'success', 'system', 'ok'],
+  setup_rejected: ['Configuração recusada', 'alert', 'access', 'issue'],
+  device_trusted: ['Dispositivo confiável', 'mobile', 'access', 'ok'],
+  device_revoked: ['Dispositivo revogado', 'lock', 'access', 'neutral'],
+  all_devices_revoked: ['Dispositivos revogados', 'lock', 'access', 'issue'],
+  task_requested: ['Tarefa solicitada', 'terminal', 'system', 'neutral'],
+  task_success: ['Tarefa concluída', 'success', 'system', 'ok'],
+  task_failed: ['Falha na tarefa', 'alert', 'system', 'issue'],
+  update_requested: ['Atualização solicitada', 'updates', 'system', 'neutral'],
+  update_repo_configured: ['Repositório configurado', 'gear', 'system', 'neutral'],
+  package_install_requested: ['Instalação solicitada', 'package', 'system', 'neutral'],
+  package_install_rejected: ['Instalação recusada', 'alert', 'system', 'issue'],
+  integration_saved: ['Integração salva', 'key', 'system', 'ok'],
+  integration_removed: ['Integração removida', 'key', 'system', 'neutral'],
+  logout: ['Saída da conta', 'logout', 'access', 'neutral']
+}
+function auditDetail(item) {
+  const field = value => typeof value === 'string' && !['undefined', 'null', '[object Object]'].includes(value.trim().toLowerCase()) ? value.trim() : ''
+  const name = field(item.name)
+  const action = field(item.action)
+  const reason = field(item.reason)
+  if (item.enabled === 'true' || item.enabled === 'false') return [name, item.enabled === 'true' ? 'ativar' : 'desativar'].filter(Boolean).join(' · ')
+  return [name, action, reason].filter(Boolean).join(' · ')
+}
+function renderAudit() {
+  $('audit').replaceChildren()
+  for (const item of auditEvents) {
+    const [title, icon, group, variant] = auditLabels[item.event] || [String(item.event || 'Evento do sistema').replaceAll('_', ' '), 'info', 'system', 'neutral']
+    if (auditFilter !== 'all' && auditFilter !== group) continue
+    const card = node('div', '', 'audit-item')
+    const badge = node('span', '', `audit-icon audit-${variant}`)
+    badge.append(iconGraphic(icon))
+    const body = node('div', '', 'audit-content')
+    const time = new Date(item.time)
+    body.append(node('strong', title), node('span', Number.isNaN(time.getTime()) ? 'Horário indisponível' : time.toLocaleString('pt-BR'), 'small muted'))
+    const detail = auditDetail(item)
+    if (detail) body.append(node('span', detail, 'small audit-detail'))
+    card.append(badge, body)
+    $('audit').append(card)
+  }
+  if (!$('audit').children.length) $('audit').append(node('p', 'Nenhum evento para este filtro.', 'muted'))
+}
+for (const button of document.querySelectorAll('[data-audit-filter]')) {
+  button.addEventListener('click', () => {
+    auditFilter = button.dataset.auditFilter
+    for (const item of document.querySelectorAll('[data-audit-filter]')) item.classList.toggle('active', item === button)
+    renderAudit()
+  })
+}
+
 async function bootstrapPage() {
   const status = await api('/api/status')
   $('version').textContent = 'v' + status.version
@@ -247,7 +323,7 @@ async function updateDiagnostics() {
     $('services').replaceChildren()
     for (const item of details.services) {
       const label = `${item.active} / ${item.substate} • ${item.enabled}`
-      appendLine($('services'), item.unit, label, item.active === 'active' ? 'good' : 'bad')
+      serviceCard($('services'), item.unit, item.active, `${item.substate} · ${item.enabled}`)
     }
   } catch { /* painel ainda pode exibir os estados básicos vindos de /api/monitor */ }
 }
@@ -298,8 +374,11 @@ async function refreshDependencies() {
   for (const pkg of info.packages) {
     const line = node('div', '', 'package-line')
     const label = node('div', '', 'package-info')
-    label.append(node('strong', pkg.label), node('div', pkg.installed ? `Instalado • ${pkg.version}` : 'Não instalado', 'small muted'))
-    line.append(label)
+    const helps = { 'php-curl': 'Requisições HTTP a serviços externos', 'php-mbstring': 'Strings e acentuação UTF-8', 'php-xml': 'Leitura e criação de XML', 'php-mysql': 'Conexão do PHP ao MariaDB', 'php-zip': 'Arquivos compactados ZIP', 'php-gd': 'Processamento de imagens', 'php-intl': 'Internacionalização e idiomas', composer: 'Dependências de projetos PHP' }
+    const iconWrap = node('span', '', 'package-icon')
+    iconWrap.append(iconGraphic(pkg.id === 'composer' ? 'package' : pkg.id === 'php-mysql' ? 'database' : pkg.id === 'php-curl' ? 'globe' : 'code'))
+    label.append(node('strong', pkg.label), node('div', helps[pkg.id] || 'Pacote do ambiente', 'small muted'), node('div', pkg.installed ? `Instalado · ${pkg.version}` : 'Não instalado', pkg.installed ? 'small good' : 'small muted'))
+    line.append(iconWrap, label)
     const b = node('button', pkg.installed ? 'Instalado' : 'Instalar', 'outline button-small')
     b.disabled = !!pkg.installed || state?.stage === 'installing'
     b.addEventListener('click', () => {
@@ -328,6 +407,7 @@ $('package-form').addEventListener('submit', async e => {
 })
 
 function activateTab(tab) {
+  clearNotice()
   if (!['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'security', 'audit', 'help'].includes(tab)) return
   for (const page of document.querySelectorAll('.tab-page')) page.classList.toggle('hidden', page.id !== `page-${tab}`)
   for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === tab)
@@ -376,9 +456,20 @@ async function loadTrustedDevices() {
   const result = await api('/api/security/devices')
   $('trusted-devices').replaceChildren()
   for (const device of result.devices) {
-    const line = node('div', '', 'line')
-    line.append(node('div', `${device.label}${device.id === result.currentId ? ' • Este dispositivo' : ''}`),
-      node('div', `Até ${new Date(device.expires).toLocaleDateString('pt-BR')}`, 'muted small'))
+    const ua = String(device.label || '')
+    const browser = /Firefox/i.test(ua) ? 'Firefox' : /Edg\//i.test(ua) ? 'Edge' : /SamsungBrowser/i.test(ua) ? 'Samsung Internet' : /Chrome/i.test(ua) ? 'Chrome' : 'Navegador'
+    const system = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows' : /Linux/i.test(ua) ? 'Linux' : 'Sistema não identificado'
+    const current = device.id === result.currentId
+    const line = node('div', '', 'trusted-card')
+    const glyph = node('span', '', 'service-icon')
+    glyph.append(iconGraphic(/Android|iPhone|iPad/i.test(ua) ? 'mobile' : 'monitor'))
+    const main = node('div', '', 'trusted-main')
+    main.append(node('strong', `${browser} · ${system}`), node('span', `Confiança até ${new Date(device.expires).toLocaleDateString('pt-BR')}`, 'small muted'))
+    const detail = node('details', '', 'trusted-raw')
+    detail.append(node('summary', 'Detalhes do navegador'), node('p', ua || 'Não informado', 'small muted break-text'))
+    main.append(detail)
+    line.append(glyph, main)
+    if (current) line.append(node('span', 'Este dispositivo', 'status-chip status-ok'))
     $('trusted-devices').append(line)
   }
   if (!result.devices.length) $('trusted-devices').append(node('p', 'Nenhum dispositivo confiável cadastrado.', 'muted small'))
@@ -404,6 +495,41 @@ $('revoke-devices').addEventListener('submit', e => {
 })
 
 let lastRelease = null
+function showReleaseNotes(data) {
+  const wrapper = $('update-notes')
+  const content = $('update-notes-content')
+  content.replaceChildren()
+  if (!data || data.releaseStatus !== 'published') {
+    wrapper.classList.add('hidden')
+    return
+  }
+  wrapper.classList.remove('hidden')
+  const note = String(data.releaseNotes || '').trim()
+  const readme = String(data.readme || '').trim()
+  if (note) {
+    const block = node('div', '', 'release-block')
+    block.append(node('h4', 'Notas da Release'), node('p', note, 'release-text'))
+    content.append(block)
+  }
+  if (data.changes) {
+    const block = node('div', '', 'release-block')
+    block.append(node('h4', 'Alterações do CHANGELOG'), node('p', String(data.changes).slice(0, 2500), 'release-text'))
+    content.append(block)
+  }
+  if (readme) {
+    const details = node('details', '', 'release-block')
+    details.append(node('summary', 'Ler README.md desta versão'), node('pre', readme, 'release-text'))
+    if (data.readmeUrl && /^https:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/blob\/v\d+\.\d+\.\d+\/README\.md$/i.test(data.readmeUrl)) {
+      const link = node('a', 'Ver README completo no GitHub')
+      link.href = data.readmeUrl
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      details.append(link)
+    }
+    content.append(details)
+  }
+  if (!note && !readme && !data.changes) content.append(node('p', 'Esta Release não possui notas nem README disponível na tag.', 'small muted'))
+}
 function rowInfo(container, title, value) { appendLine(container, title, value) }
 async function loadUpdateInfo() {
   const data = await api('/api/updates')
@@ -424,11 +550,12 @@ $('check-update').addEventListener('click', async () => {
   try {
     const data = await api('/api/updates/check', 'POST', {})
     lastRelease = data
+    showReleaseNotes(data)
     await loadUpdateInfo()
     if (data.latest) rowInfo($('update-summary'), 'Última Release', `v${data.latest}`)
     rowInfo($('update-summary'), 'Verificação', data.message)
     $('apply-update').disabled = !(data.available && data.assetsReady)
-  } catch (e) { notice(e.message, true) }
+  } catch (e) { lastRelease = null; showReleaseNotes(null); notice(e.message, true) }
   finally { $('check-update').disabled = false }
 })
 $('update-repo-form').addEventListener('submit', e => {
@@ -436,6 +563,7 @@ $('update-repo-form').addEventListener('submit', e => {
   submit(e.currentTarget, async data => {
     await api('/api/updates/configure', 'POST', data)
     lastRelease = null
+    showReleaseNotes(null)
     e.target.reset()
     $('repo-dialog').close()
     await loadUpdateInfo()

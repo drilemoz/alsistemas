@@ -32,11 +32,13 @@ test('tarefas: exige autenticação, CSRF, esquema estrito e permissão explíci
     assert.equal(begin.status, 200)
     const finish = await call('/api/setup/finish', 'POST', { bootstrap, challenge: begin.body.challenge, password: 'ForteSenha$987654321', otp: totp(begin.body.secret) })
     assert.equal(finish.status, 200)
-    const login = await call('/api/login', 'POST', { password: 'ForteSenha$987654321', otp: totp(begin.body.secret) })
+    // Uma mesma senha TOTP deve ser reutilizada no teste de replay, mesmo se o relógio mudar de janela.
+    const loginOtp = totp(begin.body.secret)
+    const login = await call('/api/login', 'POST', { password: 'ForteSenha$987654321', otp: loginOtp })
     assert.equal(login.status, 200)
     const cookie = login.cookie.split(';')[0]
     const csrf = login.body.csrf
-    const replay = await call('/api/login', 'POST', { password: 'ForteSenha$987654321', otp: totp(begin.body.secret) })
+    const replay = await call('/api/login', 'POST', { password: 'ForteSenha$987654321', otp: loginOtp })
     assert.equal(replay.status, 401)
     const action = { action: 'set_site_state', name: 'site-novo', enabled: false }
     assert.equal((await call('/api/tasks', 'POST', action)).status, 401)

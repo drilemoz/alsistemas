@@ -1,3 +1,13 @@
+## 2.0.13 — Auditoria, experiência mobile e notas de atualização (09/11/2026)
+
+- Auditoria com ícones por evento, filtros de acesso/sistema, estados visuais e correção de registros `undefined` na gravação e na apresentação do histórico legado.
+- Notificações transitórias desaparecem após sete segundos e ao mudar de módulo, sem perder mensagens de erro enquanto a aba não mudar.
+- Cartões com ícones, nomes amigáveis e status para Nginx, PHP-FPM, MariaDB e AL Sistemas, na visão geral e em Serviços.
+- Dependências com ícones, explicações técnicas resumidas e indicação de instalação; nenhuma nova operação administrativa ou atualização de pacotes foi adicionada.
+- Dispositivos confiáveis com resumo de navegador/sistema, identificação do dispositivo atual e agente completo expansível (identificação aproximada).
+- Ao verificar uma Release, consulta facultativa do `README.md` e da seção da versão no `CHANGELOG.md` da tag correspondente; exibe também as notas de Release como texto seguro, sem bloquear a verificação se os documentos não existirem.
+- Teste de replay TOTP estabilizado contra troca de janela entre requisições; metadados e testes de regressão atualizados. Sem edição de DNS, reinícios remotos de serviços ou mudanças nos projetos existentes.
+
 ## 2.0.12 — Atualizações GitHub com senha e SHA-256 (09/11/2026)
 
 - Removida a exigência de assinatura Ed25519 e de chave pública no painel e no serviço privilegiado de atualização.
