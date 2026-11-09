@@ -149,3 +149,44 @@ label{font-size:.82rem;margin-bottom:11px}
 .release-block h4{font-size:.87rem;margin:0 0 7px}.release-block summary{font-weight:650;cursor:pointer}.release-block a{display:inline-block;margin-top:9px;font-size:.79rem}
 .release-text{font:inherit;font-size:.78rem;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:210px;overflow-y:auto;margin:0}
 @media(max-width:420px){.service-card,.trusted-card{gap:8px}.service-icon{width:32px;flex-basis:32px;height:32px}.status-chip{font-size:.65rem}.package-icon{width:30px;flex-basis:30px;height:30px}.trusted-card .status-chip{max-width:80px;text-align:center}}
+
+/* 2.0.14 — central compacta de integrações e cartões DNS em janelas modais. */
+.integration-catalog{padding:16px}
+.integration-tile{display:flex;align-items:center;gap:13px;min-width:0}
+.integration-logo{flex:0 0 48px;width:48px;height:48px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 11%,var(--surface));border-radius:15px;color:var(--accent)}
+.integration-logo .icon{width:26px;height:26px}
+.integration-details{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.integration-details h2{margin:0;font-size:1.06rem}
+.integration-details p{margin:0}
+.integration-state{font-size:.76rem;font-weight:700;line-height:1.3}
+.integration-connected{color:var(--success)}.integration-disconnected{color:var(--muted)}
+.integration-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.integration-actions button{white-space:nowrap}
+.integration-dialog{max-width:min(640px,calc(100vw - 20px));width:100%;max-height:min(90vh,900px);overflow-y:auto}
+.integration-dialog .dialog-body{padding:20px}
+.credential-state{padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-size:.84rem;margin:10px 0}
+.credential-ready{border-color:color-mix(in srgb,var(--success) 43%,var(--border));color:var(--success)}
+.integration-credential-form{display:grid;gap:2px}
+.integration-credential-form input::placeholder{font-size:.83rem}
+.integration-danger{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;border-top:1px solid var(--border);padding-top:15px}
+.integration-danger strong{font-size:.86rem}.integration-danger p{margin:3px 0 0}
+.integration-modal-footer{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;padding-top:15px;margin-top:15px;border-top:1px solid var(--border)}
+.dns-query-form{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.dns-query-form label{flex:1;min-width:175px;margin-bottom:0}.dns-query-form button{flex:0 0 auto}
+.dns-query-status{margin-top:13px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+.dns-query-ok{color:var(--success);border-color:color-mix(in srgb,var(--success) 28%,var(--border))}
+.dns-query-error{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 28%,var(--border))}
+.dns-summary{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:14px 0 9px}
+.dns-summary strong{font-size:.88rem}.dns-count{font-size:.72rem;font-weight:700;padding:5px 9px;border-radius:99px;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.dns-record-card{display:flex;align-items:flex-start;gap:11px;padding:13px;margin:8px 0;border-radius:12px;background:var(--bg)}
+.dns-record-emblem{display:grid;place-items:center;flex:0 0 35px;width:35px;height:35px;border-radius:10px;color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,var(--surface))}
+.dns-record-emblem .icon{width:19px;height:19px}
+.dns-record-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.dns-record-title{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.dns-record-title strong{font-size:.86rem;overflow-wrap:anywhere}
+.dns-type-chip{font-size:.67rem;font-weight:800;border-radius:6px;padding:3px 6px;background:var(--surface);border:1px solid var(--border);color:var(--accent)}
+.dns-value{display:block;font-size:.79rem;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;user-select:text}
+.dns-ttl{font-size:.71rem}.dns-copy{flex:0 0 33px;min-width:33px;width:33px;height:33px;min-height:33px;padding:5px}
+.dns-scope-note{padding-top:10px;border-top:1px solid var(--border);margin-top:15px}
+.dns-empty{padding:14px;border:1px dashed var(--border);border-radius:10px}
+@media(max-width:650px){.integration-tile{align-items:flex-start;flex-wrap:wrap}.integration-logo{flex-basis:42px;width:42px;height:42px}.integration-actions{width:100%;justify-content:flex-start;padding-left:55px}.integration-dialog .dialog-body{padding:16px}.dns-query-form button{width:100%}.dns-record-card{gap:8px;padding:10px}.dns-record-emblem{flex-basis:30px;width:30px;height:30px}.dns-copy{flex-basis:32px}}

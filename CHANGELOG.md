@@ -1,3 +1,13 @@
+## 2.0.14 — Central de APIs em modais e consulta DNS visual (09/11/2026)
+
+- Central de APIs apresenta integração Spaceship em cartão compacto com indicação confiável de credenciais configuradas.
+- Modal próprio para cadastro, substituição e remoção da API Key e da API Secret; campos intencionalmente vazios e mensagem explícita de que as credenciais já estão salvas.
+- Botões Gerenciar e Testar DNS independentes; consulta autorizada em uma segunda janela, com domínio validado, contagem, erros detalhados e estados de carregamento.
+- Registros DNS organizados em cartões com ícones por tipo, nome, valor, TTL e ação para copiar valor, exibindo texto externo via `textContent` e sem HTML executável.
+- Tutorial ? atualizado conforme novo fluxo; interface adaptável à tela do celular, mantendo os temas claro e escuro.
+- API Spaceship preservada em somente leitura (`dnsrecords:read`); nenhuma operação DNS de escrita ou mudança no provisionamento de projetos.
+- Mantidos mecanismos existentes de autenticação, criptografia, CSRF, atualização GitHub com SHA-256 e backup. Sem implantação direta na EC2.
+
 ## 2.0.13 — Auditoria, experiência mobile e notas de atualização (09/11/2026)
 
 - Auditoria com ícones por evento, filtros de acesso/sistema, estados visuais e correção de registros `undefined` na gravação e na apresentação do histórico legado.

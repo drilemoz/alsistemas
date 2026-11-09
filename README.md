@@ -1,6 +1,6 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.13 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.14 + legado preservado
 
-A versão 2.0.13 aprimora a auditoria com ícones e filtros, os cartões de serviços, as dependências e os dispositivos confiáveis, e passa a apresentar notas da Release, alterações do CHANGELOG e README da tag publicada. O atualizador continua exigindo sessão autenticada, CSRF, senha administrativa, manifesto SHA-256 e backup; não exige assinatura Ed25519. O workflow do GitHub Actions foi preparado para publicar ZIP e manifesto quando o arquivo VERSION muda na branch main, desde que o workflow esteja presente e tenha permissão de gravação. Mantém a integração Spaceship em modo de consulta DNS.
+A versão 2.0.14 reorganiza a Central de APIs: Spaceship em cartão compacto, gerenciamento de credenciais em janela própria, consulta DNS em modal com ícones, status claro de configuração e cópia segura dos valores. Mantém consultas somente leitura; credenciais já salvas não são expostas nem precisam ser digitadas novamente. As melhorias de auditoria, serviços, dependências, dispositivos e notas de atualizações da 2.0.13 continuam presentes. O atualizador segue exigindo senha, proteção CSRF, SHA-256 e backup; a publicação pelo GitHub Actions depende de permissões no repositório.
 
 **Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave Ed25519; a Release depende da execução bem-sucedida do workflow do GitHub Actions).
 
@@ -12,7 +12,7 @@ Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend)
 
 ---
 
-> **Guia de atualização 2.0.13:** [vps/docs/ATUALIZACAO-2.0.13.md](vps/docs/ATUALIZACAO-2.0.13.md).
+> **Guia de atualização 2.0.14:** [vps/docs/ATUALIZACAO-2.0.14.md](vps/docs/ATUALIZACAO-2.0.14.md).
 
 > **Histórico 2.0.4:** leia [vps/docs/ATUALIZACAO-2.0.4.md](vps/docs/ATUALIZACAO-2.0.4.md).
 
@@ -165,8 +165,16 @@ Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14
 - **GitHub:** repositório padrão `drilemoz/alsistemas`, aviso amigável para ausência de Releases e workflow automático que publica Releases com SHA-256 quando VERSION muda. Não são necessários Secrets de assinatura.
 - **Testes:** validações locais de SHA-256 e adulteração, código de retorno do verificador Nginx, lista de pacotes, esquemas e verificações de segurança.
 
-Para esta versão, consulte `vps/docs/ATUALIZACAO-2.0.13.md` e `vps/docs/PACOTES.md`. O arquivo `RELEASES-ASSINADAS.md` é histórico e não descreve o mecanismo atual. Não execute o atualizador em produção sem testar uma Release e seu SHA-256 em ambiente controlado.
+Para esta versão, consulte `vps/docs/ATUALIZACAO-2.0.14.md` e `vps/docs/PACOTES.md`. O arquivo `RELEASES-ASSINADAS.md` é histórico e não descreve o mecanismo atual. Não execute o atualizador em produção sem testar uma Release e seu SHA-256 em ambiente controlado.
 
 
-### Melhorias da 2.0.13
+### Melhorias da 2.0.14
+
+- Central de APIs em lista compacta, com modais independentes Gerenciar Spaceship e Testar DNS.
+- Consulta DNS com cartões, ícones por tipo, TTL, cópia de valor e status da sessão.
+- Credenciais salvas continuam armazenadas na VPS; os campos de substituição ficam intencionalmente vazios.
 Auditoria com ícones, filtros e correção de valores indefinidos; cartões visuais para serviços, dependências e dispositivos. A busca de atualização lê notas da Release, seção correspondente do CHANGELOG e README da tag, quando disponíveis. A integração Spaceship continua somente leitura; edição DNS e provisionamento automático ainda não foram implementados.
+
+### Integração Spaceship — interface 2.0.14
+
+Em **APIs e Integrações**, selecione **Gerenciar** para consultar o estado das credenciais, substituí-las ou removê-las. Quando configurada, selecione **Testar DNS** para abrir uma janela de consulta por domínio, com registros organizados por tipo, ícones e botão para copiar valores. Campos vazios na janela Gerenciar **não** indicam perda de credenciais: o segredo criptografado não retorna ao navegador. Não há ações de criação/edição/exclusão de DNS nesta versão.
