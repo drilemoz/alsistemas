@@ -1,4 +1,4 @@
-## Instalação rápida com Termux (2.0.11)
+## Instalação rápida com Termux (2.0.12)
 
 O caminho mais curto depois de configurar o primeiro SSH e baixar o ZIP no Android é:
 
@@ -6,13 +6,13 @@ O caminho mais curto depois de configurar o primeiro SSH e baixar o ZIP no Andro
 pkg install -y openssh unzip
 termux-setup-storage
 mkdir -p ~/als-instalador
-unzip -oq ~/storage/downloads/AL-Sistemas-v2.0.11-VPS.zip inicio-termux.sh bootstrap-vps.sh -d ~/als-instalador
+unzip -oq ~/storage/downloads/AL-Sistemas-v2.0.12-VPS.zip inicio-termux.sh bootstrap-vps.sh -d ~/als-instalador
 bash ~/als-instalador/inicio-termux.sh --host IP_DA_VPS --key ~/.ssh/minha-chave.pem
 ```
 
 A transferência ocorre por SCP. O script remoto usa Python 3 pré-instalado no Ubuntu 24.04 para validar integridade e extrair o ZIP, exibe `--plan` e solicita confirmação antes do `sudo`. Use `--existing` se já existir um dos sites protegidos, `--with-php` e `--with-mariadb` para pacotes opcionais. O script não cria chaves SSH, não abre 8181 à internet e não configura um domínio sem os parâmetros próprios. Se a VPS não oferecer Python 3 ou SSH, configure-os primeiro. Sem domínio, acesse por túnel SSH. As etapas detalhadas continuam abaixo e no `tutorial-instalacao.html`.
 
-# AL Sistemas VPS 2.0.11 — Instalação Ubuntu Server 24.04 LTS
+# AL Sistemas VPS 2.0.12 — Instalação Ubuntu Server 24.04 LTS
 
 > **Estado da validação:** instalador testado com `bash -n` e revisão estática. Ainda não executado em uma VPS Ubuntu 24.04 real; instale primeiro em uma VPS de homologação ou snapshot restaurável. O comando `--plan` não altera nada.
 
@@ -91,14 +91,14 @@ curl --fail http://127.0.0.1:8181/api/health
 
 ## Atualização e idempotência
 
-Para a primeira atualização da 2.0.3 para 2.0.4, comece por `bash instalar.sh --plan`, confira um snapshot e leia [ATUALIZACAO-2.0.4.md](ATUALIZACAO-2.0.4.md). Envie o ZIP 2.0.4, revise as mudanças e execute `sudo ./instalar.sh` com as opções apropriadas. Versões futuras podem usar o módulo GitHub somente após configurar chave pública e publicar uma Release assinada. Em VPS com IguatamaOnline ou `/var/www/iguatama-teste/`, é necessário `--allow-existing-host` consciente, **sem alteração desses sites pelo instalador**. O instalador reutiliza o usuário e os diretórios existentes, não refaz a conta admin e salva backup de código em `/var/backups/alsistemas/` quando encontra versão anterior. **Não restaura automaticamente** dados alterados por administradores.
+Para a primeira atualização da 2.0.3 para 2.0.4, comece por `bash instalar.sh --plan`, confira um snapshot e leia [ATUALIZACAO-2.0.4.md](ATUALIZACAO-2.0.4.md). Envie o ZIP 2.0.4, revise as mudanças e execute `sudo ./instalar.sh` com as opções apropriadas. Após a primeira atualização manual para 2.0.12, o módulo GitHub utiliza Releases com ZIP e manifesto SHA-256 publicadas automaticamente quando VERSION muda. Em VPS com IguatamaOnline ou `/var/www/iguatama-teste/`, é necessário `--allow-existing-host` consciente, **sem alteração desses sites pelo instalador**. O instalador reutiliza o usuário e os diretórios existentes, não refaz a conta admin e salva backup de código em `/var/backups/alsistemas/` quando encontra versão anterior. **Não restaura automaticamente** dados alterados por administradores.
 
 As versões de código só devem avançar sequencialmente. O código legado (`backend/` e `alsistemas/`) não é iniciado pelo instalador VPS.
 
 ## O que esta versão ainda não faz
 
 - Criar/alterar bancos e usuários MariaDB pela interface.
-- Implantar projetos Node.js, editor de arquivos, restaurar backups completos de projetos e bancos, SSL por site ou migração assistida. A atualização do núcleo via GitHub exige releases assinadas e configuração prévia de chave pública.
+- Implantar projetos Node.js, editor de arquivos, restaurar backups completos de projetos e bancos, SSL por site ou migração assistida. A atualização do núcleo via GitHub exige Release pública com ZIP e manifesto SHA-256, além da senha administrativa no painel.
 - Migrar automaticamente o backend legado MongoDB/Cloudinary para SQLite.
 - Gerenciar usuários Linux por projeto, PHP-FPM pools isolados, backups externos ou rollback automático total de sistema.
 
@@ -131,4 +131,4 @@ Para **testar uma restauração fora da produção**, copie o `.tar.gpg` para lo
 
 Leia o arquivo principal `tutorial-instalacao.html` e `ATUALIZACAO-2.0.4.md` para atualização da versão já instalada. Sem domínio, continue usando túnel SSH. A conta existente em `/var/lib/alsistemas/admin.json` é preservada; no primeiro login da versão nova, marque **Confiar neste dispositivo por 30 dias** e confirme o TOTP para poder usar apenas a senha nas próximas entradas pelo mesmo navegador. A opção não dispensa a senha nem operações sensíveis.
 
-O arquivo root-owned `/etc/alsistemas-vps/update-public-key.pem` é opcional e deve receber apenas a chave pública Ed25519 de Releases assinadas. A aplicação não cria, armazena nem recebe a chave privada. A atualização tem serviço systemd próprio, com logs em `journalctl -u alsistemas-updater`.
+Não há chave Ed25519 obrigatória para o atualizador da 2.0.12. O serviço systemd `alsistemas-updater` verifica SHA-256 do manifesto da Release e mantém logs em `journalctl -u alsistemas-updater`.

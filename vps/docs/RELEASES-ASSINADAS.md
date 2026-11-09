@@ -1,3 +1,5 @@
+> **Histórico obsoleto:** desde a versão 2.0.12 não se usam chaves/assinaturas; consulte ATUALIZACAO-2.0.12.md.
+
 # Publicação e teste de Releases GitHub assinadas
 
 **Diagnóstico em 09/11/2026:** o repositório público `drilemoz/alsistemas` existe, mas a consulta `releases/latest` não encontrou Release estável na verificação anterior. Atualizações exigem Release assinada com três assets e chave pública Ed25519 provisionada. Confira o estado atual no GitHub antes de tentar instalar.

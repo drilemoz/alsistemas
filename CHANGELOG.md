@@ -1,3 +1,13 @@
+## 2.0.12 — Atualizações GitHub com senha e SHA-256 (09/11/2026)
+
+- Removida a exigência de assinatura Ed25519 e de chave pública no painel e no serviço privilegiado de atualização.
+- Instalação de Release autenticada na sessão administrativa, com proteção CSRF, confirmação no navegador e senha do administrador.
+- ZIP e manifesto SHA-256 são gerados automaticamente por GitHub Actions quando VERSION muda na branch main, sem Secret de assinatura.
+- Verificação da versão, do arquivo, do SHA-256, estrutura ZIP, tamanho, origem HTTPS e rollback de código/serviços.
+- Backup adicional dos dados administrativos do AL Sistemas antes da atualização, sem sobrescrever instalações/sites existentes.
+- A versão em produção 2.0.5 precisa de atualização inicial manual, pois o código instalado ainda exige assinatura; após essa migração, usar a interface.
+- Segurança: o SHA-256 verifica integridade, mas **não autentica a autoria** contra comprometimento do repositório GitHub; proteger conta e branch.
+
 ## 2.0.11 — 09/11/2026 — Diagnóstico de 404 em atualizações GitHub
 
 - HTTP 404 em `releases/latest` agora verifica também se o repositório existe e é acessível, distinguindo ausência de Release pública de repositório ausente/privado.

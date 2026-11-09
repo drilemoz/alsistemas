@@ -7,7 +7,6 @@ on:
       - 'inicio-termux.sh'
       - 'bootstrap-vps.sh'
       - 'tutorial-instalacao.html'
-      - 'tools/assinar-release.sh'
       - 'vps/admin/packages.py'
       - '.github/workflows/vps-signed-release.yml'
       - 'CHANGELOG.md'
@@ -19,7 +18,6 @@ on:
       - 'inicio-termux.sh'
       - 'bootstrap-vps.sh'
       - 'tutorial-instalacao.html'
-      - 'tools/assinar-release.sh'
       - 'vps/admin/packages.py'
       - '.github/workflows/vps-signed-release.yml'
       - 'CHANGELOG.md'
@@ -44,6 +42,6 @@ jobs:
       - name: Python helper unit tests
         run: python3 -m unittest discover -s vps/tests -p 'test_*.py' -v
       - name: Bash syntax
-        run: bash -n instalar.sh inicio-termux.sh bootstrap-vps.sh tools/assinar-release.sh
+        run: bash -n instalar.sh inicio-termux.sh bootstrap-vps.sh
       - name: Tutorial integrity
         run: cmp tutorial-instalacao.html vps/public/tutorial-instalacao.html

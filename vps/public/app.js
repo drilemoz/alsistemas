@@ -410,14 +410,13 @@ async function loadUpdateInfo() {
   $('update-summary').replaceChildren()
   rowInfo($('update-summary'), 'Instalada', `v${data.installed}`)
   rowInfo($('update-summary'), 'Repositório', data.repo || 'Não configurado')
-  rowInfo($('update-summary'), 'Assinatura Ed25519', data.signingReady ? 'Chave pública cadastrada' : 'Chave pública ausente')
   if (data.status) rowInfo($('update-summary'), 'Última operação', `${data.status.stage}: ${data.status.message}`)
   $('update-repo').value = data.repo || 'drilemoz/alsistemas'
   document.querySelector('.repo-url').textContent = `https://github.com/${$('update-repo').value}`
   const repo = data.repo || 'drilemoz/alsistemas'
   $('github-releases-link').href = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\/[a-zA-Z0-9_.-]+$/.test(repo) ? `https://github.com/${repo}/releases` : 'https://github.com/drilemoz/alsistemas/releases'
   const inProgress = ['checking', 'downloading', 'validating', 'installing', 'rolling_back'].includes(data.status?.stage)
-  $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady && data.signingReady)
+  $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady)
   return data
 }
 $('check-update').addEventListener('click', async () => {
@@ -428,7 +427,7 @@ $('check-update').addEventListener('click', async () => {
     await loadUpdateInfo()
     if (data.latest) rowInfo($('update-summary'), 'Última Release', `v${data.latest}`)
     rowInfo($('update-summary'), 'Verificação', data.message)
-    $('apply-update').disabled = !(data.available && data.assetsReady && data.signingReady)
+    $('apply-update').disabled = !(data.available && data.assetsReady)
   } catch (e) { notice(e.message, true) }
   finally { $('check-update').disabled = false }
 })
@@ -448,7 +447,7 @@ $('update-cancel').addEventListener('click', () => $('update-dialog').close())
 $('update-apply-form').addEventListener('submit', e => {
   e.preventDefault()
   submit(e.currentTarget, async data => {
-    if (!await confirmAction('Instalar atualização assinada? O serviço poderá reiniciar e sua sessão cairá. Uma cópia da versão anterior será criada.', 'Confirmar instalação')) return
+    if (!await confirmAction('Instalar atualização do GitHub? O serviço poderá reiniciar e sua sessão cairá. Uma cópia da versão anterior será criada.', 'Confirmar instalação')) return
     const result = await api('/api/updates/apply', 'POST', data)
     e.target.reset()
     $('update-dialog').close()

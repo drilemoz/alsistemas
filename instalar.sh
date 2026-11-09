@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.11: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.12: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
 BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-DOMAIN='' EMAIL='' PHP=0 MARIADB=0 UFW=0 PLAN=0 EXISTING=0 UPDATE_KEY=''
+DOMAIN='' EMAIL='' PHP=0 MARIADB=0 UFW=0 PLAN=0 EXISTING=0
 while (($#)); do
   case "$1" in
     --domain) DOMAIN="${2:?Informe domínio}"; shift 2 ;;
@@ -13,7 +13,6 @@ while (($#)); do
     --with-mariadb) MARIADB=1; shift ;;
     --enable-ufw) UFW=1; shift ;;
     --allow-existing-host) EXISTING=1; shift ;;
-    --update-key-file) UPDATE_KEY="${2:?Informe caminho da chave pública}"; shift 2 ;;
     --plan) PLAN=1; shift ;;
     -h|--help) cat <<'HELP'
 Uso: sudo ./instalar.sh [opções]
@@ -24,7 +23,6 @@ Uso: sudo ./instalar.sh [opções]
   --with-mariadb           instala MariaDB (opcional)
   --enable-ufw             habilita firewall somente após liberar SSH/HTTP/HTTPS
   --allow-existing-host    requer confirmação explícita em VPS com sites existentes
-  --update-key-file ARQ    instala chave pública Ed25519 para atualizações GitHub assinadas
 HELP
       exit 0;;
     *) echo "Opção não reconhecida: $1" >&2; exit 2;;
@@ -50,7 +48,7 @@ log "Detectado $PRETTY_NAME, $ARCH, ${CPUS} CPU, RAM ${MEM} MiB, disco livre ${D
 log 'Portas em escuta:'
 command -v ss >/dev/null && ss -lnt '( sport = :22 or sport = :80 or sport = :443 or sport = :8181 )' || true
 if ((PLAN)); then
-  log "PLANO: Node.js 24 se necessário, Nginx, PHP=$PHP, MariaDB=$MARIADB, UFW=$UFW, domínio=${DOMAIN:-nenhum}, chave de atualização=${UPDATE_KEY:-não alterar}; sem alterações."
+  log "PLANO: Node.js 24 se necessário, Nginx, PHP=$PHP, MariaDB=$MARIADB, UFW=$UFW, domínio=${DOMAIN:-nenhum}; sem alterações."
   exit 0
 fi
 ((EUID == 0)) || fail 'Execute como root com sudo.'
@@ -97,7 +95,7 @@ if [[ ! -e /var/lib/alsistemas/updates-config.json ]]; then
   printf '%s\n' '{"repo":"drilemoz/alsistemas"}' > /var/lib/alsistemas/updates-config.json
   chown alsistemas:alsistemas /var/lib/alsistemas/updates-config.json
   chmod 0600 /var/lib/alsistemas/updates-config.json
-  log 'Repositório GitHub padrão registrado: drilemoz/alsistemas (Releases assinadas obrigatórias).'
+  log 'Repositório GitHub padrão registrado: drilemoz/alsistemas (Releases com SHA-256).'
 fi
 # Backups criptografados nunca devem ficar no webroot nem acessíveis ao Node sem sudo.
 [[ ! -L /var/backups/alsistemas-vps ]] || fail 'Destino de backups é link simbólico; recusado.'
@@ -196,22 +194,17 @@ NoNewPrivileges=false
 [Install]
 WantedBy=multi-user.target
 EOF
-# Arquivo público root-owned: os pacotes de Release devem ser assinados com a chave privada correspondente.
+# O atualizador não precisa de chave privada ou pública de assinatura.
 install -d -o root -g root -m 0755 /etc/alsistemas-vps
-[[ ! -L /etc/alsistemas-vps/update-public-key.pem ]] || fail 'Chave pública instalada é um link simbólico.'
-if [[ -n "$UPDATE_KEY" ]]; then
-  [[ -f "$UPDATE_KEY" && ! -L "$UPDATE_KEY" ]] || fail 'Arquivo de chave pública ausente ou é link simbólico.'
-  openssl pkey -pubin -in "$UPDATE_KEY" -text -noout 2>/dev/null | grep -q 'ED25519 Public-Key' || fail 'Chave pública deve ser Ed25519 PEM válida.'
-  install -o root -g root -m 0644 "$UPDATE_KEY" /etc/alsistemas-vps/update-public-key.pem
-  log 'Chave pública de assinatura de Releases instalada.'
-fi
 if [[ -e /etc/systemd/system/alsistemas-updater.service ]]; then
   [[ ! -L /etc/systemd/system/alsistemas-updater.service ]] || fail 'Unidade do atualizador é link simbólico.'
-  grep -Fq 'Description=AL Sistemas VPS - atualizador de Releases assinadas' /etc/systemd/system/alsistemas-updater.service || fail 'Unidade existente do atualizador não pertence ao painel.'
+  if ! grep -Fq 'Description=AL Sistemas VPS - atualizador de Releases assinadas' /etc/systemd/system/alsistemas-updater.service && ! grep -Fq 'Description=AL Sistemas VPS - atualizador de Releases GitHub' /etc/systemd/system/alsistemas-updater.service; then
+    fail 'Unidade existente do atualizador não pertence ao painel.'
+  fi
 fi
 cat > /etc/systemd/system/alsistemas-updater.service <<'EOF'
 [Unit]
-Description=AL Sistemas VPS - atualizador de Releases assinadas
+Description=AL Sistemas VPS - atualizador de Releases GitHub
 After=network-online.target
 Wants=network-online.target
 [Service]

@@ -21,21 +21,21 @@ test('repositório allowlist e comparação sem execuções arbitrárias', () =>
   assert.equal(compareVersion('latest', '2.0.4'), null)
 })
 
-test('consulta GitHub apenas informa disponibilidade, não valida assinatura no frontend', async () => {
+test('consulta GitHub apenas informa disponibilidade, não exige chave Ed25519', async () => {
   configureRepo('my-user/repo_name')
   assert.equal(updateInfo('2.0.4').repo, 'my-user/repo_name')
   const url = 'https://api.github.com/repos/my-user/repo_name/releases/latest'
   const fake = async (actual) => {
     assert.equal(actual, url)
     return { ok: true, headers: { get() { return null } }, json: async () => ({ tag_name: 'v2.0.5', assets: [
-      { name: 'AL-Sistemas-v2.0.5-VPS.zip' }, { name: 'update-manifest.json' }, { name: 'update-manifest.json.sig' }
+      { name: 'AL-Sistemas-v2.0.5-VPS.zip' }, { name: 'update-manifest.json' }
     ] }) }
   }
   const data = await checkRelease('2.0.4', fake)
   assert.equal(data.available, true)
   assert.equal(data.assetsReady, true)
-  assert.equal(data.signingReady, false)
-  assert.match(data.message, /assinatura será validada/)
+  assert.equal('signingReady' in data, false)
+  assert.match(data.message, /SHA-256 e estrutura serão conferidos/)
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -74,11 +74,20 @@ test('falha de rede ou rate limit não é confundida com ausência de Release', 
   })), /Limite de consultas públicas/)
 })
 
-test('não usa fallback para ZIP da branch sem manifesto assinado', async () => {
+test('não usa fallback para ZIP da branch sem manifesto SHA-256', async () => {
   const data = await checkRelease('2.0.10', async url => ({
     ok: url.endsWith('/repos/drilemoz/alsistemas'), status: url.endsWith('/releases/latest') ? 404 : 200
   }))
   assert.equal(data.available, false)
   assert.equal(data.assetsReady, false)
   assert.equal(data.latest, undefined)
+})
+
+test('Release sem manifesto não libera o botão de atualização', async () => {
+  const fake = async () => ({ ok: true, headers: { get: () => null }, json: async () => ({
+    tag_name: 'v2.0.14', assets: [{ name: 'AL-Sistemas-v2.0.14-VPS.zip' }]
+  }) })
+  const data = await checkRelease('2.0.12', fake)
+  assert.equal(data.available, true)
+  assert.equal(data.assetsReady, false)
 })

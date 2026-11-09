@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Atualizador autônomo com assinatura Ed25519 obrigatória e rollback local.
+"""Atualizador de Releases públicas com hash SHA-256 e rollback local.
 Executado exclusivamente pela unidade root-owned alsistemas-updater.service.
 Não aceita URL, comandos ou caminho passados pelo navegador.
 """
@@ -8,7 +8,6 @@ import json
 import os
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -19,7 +18,6 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 DATA = Path('/var/lib/alsistemas')
-KEY = Path('/etc/alsistemas-vps/update-public-key.pem')
 TARGET = Path('/opt/alsistemas-vps/current')
 HELPER = Path('/usr/local/libexec/alsistemas-helper')
 UNIT = Path('/etc/systemd/system/alsistemas-vps.service')
@@ -81,7 +79,7 @@ def fetch(url, repo, limit, asset=None):
     handler = SafeRedirect()
     handler.repo, handler.asset = repo, asset
     opener = urllib.request.build_opener(handler)
-    req = urllib.request.Request(url, headers={'User-Agent': 'AL-Sistemas-VPS/2.0.11', 'Accept': 'application/vnd.github+json'})
+    req = urllib.request.Request(url, headers={'User-Agent': 'AL-Sistemas-VPS/2.0.12', 'Accept': 'application/vnd.github+json'})
     with opener.open(req, timeout=25) as res:
         length = res.headers.get('Content-Length')
         if length and int(length) > limit:
@@ -122,34 +120,6 @@ def archive_validate(z):
             raise RuntimeError('ZIP extraído grande demais')
 
 
-def trusted_public_key(path=None):
-    """Production invariant: only a root-owned, regular, non-writable PEM is trusted.
-
-    Tests can mock this predicate for a temporary test key, but the real
-    updater never relaxes owner or permission checks based on its caller.
-    """
-    if path is None:
-        path = KEY
-    try:
-        info = path.lstat()
-    except OSError:
-        return False
-    return (stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1
-            and (info.st_mode & 0o022) == 0 and 0 < info.st_size <= 8192)
-
-
-def verify_signature(manifest, signature, directory):
-    if not trusted_public_key():
-        raise RuntimeError('Chave pública Ed25519 não está provisionada pelo administrador')
-    m = directory / 'manifest.json'
-    sig = directory / 'manifest.sig'
-    m.write_bytes(manifest)
-    sig.write_bytes(signature)
-    check = subprocess.run(['/usr/bin/openssl', 'pkeyutl', '-verify', '-pubin', '-inkey', str(KEY), '-rawin', '-in', str(m), '-sigfile', str(sig)], capture_output=True, timeout=10)
-    if check.returncode != 0:
-        raise RuntimeError('Assinatura Ed25519 do manifesto não confere')
-
-
 def read_current():
     return json.loads((TARGET / 'package.json').read_text(encoding='utf-8'))['version']
 
@@ -184,18 +154,16 @@ def apply():
         return
     assets = {a.get('name'): a.get('browser_download_url') for a in release.get('assets', []) if isinstance(a, dict)}
     archive_name = f'AL-Sistemas-v{version}-VPS.zip'
-    names = [archive_name, 'update-manifest.json', 'update-manifest.json.sig']
+    names = [archive_name, 'update-manifest.json']
     if not all(n in assets and safe_url(assets[n], repo, n) for n in names):
         raise RuntimeError('Release sem assets obrigatórios ou com URL inválida')
-    status('downloading', 'Baixando manifesto assinado e ZIP', target=version)
+    status('downloading', 'Baixando manifesto SHA-256 e ZIP da Release', target=version)
     manifest = fetch(assets[names[1]], repo, 16384, names[1])
-    signature = fetch(assets[names[2]], repo, 2048, names[2])
     with tempfile.TemporaryDirectory(prefix='als-update-', dir=BACKUP) as tmp:
         folder = Path(tmp)
-        verify_signature(manifest, signature, folder)
         data = json.loads(manifest)
         if set(data) != {'schema', 'version', 'asset', 'sha256'} or data['schema'] != 1 or data['version'] != version or data['asset'] != archive_name or not re.fullmatch('[0-9a-f]{64}', str(data['sha256'])):
-            raise RuntimeError('Manifesto assinado com informações divergentes')
+            raise RuntimeError('Manifesto SHA-256 com informações divergentes')
         zip_bytes = fetch(assets[archive_name], repo, MAX_ZIP, archive_name)
         if hashlib.sha256(zip_bytes).hexdigest() != data['sha256']:
             raise RuntimeError('SHA-256 do ZIP não confere')
@@ -209,7 +177,7 @@ def apply():
             z.extractall(unpack)
         for needed in ('instalar.sh', 'vps/src/server.js', 'vps/admin/helper.py', 'vps/package.json'):
             if not (unpack / needed).is_file():
-                raise RuntimeError('Pacote assinado incompleto')
+                raise RuntimeError('Pacote de atualização incompleto')
         installed = json.loads((unpack / 'vps/package.json').read_text(encoding='utf-8'))['version']
         if installed != version:
             raise RuntimeError('Versão interna divergente')
@@ -218,9 +186,12 @@ def apply():
         snapshot = BACKUP / f'pre-update-{datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")}'
         snapshot.mkdir(mode=0o700)
         shutil.copytree(TARGET, snapshot / 'current', symlinks=True)
+        # Backup separado dos dados administrativos antes da operação.
+        # É cópia de segurança, não é revertida automaticamente em caso de falha.
+        shutil.copytree(DATA, snapshot / 'data', symlinks=True)
         for source, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers')):
             shutil.copy2(source, snapshot / name)
-        status('installing', 'Aplicando versão assinada (a interface pode desconectar)', target=version)
+        status('installing', 'Aplicando nova versão (a interface pode desconectar)', target=version)
         try:
             run_installer(unpack)
             if read_current() != version or not health():

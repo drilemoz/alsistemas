@@ -1,8 +1,8 @@
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.11 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.12 + legado preservado
 
-A versão 2.0.11 aprimora o diagnóstico de HTTP 404 ao verificar o GitHub Releases e indicar separadamente repositório inacessível ou ausência de Release estável. Mantém as correções anteriores no carregamento real da Central de APIs e ajusta as consultas à API oficial da Spaceship (URL, paginação obrigatória e erros), sem alterar serviços existentes ou permissões de produção. Mantém a verificação Nginx em unidade systemd separada, o catálogo limitado de pacotes e o atualizador de Releases assinadas da 2.0.6. Preserva o refinamento móvel, pop-ups e instalação assistida da 2.0.5. Mantém o núcleo da 2.0.4, autenticador/dispositivos confiáveis, backups limitados e atualizador de Releases assinadas. O legado React/Express/MongoDB é preservado, mas **não é executado** pelo painel VPS leve.
+A versão 2.0.12 simplifica o atualizador: não há SHA-256 nem chave pública na VPS. A instalação ocorre com sessão autenticada, CSRF, senha, ZIP de Release e SHA-256, com backup e tentativa de rollback. O GitHub Actions gera automaticamente ZIP e manifesto quando o arquivo VERSION muda em main. Mantém a Central de APIs/Spaceship, gestão de projetos, serviços e painel móvel.
 
-**Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave privada, e as atualizações continuam exigindo Release assinada e chave pública instalada).
+**Repositório padrão de atualizações:** `drilemoz/alsistemas` (sem chave de assinatura; publica Releases automaticamente pela workflow).
 
 **Instalação rápida em nova VPS Ubuntu 24.04:** extraia os scripts `inicio-termux.sh` e `bootstrap-vps.sh` do ZIP na pasta do Termux; execute `bash inicio-termux.sh --host IP --key ~/.ssh/CHAVE.pem`. O script transfere o ZIP, valida o plano e pede confirmação antes do `sudo`. Leia o [tutorial HTML](tutorial-instalacao.html), seção Instalação rápida.
 
@@ -12,7 +12,7 @@ Stack do legado, separado do núcleo VPS: **React + Vite + Tailwind** (frontend)
 
 ---
 
-> **Guia de atualização 2.0.11:** [vps/docs/ATUALIZACAO-2.0.11.md](vps/docs/ATUALIZACAO-2.0.11.md).
+> **Guia de atualização 2.0.12:** [vps/docs/ATUALIZACAO-2.0.12.md](vps/docs/ATUALIZACAO-2.0.12.md).
 
 > **Histórico 2.0.4:** leia [vps/docs/ATUALIZACAO-2.0.4.md](vps/docs/ATUALIZACAO-2.0.4.md).
 
@@ -162,11 +162,11 @@ Use o [UptimeRobot](https://uptimerobot.com) para pingar `/api/health` a cada 14
 
 - **Nginx:** unit systemd `alsistemas-nginx-check.service` executa `/usr/sbin/nginx -t` fora do isolamento de montagem do backend, sem conceder privilégios adicionais ao Node. A operação continua somente leitura em relação aos arquivos de configuração.
 - **Dependências:** inventário real com `dpkg-query` e instalação opcional de um catálogo limitado (PHP 8.3 cURL, mbstring, XML, MySQL, ZIP, GD, Intl e Composer) pelo serviço dedicado `alsistemas-package-installer.service`, exigindo senha e um TOTP novo. Não executa comandos livres, nem instala npm/pip arbitrários.
-- **GitHub:** repositório padrão `drilemoz/alsistemas`, aviso amigável para ausência de Releases e workflow manual de publicação de Releases assinadas. É preciso primeiro publicar código e configurar o segredo de assinatura; a versão atual do repositório e a chave pública na VPS não são alteradas por este ZIP.
-- **Testes:** validações locais de assinatura e adulteração, código de retorno do verificador Nginx, lista de pacotes, esquemas e verificações de segurança.
+- **GitHub:** repositório padrão `drilemoz/alsistemas`, aviso amigável para ausência de Releases e workflow automático que publica Releases com SHA-256 quando VERSION muda. Não são necessários Secrets de assinatura.
+- **Testes:** validações locais de SHA-256 e adulteração, código de retorno do verificador Nginx, lista de pacotes, esquemas e verificações de segurança.
 
-Leia `vps/docs/RELEASES-ASSINADAS.md` e `vps/docs/PACOTES.md`. Não execute o atualizador em produção sem homologar uma Release assinada em uma VPS de teste.
+Leia `vps/docs/RELEASES-ASSINADAS.md` e `vps/docs/PACOTES.md`. Não execute o atualizador em produção sem homologar uma Release com SHA-256 em uma VPS de teste.
 
 
-### Correções da 2.0.11
+### Correções da 2.0.12
 A Central de APIs agora carrega o script no servidor (HTTP 200), usa o endpoint oficial da Spaceship e a paginação obrigatória. O tutorial de configuração pelo botão ? foi mantido e ganhou acesso direto ao API Manager. Provisionamento automático e escrita DNS ainda não foram implementados.

@@ -12,7 +12,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.11'
+const VERSION = '2.0.12'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -273,12 +273,11 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/updates/apply' && req.method === 'POST') {
         if (!limit(ip, 'update-apply', 5)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'otp,password') return fail(res, 400, 'Parâmetros inválidos')
+        // A sessão já exige autenticação; a ação crítica solicita novamente a senha.
+        if (Object.keys(input).sort().join(',') !== 'password') return fail(res, 400, 'Parâmetros inválidos')
         const admin = readJson('admin.json')
-        const step = admin ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1)) return fail(res, 401, 'Senha e novo TOTP obrigatórios')
-        if (!updateInfo(VERSION).signingReady || !updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório e a chave pública de assinatura no servidor')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
+        if (!admin || !verifyPassword(input.password, admin.passwordHash)) return fail(res, 401, 'Senha administrativa incorreta')
+        if (!updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
         const result = await taskRunner({ action: 'start_update' })
         audit('update_requested', { ip })
         return json(res, 202, result)
