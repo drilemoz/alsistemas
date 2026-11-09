@@ -1,10 +1,14 @@
 'use strict'
-// 2.0.14: central de integrações em janelas independentes, sem exposição de segredos.
+// 2.0.16: central de integrações com operações DNS controladas; sem exposição de segredos.
 const spaceshipForm = $('spaceship-form')
 const spaceshipDomain = $('spaceship-domain')
 let spaceshipConfigured = false
 let spaceshipVerified = false
 let spaceshipLastQuery = null
+let spaceshipDnsRecords = []
+let spaceshipDnsTotal = 0
+let spaceshipDnsOperation = null
+let spaceshipDnsPending = null
 
 function openIntegrationDialog(id) {
   const dialog = $(id)
@@ -46,7 +50,7 @@ function updateSpaceshipState() {
 async function refreshIntegrations() {
   const status = await api('/api/integrations')
   spaceshipConfigured = !!status?.spaceship?.configured
-  if (!spaceshipConfigured) { spaceshipVerified = false; spaceshipLastQuery = null }
+  if (!spaceshipConfigured) { spaceshipVerified = false; spaceshipLastQuery = null; spaceshipDnsRecords = [] }
   updateSpaceshipState()
 }
 $('spaceship-open').addEventListener('click', async () => {
@@ -98,6 +102,7 @@ $('spaceship-remove').addEventListener('click', async () => {
     spaceshipVerified = false
     spaceshipLastQuery = null
     $('spaceship-results').replaceChildren()
+    $('spaceship-add-record').disabled = true
     $('spaceship-query-status').textContent = 'A integração foi removida.'
     await refreshIntegrations()
     closeIntegrationDialog('spaceship-manage-dialog')
@@ -137,6 +142,9 @@ function renderDns(payload) {
   const container = $('spaceship-results')
   container.replaceChildren()
   const records = Array.isArray(payload?.items) ? payload.items : []
+  spaceshipDnsRecords = records
+  spaceshipDnsTotal = Number.isSafeInteger(payload?.total) ? payload.total : records.length
+  $('spaceship-add-record').disabled = !spaceshipConfigured || spaceshipDnsTotal > records.length
   if (!records.length) {
     const empty = document.createElement('p')
     empty.className = 'dns-empty small muted'
@@ -192,6 +200,26 @@ function renderDns(payload) {
       try { await navigator.clipboard.writeText(value.textContent); copy.title = 'Copiado'; notice('Valor DNS copiado.') }
       catch { notice('Não foi possível copiar. Selecione o valor manualmente.', true) }
     })
+    const isCustom = record.group?.type === 'custom'
+    const editable = isCustom && ['A','CNAME','TXT'].includes(type) && dnsEditableName(String(record.name ?? '')) &&
+      Number.isSafeInteger(Number(record.ttl)) && Number(record.ttl) >= 300 && Number(record.ttl) <= 86400 &&
+      Object.hasOwn(record, type === 'A' ? 'address' : type === 'CNAME' ? 'cname' : 'value') &&
+      spaceshipDnsTotal <= records.length
+    if (editable) {
+      const actions = document.createElement('div')
+      actions.className = 'dns-write-actions'
+      for (const [operation, title] of [['update_ttl','Editar TTL'],['delete','Excluir']]) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'outline button-small' + (operation === 'delete' ? ' destructive' : '')
+        button.textContent = title
+        button.addEventListener('click', () => openDnsChange(operation, {
+          type, name: record.name, value: record[type === 'A' ? 'address' : type === 'CNAME' ? 'cname' : 'value'], ttl: Number(record.ttl)
+        }))
+        actions.append(button)
+      }
+      main.append(actions)
+    }
     card.append(emblem, main, copy)
     container.append(card)
   }
@@ -222,4 +250,73 @@ $('spaceship-dns-form').addEventListener('submit', async event => {
     $('spaceship-query-status').textContent = `Falha na consulta: ${error.message}`
     $('spaceship-query-status').className = 'dns-query-status dns-query-error small'
   } finally { button.disabled = !spaceshipConfigured }
+})
+
+// Somente os registros personalizados não essenciais são modificáveis nesta versão.
+function dnsEditableName(name) {
+  const lower = name.toLowerCase()
+  return !!lower && !['@','www','painel','mail','smtp','imap','pop','autodiscover','migrar','_dmarc','_domainkey','_acme-challenge'].includes(lower) &&
+    !lower.startsWith('_acme-challenge.') && !lower.endsWith('._domainkey')
+}
+function closeDnsChange(id) { closeIntegrationDialog(id) }
+$('spaceship-change-close').addEventListener('click', () => closeDnsChange('spaceship-change-dialog'))
+$('spaceship-change-cancel').addEventListener('click', () => closeDnsChange('spaceship-change-dialog'))
+$('spaceship-confirm-close').addEventListener('click', () => closeDnsChange('spaceship-confirm-dialog'))
+$('spaceship-confirm-cancel').addEventListener('click', () => closeDnsChange('spaceship-confirm-dialog'))
+function openDnsChange(operation, original = null) {
+  if (!spaceshipLastQuery || spaceshipDnsTotal > spaceshipDnsRecords.length) return
+  spaceshipDnsOperation = { action: operation, previous: original ? { ...original } : undefined }
+  const form = $('spaceship-change-form')
+  form.reset()
+  for (const key of ['type','name','value','ttl']) {
+    form.elements[key].disabled = operation !== 'create' && key !== 'ttl'
+    if (original) form.elements[key].value = original[key]
+  }
+  if (operation === 'delete') form.elements.ttl.disabled = true
+  const labels = { create: 'Adicionar registro DNS', update_ttl: 'Editar TTL do registro', delete: 'Excluir registro DNS' }
+  $('spaceship-change-title').textContent = labels[operation]
+  $('spaceship-change-hint').textContent = operation === 'create'
+    ? 'Adicione um registro novo. Os nomes críticos da hospedagem são bloqueados.'
+    : operation === 'update_ttl' ? 'Edite apenas o TTL. O nome e o valor serão preservados.'
+    : 'Exclusão irreversível pela API. Verifique bem o nome e o destino.'
+  $('spaceship-change-preview').textContent = operation === 'delete' ? 'Revisar exclusão' : 'Revisar alteração'
+  openIntegrationDialog('spaceship-change-dialog')
+}
+$('spaceship-add-record').addEventListener('click', () => openDnsChange('create'))
+$('spaceship-change-form').addEventListener('submit', event => {
+  event.preventDefault()
+  const operation = spaceshipDnsOperation
+  if (!operation || !spaceshipLastQuery) return
+  const f = event.currentTarget.elements
+  const record = { type: f.type.value, name: f.name.value.trim().toLowerCase(), value: f.value.value.trim(), ttl: Number(f.ttl.value) }
+  if (!dnsEditableName(record.name)) { notice('Nome protegido. Gerencie diretamente na Spaceship.', true); return }
+  if (operation.action !== 'create' &&
+      (record.type !== operation.previous.type || record.name !== operation.previous.name || record.value !== operation.previous.value)) return
+  if (operation.action === 'update_ttl' && record.ttl === operation.previous.ttl) { notice('Informe um TTL diferente.', true); return }
+  spaceshipDnsPending = { domain: spaceshipLastQuery.domain, command: { action: operation.action, record,
+    ...(operation.previous ? { previous: operation.previous } : {}) } }
+  const actionName = { create: 'ADICIONAR', update_ttl: 'EDITAR TTL', delete: 'EXCLUIR' }[operation.action]
+  $('spaceship-change-summary').textContent = `${actionName} DNS\nDomínio: ${spaceshipDnsPending.domain}\nTipo: ${record.type}\nNome: ${record.name}\nValor: ${record.value}\nTTL: ${record.ttl}s` +
+    (operation.previous ? `\nTTL anterior: ${operation.previous.ttl}s` : '')
+  $('spaceship-confirm-form').reset()
+  openIntegrationDialog('spaceship-confirm-dialog')
+})
+$('spaceship-confirm-form').addEventListener('submit', async event => {
+  event.preventDefault()
+  if (!spaceshipDnsPending) return
+  const form = event.currentTarget
+  const button = $('spaceship-confirm-apply')
+  button.disabled = true
+  try {
+    const payload = { ...spaceshipDnsPending, password: form.elements.password.value }
+    const result = await api('/api/integrations/spaceship/dns/change', 'POST', payload)
+    closeIntegrationDialog('spaceship-confirm-dialog')
+    closeIntegrationDialog('spaceship-change-dialog')
+    form.reset()
+    spaceshipDnsPending = null
+    notice(result.message)
+    // Consulta novamente o estado real, sem pressupor propagação imediata.
+    $('spaceship-dns-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  } catch (error) { $('spaceship-query-status').textContent = `Alteração não confirmada: ${error.message}. Consulte antes de repetir.`; notice(error.message, true) }
+  finally { button.disabled = false; form.elements.password.value = '' }
 })

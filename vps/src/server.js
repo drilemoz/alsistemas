@@ -10,9 +10,9 @@ import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, st
 import { monitor, projects, serviceDiagnostics } from './monitor.js'
 import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
-import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
+import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.14'
+const VERSION = '2.0.17'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -82,6 +82,40 @@ async function body(req) {
     if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error()
     return value
   } catch { throw Object.assign(new Error('JSON inválido'), { status: 400 }) }
+}
+async function uploadZip(req, onPercent = () => {}) {
+  // Content-Length conhecido, tamanho rígido e fluxo sem carregar dezenas de MB na RAM.
+  const maximum = 32 * 1024 * 1024
+  const length = Number(req.headers['content-length'])
+  if (!Number.isSafeInteger(length) || length < 512 || length > maximum)
+    throw Object.assign(new Error('ZIP precisa ter entre 512 bytes e 32 MiB, com Content-Length'), { status: 413 })
+  if (req.headers['content-type'] !== 'application/zip' && req.headers['content-type'] !== 'application/octet-stream')
+    throw Object.assign(new Error('Tipo de arquivo inválido; selecione um ZIP'), { status: 415 })
+  const name = `upload-${crypto.randomBytes(12).toString('hex')}.zip`
+  const dest = dataPath(name)
+  const output = fs.createWriteStream(dest, { flags: 'wx', mode: 0o600 })
+  let count = 0
+  const digest = crypto.createHash('sha256')
+  try {
+    for await (const chunk of req) {
+      count += chunk.length
+      if (count > maximum || count > length)
+        throw Object.assign(new Error('Upload excede o limite informado'), { status: 413 })
+      digest.update(chunk)
+      if (!output.write(chunk)) await new Promise((resolve, reject) => {
+        output.once('drain', resolve)
+        output.once('error', reject)
+      })
+    }
+    if (count !== length) throw Object.assign(new Error('Upload incompleto'), { status: 400 })
+    await new Promise((resolve, reject) => { output.end(resolve); output.once('error', reject) })
+    return { name, sha256: digest.digest('hex') }
+  } catch (error) {
+    output.destroy()
+    throw error
+  } finally {
+    if (!output.writableFinished) fs.rmSync(dest, { force: true })
+  }
 }
 function limit(ip, name, max = 5) {
   const key = `${ip}:${name}`
@@ -251,6 +285,25 @@ export function createServer({ taskRunner = runTask } = {}) {
           return json(res, 200, { records: await listSpaceshipDns(domain) })
         } catch (e) { return fail(res, e.status || 400, e.message) }
       }
+      if (path === '/api/integrations/spaceship/dns/change' && req.method === 'POST') {
+        if (!limit(ip, 'integrations_dns_write', 8)) return fail(res, 429, 'Muitas operações DNS. Tente novamente mais tarde.')
+        const input = await body(req)
+        if (Object.keys(input).sort().join(',') !== 'command,domain,password' ||
+            typeof input.password !== 'string' || input.password.length > 256) return fail(res, 400, 'Parâmetros inválidos')
+        const admin = readJson('admin.json')
+        if (!admin || !verifyPassword(input.password, admin.passwordHash)) {
+          audit('dns_write_denied', { ip, success: false })
+          return fail(res, 401, 'Senha administrativa incorreta')
+        }
+        try {
+          const result = await changeSpaceshipDns(input.domain, input.command)
+          audit('dns_write_accepted', { ip, provider: 'spaceship', action: result.action, domain: result.domain, type: result.type, name: result.name, success: true })
+          return json(res, 200, result)
+        } catch (error) {
+          audit('dns_write_failed', { ip, provider: 'spaceship', success: false })
+          return fail(res, error.status || 400, error.message)
+        }
+      }
       if (path === '/api/updates' && req.method === 'GET') return json(res, 200, updateInfo(VERSION))
       if (path === '/api/updates/check' && req.method === 'POST') {
         const input = await body(req)
@@ -278,9 +331,31 @@ export function createServer({ taskRunner = runTask } = {}) {
         const admin = readJson('admin.json')
         if (!admin || !verifyPassword(input.password, admin.passwordHash)) return fail(res, 401, 'Senha administrativa incorreta')
         if (!updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
+        if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(updateInfo(VERSION).status?.stage))
+          return fail(res, 409, 'Atualização já está em andamento')
         const result = await taskRunner({ action: 'start_update' })
         audit('update_requested', { ip })
         return json(res, 202, result)
+      }
+      if (path === '/api/updates/upload' && req.method === 'POST') {
+        if (!limit(ip, 'update-upload', 5)) return fail(res, 429, 'Muitas tentativas de envio')
+        const password = req.headers['x-update-password']
+        if (typeof password !== 'string' || password.length < 1 || password.length > 256)
+          return fail(res, 400, 'Senha administrativa obrigatória')
+        const admin = readJson('admin.json')
+        if (!admin || !verifyPassword(password, admin.passwordHash)) return fail(res, 401, 'Senha administrativa incorreta')
+        const active = updateInfo(VERSION).status?.stage
+        if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(active))
+          return fail(res, 409, 'Atualização já está em andamento')
+        let saved
+        try {
+          saved = await uploadZip(req)
+          const result = await taskRunner({ action: 'start_update', upload: saved.name, sha256: saved.sha256 })
+          audit('update_requested', { ip })
+          return json(res, 202, result)
+        } finally {
+          if (saved) fs.rmSync(dataPath(saved.name), { force: true })
+        }
       }
       if (path === '/api/dependencies' && req.method === 'GET') return json(res, 200, dependencyInfo())
       if (path === '/api/dependencies/install' && req.method === 'POST') {

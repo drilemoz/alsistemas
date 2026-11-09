@@ -1,4 +1,28 @@
-## 2.0.14 — Central de APIs em modais e consulta DNS visual (09/11/2026)
+## 2.0.17 — Atualizador acompanhado e upload ZIP (09/11/2026)
+
+- Atualizações pelo GitHub agora registram uma operação única com estados persistidos e progresso de download medido em bytes; a interface exibe janela de acompanhamento até a conclusão, falha ou reversão.
+- Atualização alternativa por arquivo ZIP enviado do dispositivo, com confirmação por senha, limite de 32 MiB, verificação SHA-256 local, validação de estrutura e versão superior.
+- O arquivo enviado passa por cópia restrita root-only antes da instalação; não são executados caminhos fornecidos pelo navegador.
+- Backup anterior à instalação, espera da saúde da versão instalada, reversão de código, unidades systemd e helper em falha.
+- Ao concluir, a interface mostra o botão **Atualizar página**. Progresso numérico aparece apenas quando há contagem real de bytes, não na instalação de tempo imprevisível.
+- Persistência do identificador da operação na aba do navegador e acompanhamento após novo login, com aviso de falta de resposta prolongada.
+- **Atenção:** SHA-256 de um arquivo local não autentica quem o produziu. Instale apenas ZIPs de origem verificada. A instalação na EC2 e os testes com reinicialização real ainda precisam de validação operacional.
+
+## 2.0.16 — Escrita DNS controlada na Spaceship (09/11/2026)
+
+- Gerenciamento de registros DNS A, CNAME e TXT com criação, alteração do TTL e exclusão de registros personalizados.
+- Prévia por janela, confirmação e senha administrativa; sessões e CSRF obrigatórios.
+- Proteção dos nomes essenciais da hospedagem, leitura de preflight, bloqueio contra mudanças concorrentes e zonas paginadas.
+- Requisições PUT/DELETE no formato oficial da Spaceship, sem `force: true`.
+- Registro de auditoria das operações sem expor API Key, API Secret ou valores de registros.
+- Interface compatível com smartphone e tutorial `?` revisado. Não modifica DNS real nesta entrega.
+
+## 2.0.15 — Projetos e sites navegáveis
+- Cartões de projeto com ícones, detalhes acessíveis e links HTTPS para domínios identificados.
+- Descoberta conservadora de domínios Nginx existentes em modo somente leitura, sem assumir gerenciamento de sites externos.
+- Nenhuma mudança em DNS, arquivos ou permissões dos projetos existentes.
+
+## 2.0.15 — Central de APIs em modais e consulta DNS visual (09/11/2026)
 
 - Central de APIs apresenta integração Spaceship em cartão compacto com indicação confiável de credenciais configuradas.
 - Modal próprio para cadastro, substituição e remoção da API Key e da API Secret; campos intencionalmente vazios e mensagem explícita de que as credenciais já estão salvas.

@@ -56,13 +56,14 @@ class UpdaterTests(unittest.TestCase):
                         'instalar.sh': '#!/usr/bin/env bash\n',
                         'vps/src/server.js': 'const VERSION = "2.0.5";',
                         'vps/admin/helper.py': '# test helper',
+                        'vps/admin/updater.py': '# test updater',
                         'vps/package.json': json.dumps({'version': '2.0.5'})
                     }.items(): z.writestr(name, content)
                 zipped = mem.getvalue()
                 manifest = json.dumps({'schema': 1, 'version': '2.0.5', 'asset': 'AL-Sistemas-v2.0.5-VPS.zip', 'sha256': hashlib.sha256(zipped).hexdigest()}, separators=(',', ':')).encode()
                 asset = 'AL-Sistemas-v2.0.5-VPS.zip'
                 urls = {n: f'https://github.com/owner/repo/releases/download/v2.0.5/{n}' for n in (asset, 'update-manifest.json')}
-                def fake_fetch(url, repo, limit, asset=None):
+                def fake_fetch(url, repo, limit, asset=None, on_progress=None):
                     if url.startswith('https://api.github.com/'):
                         return json.dumps({'tag_name': 'v2.0.5', 'assets': [{'name': k, 'browser_download_url': v} for k,v in urls.items()]}).encode()
                     return {urls['update-manifest.json']: manifest, urls['AL-Sistemas-v2.0.5-VPS.zip']: zipped}[url]
@@ -74,7 +75,7 @@ class UpdaterTests(unittest.TestCase):
                 real_run = subprocess.run
                 with patch.multiple(u, DATA=data_dir, BACKUP=backups, TARGET=current, HELPER=helper, UNIT=unit, SUDOERS=sudoers), \
                      patch.object(u, 'fetch', fake_fetch), patch.object(u, 'status', lambda name, message, **kwargs: events.append(name)), \
-                     patch.object(u, 'run_installer', fake_installer), patch.object(u, 'health', lambda: True), patch.object(u.os, 'geteuid', lambda: 0), \
+                     patch.object(u, 'run_installer', fake_installer), patch.object(u, 'health', lambda: True), patch.object(u, 'wait_healthy', lambda version: True), patch.object(u.os, 'geteuid', lambda: 0), \
                      patch.object(u.subprocess, 'run', wraps=subprocess.run) as mocked_run:
                     # Evita iniciar ou reiniciar serviços reais no teste de rollback.
                     actual_run = real_run
@@ -106,7 +107,7 @@ class UpdaterTests(unittest.TestCase):
             urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.13/{name}' for name in names}
             manifest = json.dumps({'schema': 1, 'version': '2.0.13', 'asset': names[0], 'sha256': hashlib.sha256(b'original').hexdigest()}).encode()
             called = []
-            def fake_fetch(url, repo, limit, asset=None):
+            def fake_fetch(url, repo, limit, asset=None, on_progress=None):
                 if url.startswith('https://api.github.com/'):
                     return json.dumps({'tag_name': 'v2.0.13', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
                 return manifest if url == urls[names[1]] else b'tampered'
@@ -130,7 +131,7 @@ class UpdaterTests(unittest.TestCase):
             names = ['AL-Sistemas-v2.0.13-VPS.zip', 'update-manifest.json']
             urls = {name: f'https://github.com/owner/repo/releases/download/v2.0.13/{name}' for name in names}
             manifest = json.dumps({'schema': 1, 'version': '9.9.9', 'asset': names[0], 'sha256': hashlib.sha256(b'bad').hexdigest()}).encode()
-            def fake_fetch(url, repo, limit, asset=None):
+            def fake_fetch(url, repo, limit, asset=None, on_progress=None):
                 if url.startswith('https://api.github.com/'):
                     return json.dumps({'tag_name': 'v2.0.13', 'assets': [{'name': name, 'browser_download_url': urls[name]} for name in names]}).encode()
                 if url == urls[names[1]]: return manifest

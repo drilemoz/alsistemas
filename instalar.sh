@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.14: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.17: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
 BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-DOMAIN='' EMAIL='' PHP=0 MARIADB=0 UFW=0 PLAN=0 EXISTING=0
+DOMAIN='' EMAIL='' PHP=0 MARIADB=0 UFW=0 PLAN=0 EXISTING=0 CORE_UPGRADE=0
 while (($#)); do
   case "$1" in
     --domain) DOMAIN="${2:?Informe domínio}"; shift 2 ;;
@@ -13,6 +13,7 @@ while (($#)); do
     --with-mariadb) MARIADB=1; shift ;;
     --enable-ufw) UFW=1; shift ;;
     --allow-existing-host) EXISTING=1; shift ;;
+    --core-upgrade) CORE_UPGRADE=1; shift ;;
     --plan) PLAN=1; shift ;;
     -h|--help) cat <<'HELP'
 Uso: sudo ./instalar.sh [opções]
@@ -23,6 +24,7 @@ Uso: sudo ./instalar.sh [opções]
   --with-mariadb           instala MariaDB (opcional)
   --enable-ufw             habilita firewall somente após liberar SSH/HTTP/HTTPS
   --allow-existing-host    requer confirmação explícita em VPS com sites existentes
+  --core-upgrade           atualização do painel já instalado, sem apt-get (uso do atualizador)
 HELP
       exit 0;;
     *) echo "Opção não reconhecida: $1" >&2; exit 2;;
@@ -36,6 +38,11 @@ source /etc/os-release
 [[ "${ID:-}" == 'ubuntu' && "${VERSION_ID:-}" == '24.04' ]] || fail 'Suporte inicialmente limitado ao Ubuntu 24.04 LTS.'
 ARCH="$(dpkg --print-architecture)"
 [[ "$ARCH" == 'amd64' || "$ARCH" == 'arm64' ]] || fail "Arquitetura não testada: $ARCH"
+if (( CORE_UPGRADE )); then
+  (( EXISTING )) || fail '--core-upgrade exige --allow-existing-host.'
+  (( ! PHP && ! MARIADB && ! UFW )) || fail '--core-upgrade não aceita novos pacotes ou firewall.'
+  [[ -z "$DOMAIN" && -z "$EMAIL" ]] || fail '--core-upgrade não configura HTTPS.'
+fi
 if [[ -n "$DOMAIN" || -n "$EMAIL" ]]; then
   [[ -n "$DOMAIN" && -n "$EMAIL" ]] || fail '--domain e --email devem ser usados juntos.'
   [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,63}$ ]] || fail 'Domínio inválido.'
@@ -48,7 +55,7 @@ log "Detectado $PRETTY_NAME, $ARCH, ${CPUS} CPU, RAM ${MEM} MiB, disco livre ${D
 log 'Portas em escuta:'
 command -v ss >/dev/null && ss -lnt '( sport = :22 or sport = :80 or sport = :443 or sport = :8181 )' || true
 if ((PLAN)); then
-  log "PLANO: Node.js 24 se necessário, Nginx, PHP=$PHP, MariaDB=$MARIADB, UFW=$UFW, domínio=${DOMAIN:-nenhum}; sem alterações."
+  log "PLANO: Node.js >=22, Nginx, atualização do núcleo=$CORE_UPGRADE, PHP=$PHP, MariaDB=$MARIADB, UFW=$UFW, domínio=${DOMAIN:-nenhum}; sem alterações."
   exit 0
 fi
 ((EUID == 0)) || fail 'Execute como root com sudo.'
@@ -59,6 +66,10 @@ if [[ -d /var/www/projetos/iguatamaonline || -d /var/www/iguatama-teste ]]; then
   log 'Hospedagem existente detectada: nenhum dos dois sites protegidos será alterado.'
 fi
 log 'Instalando somente componentes necessários.'
+if (( CORE_UPGRADE )); then
+  command -v nginx >/dev/null && command -v python3 >/dev/null && command -v sudo >/dev/null && [[ -x /usr/bin/node ]] || fail 'Dependências do painel ausentes; use instalação completa.'
+  /usr/bin/node -e 'if(Number(process.versions.node.split(".")[0])<22) process.exit(1)' || fail 'Node.js >=22 necessário.'
+else
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg nginx python3 sudo openssl unzip
 node_major=0
@@ -83,6 +94,7 @@ fi
 if ((PHP)); then apt-get install -y php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-mysql php8.3-curl; systemctl enable --now php8.3-fpm; fi
 if ((MARIADB)); then apt-get install -y mariadb-server; systemctl enable --now mariadb; fi
 systemctl enable --now nginx
+fi # CORE_UPGRADE: preserva dependências instaladas e evita apt-get no upgrade
 if ! id -u alsistemas >/dev/null 2>&1; then
   useradd --system --home-dir /var/lib/alsistemas --create-home --shell /usr/sbin/nologin alsistemas
 fi

@@ -12,11 +12,17 @@ export function compareVersion(a, b) {
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return Math.sign(x[i] - y[i])
   return 0
 }
+const ACTIVE = new Set(['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'])
 export function updateInfo(version) {
   const config = readJson('updates-config.json')
   const repo = validateRepo(config?.repo) ? config.repo : DEFAULT_REPO
   let status = null
   try { status = readJson('update-status.json') } catch { /* estado ainda não disponível */ }
+  if (status && ACTIVE.has(status.stage)) {
+    const when = Date.parse(status.time)
+    if (Number.isFinite(when) && Date.now() - when > 15 * 60_000)
+      status = { ...status, stage: 'stalled', message: 'Não houve atualização do status por 15 minutos. Verifique o serviço do atualizador e os logs antes de tentar novamente.' }
+  }
   return { installed: version, repo, status }
 }
 // Documentação pública é um complemento informativo, nunca parte da validação de instalação.

@@ -190,3 +190,29 @@ label{font-size:.82rem;margin-bottom:11px}
 .dns-scope-note{padding-top:10px;border-top:1px solid var(--border);margin-top:15px}
 .dns-empty{padding:14px;border:1px dashed var(--border);border-radius:10px}
 @media(max-width:650px){.integration-tile{align-items:flex-start;flex-wrap:wrap}.integration-logo{flex-basis:42px;width:42px;height:42px}.integration-actions{width:100%;justify-content:flex-start;padding-left:55px}.integration-dialog .dialog-body{padding:16px}.dns-query-form button{width:100%}.dns-record-card{gap:8px;padding:10px}.dns-record-emblem{flex-basis:30px;width:30px;height:30px}.dns-copy{flex-basis:32px}}
+
+/* 2.0.15: projetos navegáveis, sem habilitar escrita em sites externos */
+.project-tile{gap:12px;align-items:center;flex-wrap:wrap;padding:13px 0}.project-emblem{width:39px;height:39px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 11%,transparent);color:var(--accent);flex-shrink:0}.project-tile .project-info{flex:1;min-width:140px}.project-details-button{white-space:nowrap}.project-detail-field{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;overflow-wrap:anywhere}.project-detail-field a{display:block;overflow-wrap:anywhere}.project-detail-field strong{font-size:.9rem}@media(max-width:680px){.project-tile{flex-direction:row;align-items:center}.project-tile .project-actions{width:100%}.project-details-button{margin-left:auto}}
+
+/* Spaceship DNS: operações controladas em telas pequenas */
+.dns-management-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px}
+.dns-management-toolbar strong{font-size:.9rem}
+.dns-write-actions{display:flex;flex-wrap:wrap;gap:7px;padding-top:10px}
+.dns-write-actions button{min-height:35px;padding:6px 10px;font-size:.75rem}
+.dns-write-preview{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--border);padding:14px;border-radius:11px;font:inherit;font-size:.84rem;line-height:1.6}
+@media(max-width:500px){.dns-write-actions button{flex:1 1 auto}.dns-management-toolbar button{width:auto}}
+
+/* v2.0.17: atualização com progresso persistente e entrada de ZIP */
+.update-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:15px}
+.update-actions button{flex:1 1 170px;white-space:normal}
+.update-progress-dialog{max-width:min(520px,calc(100vw - 24px))}
+.update-progress-state{font-weight:750;font-size:1rem;margin:10px 0}
+.update-progress-track{height:11px;width:100%;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,var(--border));margin:12px 0 7px}
+.update-progress-track>div{height:100%;width:0;background:var(--accent);border-radius:inherit;transition:width .25s ease}
+.update-progress-track.indeterminate>div{width:33%;animation:update-sweep 1.3s ease-in-out infinite}
+@keyframes update-sweep{from{transform:translateX(-110%)}to{transform:translateX(320%)}}
+.update-step-list{padding:0;margin:16px 0;list-style:none;display:grid;gap:6px}
+.update-step-list li{border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--muted);font-size:.83rem}
+.update-step-list li.active{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 7%,var(--surface));font-weight:650}
+.update-step-list li.done{color:var(--success)}
+@media(max-width:420px){.update-actions{flex-direction:column}.update-actions button{flex:auto;width:100%}}

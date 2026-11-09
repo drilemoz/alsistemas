@@ -98,6 +98,38 @@ function renderMetrics(m) {
     serviceCard($('overview-services'), name, status)
   }
 }
+function openProjectDetails(item) {
+  const dialog = $('project-details-dialog')
+  $('project-details-title').textContent = item.name
+  const content = $('project-details-content')
+  content.replaceChildren()
+  const fields = [
+    ['Tecnologia', { php: 'PHP', node: 'Node.js', static: 'HTML / estático' }[item.type] || 'Não identificada'],
+    ['Diretório', item.path],
+    ['Gerenciamento', item.managed ? 'Gerenciado pelo AL Sistemas' : 'Projeto externo · somente leitura'],
+    ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Estado não identificado']
+  ]
+  for (const [label, value] of fields) {
+    const block = node('div', '', 'project-detail-field')
+    block.append(node('span', label, 'small muted'), node('strong', value))
+    content.append(block)
+  }
+  const domains = Array.isArray(item.domains) ? item.domains : []
+  if (item.domain && !domains.includes(item.domain)) domains.unshift(item.domain)
+  const domainBox = node('div', '', 'project-detail-field')
+  domainBox.append(node('span', 'Domínios identificados (Nginx)', 'small muted'))
+  if (!domains.length) domainBox.append(node('strong', 'Não identificado'))
+  for (const domain of domains) {
+    const link = node('a', domain)
+    link.href = `https://${domain}`
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    domainBox.append(link)
+  }
+  content.append(domainBox)
+  content.append(node('p', 'Informações de leitura. A identificação de domínio não autoriza modificar configurações externas.', 'small muted'))
+  dialog.showModal()
+}
 async function refresh() {
   const [m, p, a] = await Promise.all([api('/api/monitor'), api('/api/projects'), api('/api/audit')])
   renderMetrics(m)
@@ -106,10 +138,17 @@ async function refresh() {
   $('projects').replaceChildren()
   $('project-count').textContent = String(p.projects.length)
   for (const item of p.projects) {
-    const line = node('div', '', 'project-line')
+    const line = node('div', '', 'project-line project-tile')
+    const emblem = node('span', '', 'project-emblem')
+    emblem.append(iconGraphic(item.type === 'php' ? 'code' : item.type === 'node' ? 'server' : 'folder'))
+    line.append(emblem)
     const info = node('div', '', 'project-info')
-    info.append(node('strong', item.name), node('div', `${item.type} • ${item.domain || 'sem domínio'} • ${item.managed ? 'AL Sistemas' : 'somente leitura'}`, 'small muted'))
+    info.append(node('strong', item.name), node('div', `${item.type} • ${item.domain || 'domínio não identificado'} • ${item.managed ? 'AL Sistemas' : 'somente leitura'}`, 'small muted'))
     line.append(info)
+    const details = node('button', 'Ver detalhes', 'outline project-details-button')
+    details.type = 'button'
+    details.addEventListener('click', () => openProjectDetails(item))
+    line.append(details)
     if (item.managed && item.domain && typeof item.enabled === 'boolean') {
       const actions = node('div', '', 'project-actions')
       const state = node('span', item.enabled ? 'Ativo (HTTP)' : 'Desativado', item.enabled ? 'good small' : 'muted small')
@@ -206,6 +245,7 @@ async function bootstrapPage() {
     shown('dashboard'); $('logout').classList.remove('hidden')
     activateTab('overview')
     await refresh()
+    await resumeUpdateIfNeeded()
   } catch { shown('login') }
 }
 async function submit(form, fn) {
@@ -265,6 +305,7 @@ $('login-form').addEventListener('submit', e => {
     e.target.reset(); shown('dashboard'); $('logout').classList.remove('hidden')
     activateTab('overview')
     await refresh()
+    await resumeUpdateIfNeeded()
   })
 })
 $('create').addEventListener('submit', e => {
@@ -541,8 +582,10 @@ async function loadUpdateInfo() {
   document.querySelector('.repo-url').textContent = `https://github.com/${$('update-repo').value}`
   const repo = data.repo || 'drilemoz/alsistemas'
   $('github-releases-link').href = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\/[a-zA-Z0-9_.-]+$/.test(repo) ? `https://github.com/${repo}/releases` : 'https://github.com/drilemoz/alsistemas/releases'
-  const inProgress = ['checking', 'downloading', 'validating', 'installing', 'rolling_back'].includes(data.status?.stage)
+  const inProgress = updateBusy.has(data.status?.stage)
   $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady)
+  $('upload-update').disabled = inProgress
+  if (data.status && updateBusy.has(data.status.stage)) $('view-update-progress').classList.remove('hidden')
   return data
 }
 $('check-update').addEventListener('click', async () => {
@@ -554,7 +597,7 @@ $('check-update').addEventListener('click', async () => {
     await loadUpdateInfo()
     if (data.latest) rowInfo($('update-summary'), 'Última Release', `v${data.latest}`)
     rowInfo($('update-summary'), 'Verificação', data.message)
-    $('apply-update').disabled = !(data.available && data.assetsReady)
+    $('apply-update').disabled = updateBusy.has((await loadUpdateInfo()).status?.stage) || !(data.available && data.assetsReady)
   } catch (e) { lastRelease = null; showReleaseNotes(null); notice(e.message, true) }
   finally { $('check-update').disabled = false }
 })
@@ -570,44 +613,161 @@ $('update-repo-form').addEventListener('submit', e => {
     notice('Repositório de atualizações configurado. Próximo passo: verificar a Release.')
   })
 })
-$('apply-update').addEventListener('click', () => $('update-dialog').showModal())
-$('update-cancel').addEventListener('click', () => $('update-dialog').close())
-$('update-apply-form').addEventListener('submit', e => {
-  e.preventDefault()
-  submit(e.currentTarget, async data => {
-    if (!await confirmAction('Instalar atualização do GitHub? O serviço poderá reiniciar e sua sessão cairá. Uma cópia da versão anterior será criada.', 'Confirmar instalação')) return
-    const result = await api('/api/updates/apply', 'POST', data)
-    e.target.reset()
-    $('update-dialog').close()
-    notice(result.message || 'Serviço de atualização iniciado. Consulte o estado no painel após a reinicialização.')
-    await loadUpdateInfo()
-    beginUpdatePolling()
-  })
-})
-
-// Polling temporário só durante uma atualização solicitada pelo usuário.
+// Atualizações: cada etapa usa o estado persistido no servidor; percentuais somente
+// durante transferência de bytes, nunca uma porcentagem fictícia da instalação.
+const updateSteps = [
+  ['queued', 'Solicitação recebida'], ['checking', 'Consultando versão'],
+  ['uploading', 'Enviando ZIP'], ['downloading', 'Baixando ZIP'],
+  ['validating', 'Validando SHA-256 e pacote'], ['backup', 'Criando backup'],
+  ['installing', 'Instalando'], ['verifying', 'Verificando serviço'],
+  ['completed', 'Concluído']
+]
+const updateBusy = new Set(['queued', 'checking', 'uploading', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'])
+let updateMethod = 'github'
 let updatePollingTimeout = null
+let currentOperation = null
+function openProgress() {
+  if (!$('update-progress-dialog').open) $('update-progress-dialog').showModal()
+  $('view-update-progress').classList.remove('hidden')
+}
+function showUpdateProgress(state) {
+  const stage = state?.stage || 'queued'
+  const label = updateSteps.find(([key]) => key === stage)?.[1] || ({failed:'Falha na atualização', up_to_date:'Nenhuma versão nova', rolling_back:'Revertendo instalação', stalled:'Progresso interrompido'})[stage] || 'Verificando…'
+  $('update-progress-state').textContent = label
+  $('update-progress-message').textContent = state?.message || 'Verificando a atualização no servidor.'
+  const percent = Number(state?.percent)
+  const determinate = Number.isInteger(percent) && percent >= 0 && percent <= 100 && (stage === 'downloading' || stage === 'uploading' || stage === 'completed')
+  $('update-progress-track').classList.toggle('indeterminate', !determinate && updateBusy.has(stage))
+  $('update-progress-fill').style.width = determinate ? `${percent}%` : (updateBusy.has(stage) ? '' : '0%')
+  $('update-progress-track').setAttribute('aria-valuenow', determinate ? String(percent) : '0')
+  $('update-progress-percent').textContent = determinate ? (stage === 'completed' ? 'Concluído · 100%' : `Transferência: ${percent}%`) : (updateBusy.has(stage) ? 'Etapa em andamento · progresso percentual indisponível' : 'Operação finalizada')
+  $('update-step-list').replaceChildren()
+  const sequence = updateSteps.filter(([key]) => updateMethod === 'file' ? key !== 'downloading' && key !== 'checking' : key !== 'uploading')
+  const index = sequence.findIndex(([key]) => key === stage)
+  for (const [i, [key, name]] of sequence.entries()) {
+    const li = node('li', `${i < index || stage === 'completed' ? '✓' : i === index ? '●' : '○'} ${name}`)
+    if (i < index || stage === 'completed') li.classList.add('done')
+    if (i === index && stage !== 'completed') li.classList.add('active')
+    $('update-step-list').append(li)
+  }
+  const terminal = ['completed', 'failed', 'up_to_date', 'stalled'].includes(stage)
+  $('update-progress-reload').classList.toggle('hidden', stage !== 'completed')
+  $('update-progress-reload').textContent = 'Atualizar página'
+  $('update-progress-close').textContent = terminal ? 'Fechar' : 'Ocultar'
+  if (terminal) { try { sessionStorage.removeItem('als-update-id') } catch {} }
+}
+function clearUpdateTimer() { if (updatePollingTimeout) clearTimeout(updatePollingTimeout); updatePollingTimeout = null }
 function beginUpdatePolling() {
-  if (updatePollingTimeout) clearTimeout(updatePollingTimeout)
-  let attempts = 0
+  clearUpdateTimer()
+  let errors = 0
   const poll = async () => {
-    attempts++
     try {
-      const state = await loadUpdateInfo()
-      if (['completed', 'failed', 'up_to_date'].includes(state.status?.stage)) {
-        notice(state.status.message, state.status.stage === 'failed')
-        return
+      const info = await loadUpdateInfo()
+      errors = 0
+      if (info.status && (!currentOperation || info.status.id === currentOperation)) {
+        updateMethod = info.status.mode || updateMethod
+        showUpdateProgress(info.status)
+        if (!updateBusy.has(info.status.stage)) return
       }
     } catch (error) {
-      if (error.message.includes('Autenticação')) {
-        csrf = ''
-        shown('login')
-        $('logout').classList.add('hidden')
-        notice('O serviço pode ter reiniciado após a atualização. Entre novamente para verificar a versão.')
+      errors++
+      $('update-progress-state').textContent = 'Tentando reconectar ao serviço…'
+      $('update-progress-message').textContent = errors > 2 ? 'O painel pode estar reiniciando. Se a sessão expirou, atualize a página e faça login novamente.' : 'Conexão temporariamente indisponível.'
+      if (errors >= 3) {
+        $('update-progress-reload').classList.remove('hidden')
+        $('update-progress-reload').textContent = 'Atualizar página / entrar'
+      }
+      if (errors >= 45) {
+        showUpdateProgress({ stage:'stalled', message:'Sem resposta do painel. Confira os logs e o estado do serviço na VPS.' })
         return
       }
     }
-    if (attempts < 100) updatePollingTimeout = setTimeout(poll, 4000)
+    updatePollingTimeout = setTimeout(poll, 3000)
   }
-  updatePollingTimeout = setTimeout(poll, 2500)
+  updatePollingTimeout = setTimeout(poll, 1000)
 }
+function beginTrackedUpdate(result) {
+  currentOperation = result.operationId || null
+  try { if (currentOperation) sessionStorage.setItem('als-update-id', currentOperation) } catch {}
+  showUpdateProgress({ stage:'queued', message:result.message || 'Solicitação recebida.' })
+  beginUpdatePolling()
+}
+async function resumeUpdateIfNeeded() {
+  let stored = null
+  try { stored = sessionStorage.getItem('als-update-id') } catch {}
+  if (!stored) return
+  currentOperation = stored
+  try {
+    const info = await loadUpdateInfo()
+    if (info.status?.id === stored) {
+      updateMethod = info.status.mode || 'github'
+      activateTab('updates')
+      openProgress()
+      showUpdateProgress(info.status)
+      if (updateBusy.has(info.status.stage)) beginUpdatePolling()
+    } else sessionStorage.removeItem('als-update-id')
+  } catch { /* Pode exigir login depois de restart; recuperação no próximo login */ }
+}
+function configureUpdateDialog(method) {
+  updateMethod = method
+  $('update-title').textContent = method === 'file' ? 'Atualizar por arquivo ZIP' : 'Atualizar pelo GitHub'
+  $('update-confirm-description').textContent = method === 'file'
+    ? 'Escolha um ZIP confiável de versão superior. O servidor verificará SHA-256, estrutura e versão. Depois fará backup e reiniciará o serviço. ZIPs locais não comprovam a identidade do autor.'
+    : 'O painel baixará a Release, validará o manifesto SHA-256 e o ZIP, fará backup e reiniciará o serviço.'
+  $('update-file-label').classList.toggle('hidden', method !== 'file')
+  $('update-file-input').required = method === 'file'
+  $('update-submit').textContent = method === 'file' ? 'Enviar e instalar' : 'Instalar'
+  $('update-dialog').showModal()
+}
+$('apply-update').addEventListener('click', () => configureUpdateDialog('github'))
+$('upload-update').addEventListener('click', () => configureUpdateDialog('file'))
+$('update-cancel').addEventListener('click', () => $('update-dialog').close())
+$('update-progress-hide').addEventListener('click', () => $('update-progress-dialog').close())
+$('update-progress-close').addEventListener('click', () => $('update-progress-dialog').close())
+$('update-progress-reload').addEventListener('click', () => window.location.reload())
+$('view-update-progress').addEventListener('click', () => { openProgress(); beginUpdatePolling() })
+function sendZip(file, password, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/updates/upload')
+    xhr.withCredentials = true
+    xhr.setRequestHeader('Content-Type', 'application/zip')
+    xhr.setRequestHeader('X-CSRF-Token', csrf)
+    xhr.setRequestHeader('X-Update-Password', password)
+    xhr.upload.onprogress = event => { if (event.lengthComputable) onProgress(Math.min(100, Math.floor(100 * event.loaded / event.total))) }
+    xhr.onload = () => {
+      let result
+      try { result = JSON.parse(xhr.responseText) } catch { result = {} }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(result)
+      else reject(new Error(result.error || `Falha no envio: HTTP ${xhr.status}`))
+    }
+    xhr.onerror = () => reject(new Error('Conexão perdida durante envio do arquivo'))
+    xhr.ontimeout = () => reject(new Error('Tempo limite do envio excedido'))
+    xhr.timeout = 120000
+    xhr.send(file)
+  })
+}
+$('update-apply-form').addEventListener('submit', async e => {
+  e.preventDefault()
+  const form = e.currentTarget
+  const button = $('update-submit')
+  const file = $('update-file-input').files[0]
+  if (updateMethod === 'file' && (!file || !/\.zip$/i.test(file.name) || file.size < 512 || file.size > 32 * 1024 * 1024)) {
+    notice('Selecione um arquivo .zip válido de até 32 MiB.', true)
+    return
+  }
+  const password = form.elements.password.value
+  button.disabled = true
+  $('update-dialog').close()
+  openProgress()
+  showUpdateProgress({ stage:updateMethod === 'file' ? 'uploading' : 'queued', message:'Preparando solicitação…', percent:0 })
+  try {
+    const result = updateMethod === 'file'
+      ? await sendZip(file, password, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))
+      : await api('/api/updates/apply', 'POST', { password })
+    form.reset()
+    beginTrackedUpdate(result)
+  } catch (error) {
+    showUpdateProgress({ stage:'failed', message:error.message })
+  } finally { button.disabled = false; form.elements.password.value = '' }
+})

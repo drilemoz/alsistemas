@@ -35,6 +35,37 @@ export function monitor() {
     disk: { total, free, used: total - free }, services,
   }
 }
+// Descoberta estritamente informativa: não transforma vhosts externos em gerenciados.
+export function discoverProjectDomain(folder, configDir = '/etc/nginx/sites-enabled') {
+  try {
+    const canonical = fs.realpathSync(folder)
+    const matches = []
+    for (const entry of fs.readdirSync(configDir).slice(0, 200)) {
+      if (!/^[a-zA-Z0-9._-]{1,120}$/.test(entry)) continue
+      const configPath = path.join(configDir, entry)
+      let raw
+      try {
+        if (!fs.statSync(configPath).isFile() || fs.statSync(configPath).size > 131072) continue
+        raw = fs.readFileSync(configPath, 'utf8')
+      } catch { continue }
+      // Só associa server_name quando o root explícito aponta ao diretório do projeto
+      // ou ao subdiretório public. Ignora variáveis, curingas e includes dinâmicos.
+      const roots = [...raw.matchAll(/^\s*root\s+([^;\s]+)\s*;/gm)].map(m => m[1])
+      const belongs = roots.some(candidate => {
+        if (!candidate.startsWith('/') || candidate.includes('$')) return false
+        try { const real = fs.realpathSync(candidate); return real === canonical || real === path.join(canonical, 'public') } catch { return false }
+      })
+      if (!belongs) continue
+      for (const m of raw.matchAll(/^\s*server_name\s+([^;]+);/gm)) {
+        for (const host of m[1].trim().split(/\s+/)) {
+          if (/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])$/.test(host) && host.includes('.') && !matches.includes(host)) matches.push(host)
+        }
+      }
+    }
+    return matches.slice(0, 12)
+  } catch { return [] }
+}
+
 export function projects(dir = root) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true })
@@ -76,7 +107,7 @@ export function projects(dir = root) {
             }
           }
         } catch { /* não há configuração gerenciada */ }
-        return { name: entry.name, type, path: folder, managed, domain, enabled }
+        return { name: entry.name, type, path: folder, managed, domain: domain || discoverProjectDomain(folder)[0] || null, domains: discoverProjectDomain(folder), enabled }
       }).filter(Boolean)
   } catch (e) { if (e.code === 'ENOENT') return []; throw e }
 }

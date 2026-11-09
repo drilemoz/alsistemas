@@ -8,15 +8,17 @@ import re
 import subprocess
 import sys
 import hashlib
+import secrets
+import pwd
 import io
 import tarfile
 import tempfile
 import time
-import secrets
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
 SITES_AVAILABLE = Path('/etc/nginx/sites-available')
 SITES_ENABLED = Path('/etc/nginx/sites-enabled')
@@ -558,10 +560,79 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return {'ok': True, 'started': True, 'package': package,
                 'message': 'Instalação autorizada. Consulte o progresso no módulo Dependências.'}
     if action == 'start_update':
-        if set(task) != {'action'}: raise TaskError('Parâmetros inesperados na atualização.')
-        proc = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block', 'alsistemas-updater.service'], capture_output=True, timeout=12)
-        if proc.returncode != 0: raise TaskError('Não foi possível iniciar o serviço de atualização.')
-        return {'ok': True, 'started': True, 'message': 'Solicitação encaminhada ao serviço de atualização.'}
+        if set(task) not in ({'action'}, {'action', 'upload', 'sha256'}):
+            raise TaskError('Parâmetros inesperados na atualização.')
+        request_file = Path('/etc/alsistemas-vps/update-request.json')
+        backup_dir = Path('/var/backups/alsistemas')
+        # Nunca iniciar outra instalação se a primeira estiver ativa ou agendada.
+        running = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
+                                  'alsistemas-updater.service'], capture_output=True, timeout=10)
+        if running.returncode == 0 or request_file.exists():
+            raise TaskError('Uma atualização já está em andamento.')
+        token = secrets.token_hex(12)
+        request = {'id': token, 'mode': 'github'}
+        staged = None
+        if 'upload' in task:
+            upload = task['upload']
+            expected_hash = task['sha256']
+            if not isinstance(upload, str) or not re.fullmatch(r'upload-[0-9a-f]{24}\.zip', upload):
+                raise TaskError('Nome do upload inválido.')
+            if not isinstance(expected_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_hash):
+                raise TaskError('SHA-256 inválido.')
+            source = DATA / upload
+            if source.is_symlink(): raise TaskError('Upload é link simbólico.')
+            fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                st = os.fstat(fd)
+                owner = pwd.getpwnam('alsistemas').pw_uid
+                if not stat.S_ISREG(st.st_mode) or st.st_uid != owner or st.st_nlink != 1 or st.st_size > 32 * 1024 * 1024 or st.st_size < 512:
+                    raise TaskError('Upload não é um arquivo regular válido.')
+                staged = backup_dir / f'upload-{token}.zip'
+                # Destino exclusivo e root-only, fora do alcance do processo web.
+                with os.fdopen(os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as out:
+                    digest = hashlib.sha256()
+                    while True:
+                        chunk = os.read(fd, 131072)
+                        if not chunk: break
+                        digest.update(chunk)
+                        out.write(chunk)
+                    out.flush(); os.fsync(out.fileno())
+                if digest.hexdigest() != expected_hash:
+                    raise TaskError('SHA-256 do upload divergente.')
+            except Exception:
+                if staged: staged.unlink(missing_ok=True)
+                raise
+            finally:
+                os.close(fd)
+                source.unlink(missing_ok=True)
+            request = {'id': token, 'mode': 'file', 'archive': staged.name, 'sha256': expected_hash}
+        try:
+            request_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with os.fdopen(os.open(request_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as out:
+                json.dump(request, out)
+                out.flush(); os.fsync(out.fileno())
+            import datetime
+            status_file = DATA / 'update-status.json'
+            temp_status = DATA / f'.update-status-{token}.tmp'
+            data = {'id': token, 'mode': request['mode'], 'stage': 'queued',
+                    'message': 'Atualização autorizada; aguardando o serviço iniciar',
+                    'time': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            with os.fdopen(os.open(temp_status, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as out:
+                json.dump(data, out)
+                os.fchown(out.fileno(), pwd.getpwnam('alsistemas').pw_uid, pwd.getpwnam('alsistemas').pw_gid)
+            os.replace(temp_status, status_file)
+            proc = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block',
+                                   'alsistemas-updater.service'], capture_output=True, timeout=12)
+            if proc.returncode != 0: raise TaskError('Não foi possível iniciar o serviço de atualização.')
+        except Exception:
+            request_file.unlink(missing_ok=True)
+            if staged: staged.unlink(missing_ok=True)
+            try:
+                status_file.unlink(missing_ok=True)
+            except OSError: pass
+            raise
+        return {'ok': True, 'started': True, 'operationId': token,
+                'message': 'Atualização iniciada. Acompanhe as etapas no painel.'}
     raise TaskError('Ação não autorizada.')
 
 
