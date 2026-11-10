@@ -1,3 +1,12 @@
+## 2.0.27 — ZIP visível e acompanhamento resiliente (09/11/2026)
+
+- Corrigido `ReferenceError` da função `formatBytes()` ausente na escolha de arquivos. Nome, tamanho e validação do ZIP aparecem nos seletores do painel e do IguatamaOnline.
+- Rótulo e botão de escolha de arquivo são elementos separados, evitando seleção duplicada no Android; o nome é atualizado em `change`, `input`, retorno do foco e visibilidade.
+- O progresso exibe nome/tamanho do ZIP efetivamente enviado. Durante reconexões preserva a última etapa real, registra tentativas, limita a consulta a 8 segundos e informa horário do último estado persistido, sem inventar percentuais de instalação.
+- Persistência segura de sessões em `sessions.json` com apenas hash SHA-256 do token, CSRF e expiração de oito horas (arquivo 0600 e gravação atômica). Logout e revogação geral invalidam sessões; permanece o login obrigatório no início.
+- Durante a primeira atualização da 2.0.26 para 2.0.27 ainda pode ocorrer um pedido de login, pois o servidor antigo tinha sessões apenas em memória. Depois, a sessão da 2.0.27 resiste a reinícios normais.
+- Criados testes de interface e autenticação real atravessando reinício de processos Node. Sem alterações em produção na EC2.
+
 ## 2.0.26 — Login compatível com senha salva e TOTP oculto (09/11/2026)
 
 - Corrigida a possibilidade de um dispositivo confiável enviar código TOTP antigo preenchido pelo navegador mesmo com o campo visualmente oculto. O input oculto e a opção de confiar no dispositivo ficam desativados no formulário quando o cookie confiável é reconhecido.

@@ -1,6 +1,7 @@
 'use strict'
 const $ = id => document.getElementById(id)
 let csrf = ''
+let updateMethod = 'github'
 let bootstrap = ''
 let challenge = ''
 let noticeTimeout = null
@@ -29,8 +30,10 @@ function confirmAction(detail, label) {
     dialog.showModal()
   })
 }
-async function api(url, method = 'GET', payload) {
-  const response = await fetch(url, { method, credentials: 'same-origin', headers: {
+async function api(url, method = 'GET', payload, { timeoutMs = 0 } = {}) {
+  const response = await fetch(url, { method, credentials: 'same-origin',
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+    ...(method === 'GET' ? { cache: 'no-store' } : {}), headers: {
     ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }),
     ...(csrf ? { 'X-CSRF-Token': csrf } : {})
   }, body: payload === undefined ? undefined : JSON.stringify(payload) })
@@ -424,7 +427,10 @@ async function externalFileUpdate() {
     externalUploading = false
     startExternalPolling()
   } catch (error) { maintenanceMessage(error.message, true) }
-  finally { button.disabled = false }
+  finally {
+    externalUploading = false
+    syncFilePicker('external-zip', 'external-zip-name')
+  }
 }
 $('external-inspect').addEventListener('click', reloadExternalInspection)
 $('external-allow').addEventListener('click', () => externalCritical('allow'))
@@ -598,20 +604,46 @@ for (const button of document.querySelectorAll('[data-theme-choice]')) {
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close())
 }
+// Nomes de arquivo não são caminhos: são dados visuais fornecidos pelo navegador.
+function formatBytes(size) {
+  if (!Number.isFinite(size) || size < 0) return 'tamanho desconhecido'
+  if (size < 1024) return `${size} B`
+  if (size < 1048576) return `${(size / 1024).toFixed(1)} KiB`
+  return `${(size / 1048576).toFixed(2)} MiB`
+}
+function validSelectedZip(file) {
+  return !!file && /\.zip$/i.test(file.name) && file.size >= 512 && file.size <= 32 * 1024 * 1024
+}
 function syncFilePicker(inputId, textId, emptyText = 'Nenhum arquivo selecionado.') {
   const input = $(inputId)
   const label = $(textId)
   if (!input || !label) return
   const file = input.files?.[0]
-  label.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : emptyText
+  const valid = validSelectedZip(file)
+  label.textContent = file ? `${file.name} · ${formatBytes(file.size)}${valid ? ' · Pronto para enviar' : ' · ZIP inválido (512 B a 32 MiB)'}` : emptyText
+  label.classList.toggle('has-file', !!file && valid)
+  label.classList.toggle('invalid-file', !!file && !valid)
+  if (inputId === 'update-file-input' && updateMethod === 'file') $('update-submit').disabled = !valid
+  if (inputId === 'external-zip') $('external-upload').disabled = !valid || externalUploading
 }
 for (const [buttonId, inputId] of [['update-file-trigger', 'update-file-input'], ['external-zip-trigger', 'external-zip']]) {
   const button = $(buttonId)
   const input = $(inputId)
-  if (button && input) button.addEventListener('click', () => input.click())
+  if (button && input) {
+    button.addEventListener('click', () => input.click())
+    input.addEventListener('change', () => syncFilePicker(inputId, inputId === 'update-file-input' ? 'update-file-name' : 'external-zip-name'))
+    input.addEventListener('input', () => syncFilePicker(inputId, inputId === 'update-file-input' ? 'update-file-name' : 'external-zip-name'))
+  }
 }
-$('update-file-input').addEventListener('change', () => syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.'))
-$('external-zip').addEventListener('change', () => syncFilePicker('external-zip', 'external-zip-name', 'Nenhum arquivo selecionado.'))
+// Alguns seletores de arquivos do Android restauram o foco sem emitir 'change'.
+// Reconciliar os FileLists também ao voltar para a página.
+function reconcileFilePickers() {
+  syncFilePicker('update-file-input', 'update-file-name')
+  syncFilePicker('external-zip', 'external-zip-name')
+}
+window.addEventListener('focus', () => setTimeout(reconcileFilePickers, 100))
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(reconcileFilePickers, 100) })
+window.addEventListener('pageshow', reconcileFilePickers)
 for (const id of ['project-tech-open', 'project-tech-shortcut']) {
   const button = $(id)
   if (button) button.addEventListener('click', () => $('project-tech-dialog').showModal())
@@ -939,7 +971,7 @@ $('update-readme-back').addEventListener('click', () => {
 })
 function rowInfo(container, title, value) { appendLine(container, title, value) }
 async function loadUpdateInfo() {
-  const data = await api('/api/updates')
+  const data = await api('/api/updates', 'GET', undefined, { timeoutMs: 8000 })
   $('update-summary').replaceChildren()
   rowInfo($('update-summary'), 'Instalada', `v${data.installed}`)
   rowInfo($('update-summary'), 'Repositório', data.repo || 'Não configurado')
@@ -988,10 +1020,32 @@ const updateSteps = [
   ['completed', 'Concluído']
 ]
 const updateBusy = new Set(['queued', 'checking', 'uploading', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'])
-let updateMethod = 'github'
 let updatePollingTimeout = null
 let currentOperation = null
 let latestUpdateReport = ''
+let lastSelectedZip = null
+function rememberUpdateZip(file) {
+  lastSelectedZip = file ? { name: file.name, size: file.size } : null
+  try {
+    if (lastSelectedZip) sessionStorage.setItem('als-update-zip', JSON.stringify(lastSelectedZip))
+    else sessionStorage.removeItem('als-update-zip')
+  } catch { /* sessao sem armazenamento */ }
+}
+function progressConnection(text, issue = false) {
+  const panel = $('update-progress-connection')
+  panel.textContent = text
+  panel.classList.toggle('connection-issue', issue)
+}
+function showProgressSource() {
+  const info = $('update-progress-file')
+  info.classList.toggle('hidden', updateMethod !== 'file' || !lastSelectedZip)
+  if (updateMethod === 'file' && lastSelectedZip) info.textContent = `Arquivo enviado: ${lastSelectedZip.name} · ${formatBytes(lastSelectedZip.size)}`
+}
+function updateConnectionTimestamp(state) {
+  const date = state?.time ? new Date(state.time) : null
+  const recent = date && !Number.isNaN(date.getTime()) ? ` · último registro da etapa às ${date.toLocaleTimeString('pt-BR')}` : ''
+  progressConnection(`Conectado ao painel · consulta às ${new Date().toLocaleTimeString('pt-BR')}${recent}`)
+}
 function composeUpdateReport(state) {
   const when = state?.time || new Date().toISOString()
   const error = String(state?.message || 'Falha sem mensagem do serviço.').slice(0, 2400)
@@ -1048,6 +1102,7 @@ function showUpdateProgress(state) {
   const label = updateSteps.find(([key]) => key === stage)?.[1] || ({failed:'Falha na atualização', up_to_date:'Nenhuma versão nova', rolling_back:'Revertendo instalação', stalled:'Progresso interrompido'})[stage] || 'Verificando…'
   $('update-progress-state').textContent = label
   $('update-progress-message').textContent = state?.message || 'Verificando a atualização no servidor.'
+  showProgressSource()
   const percent = Number(state?.percent)
   const determinate = Number.isInteger(percent) && percent >= 0 && percent <= 100 && (stage === 'downloading' || stage === 'uploading' || stage === 'completed')
   $('update-progress-track').classList.toggle('indeterminate', !determinate && updateBusy.has(stage))
@@ -1070,7 +1125,7 @@ function showUpdateProgress(state) {
   $('update-progress-reload').classList.toggle('hidden', stage !== 'completed')
   $('update-progress-reload').textContent = 'Atualizar página'
   $('update-progress-close').textContent = terminal ? 'Fechar' : 'Ocultar'
-  if (terminal) { try { sessionStorage.removeItem('als-update-id') } catch {} }
+  if (terminal && stage !== 'stalled') { try { sessionStorage.removeItem('als-update-id'); sessionStorage.removeItem('als-update-zip') } catch {} }
 }
 function clearUpdateTimer() { if (updatePollingTimeout) clearTimeout(updatePollingTimeout); updatePollingTimeout = null }
 function beginUpdatePolling() {
@@ -1080,21 +1135,31 @@ function beginUpdatePolling() {
     try {
       const info = await loadUpdateInfo()
       errors = 0
+      updateConnectionTimestamp(info.status)
       if (info.status && (!currentOperation || info.status.id === currentOperation)) {
         updateMethod = info.status.mode || updateMethod
         showUpdateProgress(info.status)
         if (!updateBusy.has(info.status.stage)) return
+      } else if (currentOperation) {
+        progressConnection('Conectado, mas o serviço ainda não informou o estado desta operação.', true)
       }
     } catch (error) {
       errors++
-      $('update-progress-state').textContent = 'Tentando reconectar ao serviço…'
-      $('update-progress-message').textContent = errors > 2 ? 'O painel pode estar reiniciando. Se a sessão expirou, atualize a página e faça login novamente.' : 'Conexão temporariamente indisponível.'
+      const authRequired = error?.httpStatus === 401
+      progressConnection(authRequired
+        ? 'Sessão anterior não foi recuperada. Entre novamente para retomar o acompanhamento; o ZIP não deve ser reenviado.'
+        : `Conexão temporariamente indisponível (${errors} tentativa${errors === 1 ? '' : 's'}). Última etapa conhecida preservada.`, true)
+      if (authRequired) {
+        $('update-progress-reload').classList.remove('hidden')
+        $('update-progress-reload').textContent = 'Entrar e retomar'
+        return
+      }
       if (errors >= 3) {
         $('update-progress-reload').classList.remove('hidden')
-        $('update-progress-reload').textContent = 'Atualizar página / entrar'
+        $('update-progress-reload').textContent = 'Reabrir painel'
       }
       if (errors >= 45) {
-        showUpdateProgress({ stage:'stalled', message:'Sem resposta do painel. Confira os logs e o estado do serviço na VPS.' })
+        progressConnection('Sem resposta após várias tentativas. Reabra o painel ou confira o serviço na VPS. O andamento salvo poderá ser recuperado.', true)
         return
       }
     }
@@ -1106,6 +1171,7 @@ function beginTrackedUpdate(result) {
   currentOperation = result.operationId || null
   try { if (currentOperation) sessionStorage.setItem('als-update-id', currentOperation) } catch {}
   showUpdateProgress({ stage:'queued', message:result.message || 'Solicitação recebida.' })
+  progressConnection('Pedido aceito · aguardando a primeira atualização do instalador.')
   beginUpdatePolling()
 }
 async function resumeUpdateIfNeeded() {
@@ -1114,12 +1180,17 @@ async function resumeUpdateIfNeeded() {
   if (!stored) return
   currentOperation = stored
   try {
+    const previous = JSON.parse(sessionStorage.getItem('als-update-zip') || 'null')
+    if (previous && typeof previous.name === 'string' && Number.isFinite(previous.size)) lastSelectedZip = previous
+  } catch { /* nenhum arquivo de atualização salvo */ }
+  try {
     const info = await loadUpdateInfo()
     if (info.status?.id === stored) {
       updateMethod = info.status.mode || 'github'
       activateTab('updates')
       openProgress()
       showUpdateProgress(info.status)
+      updateConnectionTimestamp(info.status)
       if (updateBusy.has(info.status.stage)) beginUpdatePolling()
     } else sessionStorage.removeItem('als-update-id')
   } catch { /* Pode exigir login depois de restart; recuperação no próximo login */ }
@@ -1132,8 +1203,9 @@ function configureUpdateDialog(method) {
     : 'O painel baixará a Release, validará o manifesto SHA-256 e o ZIP, fará backup e reiniciará o serviço.'
   $('update-file-label').classList.toggle('hidden', method !== 'file')
   $('update-file-input').required = method === 'file'
-  if (method !== 'file') { $('update-file-input').value = '' }
+  if (method !== 'file') { $('update-file-input').value = ''; rememberUpdateZip(null) }
   syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
+  $('update-submit').disabled = method === 'file' && !validSelectedZip($('update-file-input').files?.[0])
   $('update-submit').textContent = method === 'file' ? 'Enviar e instalar' : 'Instalar'
   $('update-dialog').showModal()
 }
@@ -1213,9 +1285,11 @@ $('update-apply-form').addEventListener('submit', async e => {
     return
   }
   button.disabled = true
+  rememberUpdateZip(updateMethod === 'file' ? file : null)
   $('update-dialog').close()
   openProgress()
   showUpdateProgress({ stage:updateMethod === 'file' ? 'uploading' : 'queued', message:'Preparando solicitação…', percent:0 })
+  progressConnection('Enviando solicitação ao servidor…')
   try {
     const result = updateMethod === 'file'
       ? await sendZip(file, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))

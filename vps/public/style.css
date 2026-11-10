@@ -338,3 +338,12 @@ label{font-size:.82rem;margin-bottom:11px}
   .custom-file-picker button{width:100%}
   .project-panel-head,.project-hero-actions{flex-direction:column;align-items:stretch}
 }
+
+/* 2.0.27: seleção ZIP confiável no Android e estado de conexão separado do progresso. */
+.custom-file-field>label{margin-bottom:0}
+.custom-file-picker .file-selection{display:block;flex:1 1 170px;min-width:0;overflow-wrap:anywhere;word-break:break-word;line-height:1.5}
+.custom-file-picker .file-selection.has-file{color:var(--success);font-weight:650}
+.custom-file-picker .file-selection.invalid-file{color:var(--danger)}
+.update-progress-file{padding:9px 11px;border:1px solid var(--border);background:var(--bg);border-radius:9px;overflow-wrap:anywhere;word-break:break-word}
+.update-progress-connection{padding:8px 10px;border-radius:8px;background:var(--bg);font-size:.76rem}
+.update-progress-connection.connection-issue{border:1px solid var(--danger);color:var(--danger)}

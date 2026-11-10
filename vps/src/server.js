@@ -14,12 +14,11 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.26'
+const VERSION = '2.0.27'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url))
-const sessions = new Map()
 const attempts = new Map()
 const challenges = new Map()
 const csrfSafe = new Set(['GET', 'HEAD'])
@@ -52,24 +51,40 @@ function removeTrustedCookie(res) {
   const secure = origin.startsWith('https://') ? '; Secure' : ''
   res.setHeader('set-cookie', `als_trusted=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`)
 }
+// Sessões são armazenadas apenas por hash do token, com expiração e CSRF.
+// Persistir em /var/lib/alsistemas (0600) evita logout involuntário quando
+ // o próprio atualizador reinicia o processo Node.js.
+const SESSION_TTL_MS = 8 * 3600000
+function activeSessions() {
+  const saved = readJson('sessions.json')
+  const entries = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+  const current = Date.now()
+  return Object.fromEntries(Object.entries(entries).filter(([key, value]) =>
+    /^[0-9a-f]{64}$/.test(key) && value && typeof value.csrf === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.csrf) && Number.isSafeInteger(value.expires) && value.expires > current))
+}
 function sessionFrom(req) {
   const token = cookies(req).als_session
   if (!token || !/^[0-9a-f]{64}$/.test(token)) return null
-  const entry = sessions.get(crypto.createHash('sha256').update(token).digest('hex'))
-  if (!entry) return null
-  if (entry.expires < Date.now()) { sessions.delete(entry.key); return null }
-  return entry
+  const key = crypto.createHash('sha256').update(token).digest('hex')
+  const entry = activeSessions()[key]
+  return entry ? { key, csrf: entry.csrf, expires: entry.expires } : null
 }
 function newSession(res) {
   const token = randomToken()
   const key = crypto.createHash('sha256').update(token).digest('hex')
   const csrf = randomToken()
-  sessions.set(key, { key, csrf, expires: Date.now() + 8 * 3600000 })
-  if (sessions.size > 30) for (const [k, v] of sessions) if (v.expires < Date.now()) sessions.delete(k)
-  // Limite superior explícito: sessões em memória jamais crescem sem controle.
-  while (sessions.size > 256) sessions.delete(sessions.keys().next().value)
+  const sessions = activeSessions()
+  sessions[key] = { csrf, expires: Date.now() + SESSION_TTL_MS }
+  const ordered = Object.entries(sessions).sort((a, b) => b[1].expires - a[1].expires).slice(0, 256)
+  writeJson('sessions.json', Object.fromEntries(ordered))
   setSession(res, token)
   return { csrf }
+}
+function invalidateSession(key) {
+  const entries = activeSessions()
+  delete entries[key]
+  writeJson('sessions.json', entries)
 }
 async function body(req) {
   if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw Object.assign(new Error('Content-Type JSON obrigatório'), { status: 415 })
@@ -237,7 +252,7 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (!csrfSafe.has(req.method) && !constantEquals(req.headers['x-csrf-token'], sess.csrf)) return fail(res, 403, 'CSRF inválido')
       if (path === '/api/session' && req.method === 'GET') return json(res, 200, { ok: true, csrf: sess.csrf, expires: sess.expires })
       if (path === '/api/logout' && req.method === 'POST') {
-        sessions.delete(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
+        invalidateSession(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
         audit('logout', { ip }); return json(res, 200, { ok: true })
       }
       if (path === '/api/security/devices' && req.method === 'GET') return json(res, 200, { devices: trustedDevices(), currentId: findTrusted(cookies(req).als_trusted)?.id || null })
@@ -254,7 +269,7 @@ export function createServer({ taskRunner = runTask } = {}) {
         if (Object.keys(input).length !== 0) return fail(res, 400, 'Parâmetros inesperados')
         // A sessão autenticada + origem + CSRF autorizam a revogação.
         revokeAllDevices()
-        sessions.clear() // Revogação geral invalida também sessões em memória.
+        writeJson('sessions.json', {}) // Revogação geral invalida também sessões persistidas.
         const secure = origin.startsWith('https://') ? '; Secure' : ''
         res.setHeader('set-cookie', [
           `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,
