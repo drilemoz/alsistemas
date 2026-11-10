@@ -1,3 +1,5 @@
+**Novo na 2.0.32:** tela **Arquivos** simplificada em um único explorador, com seleção de arquivos elegíveis diretamente na lista, usuário PHP, busca e liberação/restauração de escrita no mesmo painel. Ao liberar, a seleção é salva automaticamente; não há mais as seções separadas “Escolher arquivos”, “Escrita temporária para o PHP” ou “Aplicar ou desfazer”. O menu AWS abre diretamente o explorador. Mantidos os limites de até 12 arquivos e as validações do servidor. Veja `vps/docs/ATUALIZACAO-2.0.32.md`.
+
 **Novo na 2.0.31:** tela **Projetos → Permissões** transformada em explorador de pastas/arquivos com botões de propriedades e grade `r/w/x` para dono, grupo e outros. Mantém ferramenta de escrita PHP temporária na seção avançada; não altera conteúdo de arquivos. Veja `vps/docs/ATUALIZACAO-2.0.31.md`.
 
 **Novo na 2.0.30:** telas de Permissões, Atualizações, Backups e Histórico da manutenção AWS reorganizadas, com ícones, cores moderadas, pop-ups ⓘ e textos curtos. Permissões têm apenas um atalho ao gerenciador; histórico mostra eventos legíveis e mantém relatório JSON para copiar/baixar. Veja `vps/docs/ATUALIZACAO-2.0.30.md`.
@@ -18,7 +20,7 @@
 
 **Novo na 2.0.19:** na aba **Atualizações**, o botão `?` abre as novidades em pop-up, com outro pop-up para o README. Os botões **GitHub**, **Arquivo ZIP** e **Andamento** aparecem lado a lado em dispositivos móveis. Quando uma atualização falha, o acompanhamento oferece relatório de erro em janela própria, com copiar e baixar TXT. Corrigido o Nginx para aceitar ZIPs de até 32 MiB apenas nas duas rotas autenticadas, mantendo 64 KiB nas demais; upgrades do núcleo também migrarão o vhost já gerenciado. Falhas de saúde passam a registrar um diagnóstico resumido da versão, serviço e endpoint. Nenhuma alteração foi executada na EC2; veja `vps/docs/ATUALIZACAO-2.0.19.md`.
 
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.31 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.32 + legado preservado
 
 A versão **2.0.16** adicionou gerenciamento DNS controlado à Spaceship: criar registros A, CNAME e TXT; editar apenas o TTL de registros personalizados; e excluir registros personalizados não protegidos. Antes de escrever, o servidor consulta a zona novamente e valida os registros; requer login, token CSRF e confirmação; a senha adicional foi removida na 2.0.25. Nomes críticos (`@`, `painel`, `www`, `mail`, `migrar` e outros) ficam bloqueados. A versão 2.0.16 **não** alterava automaticamente DNS ao criar projetos, nem permite alterar valores de registros existentes. A API exige `dnsrecords:read` e `dnsrecords:write` para essas ações. Nenhuma mudança DNS foi executada em produção durante o desenvolvimento.
 

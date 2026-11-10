@@ -1,3 +1,13 @@
+## 2.0.32 — Arquivos em painel único (10/11/2026)
+
+- Página genérica de permissões renomeada para **Arquivos · nome do projeto**. O módulo da manutenção AWS abre diretamente este explorador.
+- Cabeçalho do explorador com o botão de atualização (ícone) junto ao título; removidas as palavras redundantes “Projeto” no breadcrumb da raiz e “Pesquisar nesta pasta” no campo de busca.
+- Eliminadas as seções separadas “Escrita temporária para o PHP”, “Escolher arquivos” e “Aplicar ou desfazer”, unificando os controles no mesmo card de arquivos.
+- Usuário PHP, busca, lista navegável, seleção por checkbox de arquivos elegíveis, resumo da seleção e botões **Liberar escrita** / **Restaurar escrita** agora ficam na mesma área. Seleções são mantidas ao navegar pelas pastas, com limite de 12 arquivos.
+- **Liberar escrita** configura o perfil automaticamente quando necessário e depois aplica a liberação, com uma confirmação. **Restaurar escrita** recupera as permissões originais segundo o backend existente. A interface desabilita alterações na seleção quando uma liberação está ativa.
+- As verificações de propriedade, escopo do projeto, arquivos proibidos, CSRF e confirmação continuam no backend, sem ampliar permissões nem alterar rotas de API.
+- Não houve implantação na EC2. Testes automatizados locais e inspeção da interface não substituem teste de permissões real com PHP-FPM.
+
 ## 2.0.31 — Explorador de arquivos e permissões do projeto (10/11/2026)
 
 - **Projetos → Permissões:** explorador com pastas navegáveis, breadcrumb, busca local, paginação (120 itens por vez), cartões de arquivos com ícones e propriedades de dono/grupo/modo Unix. O usuário pode abrir pastas e tocar nos arquivos para consultar permissões.

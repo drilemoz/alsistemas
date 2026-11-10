@@ -150,7 +150,7 @@ function navigateApp(route, { replace = false } = {}) {
 window.addEventListener('popstate', () => showAppRoute(appRouteFromUrl()))
 window.addEventListener('hashchange', () => { if (appRouteFromUrl() !== currentAppRoute) showAppRoute(appRouteFromUrl()) })
 for (const button of document.querySelectorAll('[data-project-back]')) button.addEventListener('click', () => navigateApp(button.dataset.projectBack))
-for (const button of document.querySelectorAll('[data-project-route]')) button.addEventListener('click', () => navigateApp('project/iguatamaonline/aws/' + button.dataset.projectRoute))
+for (const button of document.querySelectorAll('[data-project-route]')) button.addEventListener('click', () => navigateApp(button.dataset.projectRoute === 'permissions' ? 'project/iguatamaonline/permissions' : 'project/iguatamaonline/aws/' + button.dataset.projectRoute))
 function renderProjectPage(name) {
   const item = knownProjects.get(name)
   const techDialog = $('project-tech-dialog')
@@ -228,7 +228,7 @@ function renderProjectPage(name) {
     permissionTool.type = 'button'
     const icon = node('span', '', 'project-tool-icon'); icon.append(iconGraphic('lock'))
     const labels = node('span')
-    labels.append(node('strong', 'Permissões do projeto'), node('small', 'Arquivos autorizados, liberação temporária e restauração'))
+    labels.append(node('strong', 'Arquivos do projeto'), node('small', 'Explorador, liberação e restauração de escrita'))
     permissionTool.append(icon, labels, node('span', '›'))
     permissionTool.addEventListener('click', () => navigateApp(`project/${item.name}/permissions`))
     actions.append(permissionTool)
@@ -301,9 +301,10 @@ function explorerRenderEntries() {
   const container = $('explorer-items')
   container.replaceChildren()
   const matching = explorerEntries.filter(item => !search || item.name.toLocaleLowerCase('pt-BR').includes(search))
-  if (!matching.length) container.append(node('p', search ? 'Nenhum item encontrado nesta página.' : 'Esta pasta está vazia.', 'explorer-empty small muted'))
+  if (!matching.length) container.append(node('p', search ? 'Nenhum item encontrado nesta pasta.' : 'Esta pasta está vazia.', 'explorer-empty small muted'))
   for (const item of matching) {
     const row = node('div', '', 'explorer-entry')
+    const eligible = item.kind === 'file' && generalCatalogPaths.has(item.path)
     const glyph = node('span', '', 'explorer-entry-glyph ' + (item.kind === 'directory' ? 'is-folder' : item.kind === 'link' ? 'is-link' : 'is-file'))
     glyph.append(iconGraphic(item.kind === 'directory' ? 'folder' : item.kind === 'file' ? 'file' : 'lock'))
     const main = node('button', '', 'explorer-entry-main')
@@ -312,23 +313,47 @@ function explorerRenderEntries() {
     const title = node('strong', item.name, 'explorer-entry-title')
     const description = node('small', `${item.kind === 'directory' ? 'Pasta' : item.kind === 'file' ? 'Arquivo' : item.kind === 'link' ? 'Atalho simbólico' : 'Especial'} · ${item.owner}:${item.group} · ${item.mode}`, 'muted')
     main.append(title, description)
+    row.append(glyph, main)
     const action = node('button', '', 'outline explorer-entry-action')
     action.type = 'button'
-    action.setAttribute('aria-label', `Ver permissões de ${item.name}`)
-    action.append(iconGraphic(item.editable ? 'shield' : 'lock'), node('span', 'Permissões'))
+    action.setAttribute('aria-label', `Ver propriedades de ${item.name}`)
+    action.append(iconGraphic(item.editable ? 'shield' : 'lock'), node('span', 'Propriedades'))
     action.addEventListener('click', () => explorerOpenMode(item))
-    row.append(glyph, main, action)
+    row.append(action)
+    if (eligible) {
+      const wrapper = node('label', '', 'explorer-file-select')
+      const check = node('input', '')
+      check.type = 'checkbox'
+      check.value = item.path
+      check.checked = generalSelectedPaths.has(item.path)
+      check.disabled = generalActive || (generalSelectedPaths.size >= 12 && !check.checked)
+      check.setAttribute('aria-label', `Selecionar ${item.path} para escrita temporária`)
+      check.addEventListener('change', () => {
+        if (generalActive) { check.checked = generalSelectedPaths.has(item.path); return }
+        if (check.checked && generalSelectedPaths.size >= 12) { check.checked = false; return }
+        if (check.checked) generalSelectedPaths.add(item.path)
+        else generalSelectedPaths.delete(item.path)
+        updatePermissionSelection()
+      })
+      wrapper.append(check)
+      row.append(wrapper)
+    }
     container.append(row)
   }
 }
 function explorerCrumbs() {
   const crumbs = $('explorer-crumbs')
   crumbs.replaceChildren()
-  const root = node('button', 'Projeto', 'outline explorer-crumb')
-  root.type = 'button'; root.disabled = !explorerDir
+  const parts = explorerDir ? explorerDir.split('/') : []
+  if (!parts.length) { crumbs.hidden = true; return }
+  crumbs.hidden = false
+  const root = node('button', '', 'outline explorer-crumb explorer-crumb-root')
+  root.type = 'button'
+  root.setAttribute('aria-label', 'Voltar à raiz de arquivos')
+  root.title = 'Raiz de arquivos'
+  root.append(iconGraphic('folder'))
   root.addEventListener('click', () => void explorerBrowse(''))
   crumbs.append(root)
-  const parts = explorerDir ? explorerDir.split('/') : []
   for (let index = 0; index < parts.length; index++) {
     crumbs.append(node('span', '›', 'explorer-crumb-separator'))
     const part = node('button', parts[index], 'outline explorer-crumb')
@@ -356,8 +381,8 @@ async function explorerBrowse(directory = '', offset = 0) {
     explorerDir = directory
     explorerOffset = result.nextOffset
     explorerEntries = offset ? [...explorerEntries, ...(result.items || [])] : (result.items || [])
-    $('explorer-summary').textContent = `${result.total} item(ns) · proprietário do projeto: ${result.owner}`
-    $('explorer-note').textContent = result.limited ? 'Listagem limitada a 4.000 itens por pasta.' : 'Toque na pasta para abrir ou em Permissões para consultar e ajustar.'
+    $('explorer-summary').textContent = `${result.total} item(ns) nesta pasta`
+    $('explorer-note').textContent = result.limited ? 'Listagem limitada a 4.000 itens por pasta.' : 'Marque os arquivos elegíveis. Toque em uma pasta para abrir.'
     $('explorer-more').hidden = result.nextOffset == null
     $('explorer-more').disabled = false
     explorerCrumbs()
@@ -390,129 +415,145 @@ $('explorer-mode-save').addEventListener('click', async () => {
     $('explorer-summary').textContent = `Permissões alteradas: ${item.path} (${explorerModeText(newMode)})`
   } catch (error) { notice(error.message, true); await explorerBrowse(explorerDir) }
 })
+// 2.0.32: um único explorador para selecionar arquivos e liberar/restaurar escrita.
 let generalPermissionsName = ''
-let generalCatalog = []
+let generalCatalogPaths = new Set()
+let generalSelectedPaths = new Set()
+let generalSavedPaths = new Set()
+let generalSavedPhpUser = ''
 let generalActive = false
+let generalReady = false
+let generalBusy = false
+let generalLoadId = 0
 function updatePermissionSelection() {
-  const selected = [...document.querySelectorAll('#general-permissions-files input[type="checkbox"]:checked')]
-  const count = selected.length
-  $('general-permissions-count').textContent = `${count} arquivo(s) selecionado(s) · máximo 12.`
-  $('general-permissions-save').disabled = generalActive || count < 1 || count > 12 || !$('general-permissions-php').value
-  for (const checkbox of document.querySelectorAll('#general-permissions-files input[type="checkbox"]')) {
-    checkbox.disabled = generalActive || (count >= 12 && !checkbox.checked)
+  const count = generalSelectedPaths.size
+  $('general-permissions-count').textContent = `${count} de 12 arquivos selecionados`
+  const phpUser = $('general-permissions-php').value
+  $('general-permissions-allow').disabled = generalBusy || !generalReady || generalActive || !phpUser || count < 1 || count > 12
+  $('general-permissions-restore').disabled = generalBusy || !generalReady || !generalActive
+  $('general-permissions-php').disabled = !generalReady || generalBusy || generalActive
+  $('general-permissions-clear').hidden = !count || generalActive
+  $('general-permissions-clear').disabled = generalBusy
+  const chips = $('general-permissions-selected')
+  chips.replaceChildren()
+  for (const path of generalSelectedPaths) {
+    const chip = node('span', '', 'explorer-selected-chip')
+    chip.append(node('span', path))
+    if (!generalActive && !generalBusy) {
+      const remove = node('button', '×', 'explorer-selected-remove')
+      remove.type = 'button'
+      remove.title = `Remover ${path} da seleção`
+      remove.setAttribute('aria-label', `Remover ${path} da seleção`)
+      remove.addEventListener('click', () => { generalSelectedPaths.delete(path); updatePermissionSelection() })
+      chip.append(remove)
+    }
+    chips.append(chip)
+  }
+  for (const checkbox of document.querySelectorAll('.explorer-file-select input[type=checkbox]')) {
+    checkbox.checked = generalSelectedPaths.has(checkbox.value)
+    checkbox.disabled = generalActive || generalBusy || !generalReady || (count >= 12 && !checkbox.checked)
   }
 }
 function renderPermissionCatalog(catalog, config) {
-  generalCatalog = catalog.files || []
+  generalCatalogPaths = new Set((catalog.files || []).map(file => file.path))
+  generalSavedPaths = new Set((config.files || []).map(file => file.path))
+  generalSelectedPaths = new Set(generalSavedPaths)
+  generalSavedPhpUser = config.phpUser || ''
   generalActive = !!config.active
   explorerHasActiveGrant = generalActive
-  $('general-permissions-config').hidden = generalActive
-  $('general-permissions-owner').textContent = `Proprietário detectado: ${catalog.owner} · ${generalCatalog.length} arquivo(s) elegível(is).`
+  generalReady = true
   const select = $('general-permissions-php')
   select.replaceChildren(new Option('Escolha o usuário PHP', ''))
   for (const user of catalog.phpUsers || []) select.append(new Option(user, user))
-  select.value = config.phpUser || ''
-  const container = $('general-permissions-files')
-  container.replaceChildren()
-  const configured = new Set((config.files || []).map(x => x.path))
-  for (const file of generalCatalog) {
-    const label = node('label', '', 'permission-file-row')
-    const checkbox = node('input', '')
-    checkbox.type = 'checkbox'; checkbox.value = file.path; checkbox.checked = configured.has(file.path)
-    checkbox.addEventListener('change', updatePermissionSelection)
-    const info = node('span', '')
-    info.append(node('strong', file.path), node('small', `Dono: ${file.owner} · modo ${file.mode}`))
-    label.append(checkbox, info); container.append(label)
+  if (generalSavedPhpUser && !(catalog.phpUsers || []).includes(generalSavedPhpUser)) {
+    select.add(new Option(`${generalSavedPhpUser} (não disponível)`, generalSavedPhpUser))
   }
-  if (!generalCatalog.length) container.append(node('p', 'Nenhum arquivo elegível encontrado. Confira a propriedade do projeto.', 'small muted'))
+  select.value = generalSavedPhpUser
+  const label = generalActive ? `Escrita liberada temporariamente em ${generalSavedPaths.size} arquivo(s). Restaure ao terminar.`
+    : config.configured ? 'Sem escrita temporária ativa. Selecione os arquivos para liberar.'
+      : 'Sem escrita temporária ativa.'
+  $('general-permissions-status').textContent = label
+  $('general-permissions-status').classList.toggle('active', generalActive)
+  explorerRenderEntries()
   updatePermissionSelection()
 }
-async function loadGeneralPermissions(name) {
+async function loadGeneralPermissions(name, {keepDirectory = false} = {}) {
+  const loadId = ++generalLoadId
   generalPermissionsName = name
   explorerProject = name
-  explorerHasActiveGrant = false
-  void explorerBrowse('')
-  $('general-project-permissions-title').textContent = 'Permissões · ' + name
+  generalReady = false
+  generalBusy = false
+  explorerHasActiveGrant = true // Bloqueia chmod enquanto consultamos se há liberação temporária.
+  $('general-project-permissions-title').textContent = 'Arquivos · ' + name
   $('general-permissions-back').textContent = '‹ ' + (name === 'iguatamaonline' ? 'Manutenção AWS' : name)
   $('general-permissions-result').textContent = ''
   $('general-permissions-result').classList.remove('error')
-  $('general-permissions-status').replaceChildren(node('p', 'Verificando arquivos e permissões…', 'small muted'))
-  $('general-permissions-files').replaceChildren(node('p', 'Buscando arquivos…', 'small muted'))
-  $('general-permissions-save').disabled = true
+  $('general-permissions-status').textContent = 'Consultando permissões…'
+  $('general-permissions-php').disabled = true
+  $('general-permissions-php').replaceChildren(new Option('Carregando usuários…', ''))
   $('general-permissions-allow').disabled = true
   $('general-permissions-restore').disabled = true
+  generalSelectedPaths = new Set()
+  generalCatalogPaths = new Set()
+  explorerEntries = []
+  void explorerBrowse(keepDirectory ? explorerDir : '')
   try {
-    const [data, catalog] = await Promise.all([
+    const [data, catalogResult] = await Promise.all([
       api(`/api/projects/${encodeURIComponent(name)}/permissions`),
-      api(`/api/projects/${encodeURIComponent(name)}/permissions/catalog`)
+      api(`/api/projects/${encodeURIComponent(name)}/permissions/catalog`).then(catalog => ({catalog}), error => ({error}))
     ])
-    if (generalPermissionsName !== name || currentAppRoute !== `project/${name}/permissions`) return
-    const area = $('general-permissions-status')
-    area.replaceChildren()
-    if (!data.configured) area.append(diagnosticCard('file', 'Escolha os arquivos para começar',
-      'O servidor identifica o proprietário e oferece apenas arquivos elegíveis.', ''))
-    else area.append(diagnosticCard(data.active ? 'alert' : 'success',
-      data.active ? 'Escrita temporária liberada' : 'Seleção salva',
-      data.active ? 'Restaure as permissões assim que terminar.' : `${data.files.length} arquivo(s) preparado(s).`,
-      data.active ? 'diagnostic-warning' : 'diagnostic-good'))
-    if (data.configured) for (const file of data.files || []) area.append(diagnosticCard('file', file.path,
-      file.phpWritable ? 'PHP tem escrita neste arquivo (estimativa).' : 'PHP sem escrita neste arquivo (estimativa).'))
-    renderPermissionCatalog(catalog, data)
-    $('general-permissions-allow').disabled = !data.configured || !!data.active
-    $('general-permissions-restore').disabled = !data.active
+    if (loadId !== generalLoadId || generalPermissionsName !== name || currentAppRoute !== `project/${name}/permissions`) return
+    if (catalogResult.error) {
+      // Mesmo sem o catálogo, uma liberação já ativa precisa continuar restaurável.
+      if (!data.active) throw catalogResult.error
+      renderPermissionCatalog({ files: [], phpUsers: [] }, data)
+      $('general-permissions-status').textContent += ' Lista de arquivos indisponível: restaure a escrita antes de tentar novamente.'
+      $('general-permissions-allow').disabled = true
+    } else renderPermissionCatalog(catalogResult.catalog, data)
   } catch (error) {
-    $('general-permissions-status').replaceChildren(diagnosticCard('alert', 'Não foi possível consultar', error.message, 'diagnostic-warning'))
-    $('general-permissions-config').hidden = true
-  }
-}
-async function saveGeneralPermissions() {
-  const name = generalPermissionsName
-  const files = [...document.querySelectorAll('#general-permissions-files input[type="checkbox"]:checked')].map(x => x.value)
-  const phpUser = $('general-permissions-php').value
-  if (generalActive || files.length < 1 || files.length > 12 || !phpUser) return
-  if (!await confirmAction(`Salvar ${files.length} arquivo(s) do projeto ${name} para escrita pelo usuário ${phpUser}? Nenhuma permissão será alterada nesta etapa.`, 'Salvar seleção')) return
-  $('general-permissions-save').disabled = true
-  $('general-permissions-result').classList.remove('error')
-  try {
-    await api(`/api/projects/${encodeURIComponent(name)}/permissions/profile`, 'POST', { files, phpUser })
-    await loadGeneralPermissions(name)
-    $('general-permissions-result').textContent = 'Seleção salva. Agora você pode liberar escrita temporária.'
-  } catch (error) {
-    $('general-permissions-result').textContent = error.message
-    $('general-permissions-result').classList.add('error')
-    updatePermissionSelection()
+    if (loadId !== generalLoadId) return
+    generalReady = false
+    $('general-permissions-status').textContent = 'Não foi possível carregar: ' + error.message
+    $('general-permissions-allow').disabled = true
+    $('general-permissions-restore').disabled = true
   }
 }
 async function changeGeneralPermissions(mode) {
   const name = generalPermissionsName
-  if (!name || currentAppRoute !== `project/${name}/permissions`) return
-  const phrase = mode === 'allow' ? 'Liberar escrita temporária' : 'Restaurar permissões originais'
+  if (!name || currentAppRoute !== `project/${name}/permissions` || generalBusy || !generalReady) return
+  const files = [...generalSelectedPaths].sort()
+  const phpUser = $('general-permissions-php').value
+  if (mode === 'allow' && (generalActive || !phpUser || !files.length || files.length > 12)) return
+  if (mode === 'restore' && !generalActive) return
   const detail = mode === 'allow'
-    ? `Liberar temporariamente a escrita nos arquivos salvos do projeto ${name}? Um PHP comprometido poderá alterar esses arquivos até a restauração.`
-    : `Restaurar as permissões anteriores dos arquivos do projeto ${name}?`
-  if (!await confirmAction(detail, phrase)) return
-  for (const id of ['general-permissions-allow', 'general-permissions-restore']) $(id).disabled = true
+    ? `Liberar escrita temporária em ${files.length} arquivo(s) para ${phpUser} no projeto ${name}? A seleção será salva automaticamente. Restaure ao terminar, pois um PHP comprometido poderá alterar esses arquivos enquanto a escrita estiver ativa.`
+    : `Restaurar os modos e grupos anteriores dos ${generalSavedPaths.size} arquivo(s) do projeto ${name}?`
+  if (!await confirmAction(detail, mode === 'allow' ? 'Liberar escrita' : 'Restaurar escrita')) return
+  if (name !== generalPermissionsName || currentAppRoute !== `project/${name}/permissions`) return
+  generalBusy = true
+  updatePermissionSelection()
   $('general-permissions-result').classList.remove('error')
   $('general-permissions-result').textContent = 'Executando…'
   try {
+    if (mode === 'allow') {
+      const isSameProfile = generalSavedPhpUser === phpUser && files.length === generalSavedPaths.size && files.every(file => generalSavedPaths.has(file))
+      if (!isSameProfile) await api(`/api/projects/${encodeURIComponent(name)}/permissions/profile`, 'POST', { files, phpUser })
+    }
     const result = await api(`/api/projects/${encodeURIComponent(name)}/permissions`, 'POST', { mode })
-    await loadGeneralPermissions(name)
-    $('general-permissions-result').textContent = result.warning || 'Operação concluída.'
+    await loadGeneralPermissions(name, {keepDirectory: true})
+    $('general-permissions-result').textContent = result.warning || (mode === 'allow' ? 'Escrita liberada temporariamente.' : 'Permissões anteriores restauradas.')
   } catch (error) {
+    // Mantém a seleção no navegador para que o usuário possa tentar novamente após investigar a falha.
     $('general-permissions-result').textContent = error.message
     $('general-permissions-result').classList.add('error')
-    await loadGeneralPermissions(name)
-    $('general-permissions-result').textContent = error.message
-    $('general-permissions-result').classList.add('error')
+  } finally {
+    generalBusy = false
+    updatePermissionSelection()
   }
 }
 $('general-permissions-back').addEventListener('click', () => navigateApp(generalPermissionsName === 'iguatamaonline' ? 'project/iguatamaonline/aws' : `project/${generalPermissionsName}`))
-$('general-permissions-save').addEventListener('click', saveGeneralPermissions)
-$('general-permissions-search').addEventListener('input', () => {
-  const q = $('general-permissions-search').value.trim().toLowerCase()
-  for (const label of document.querySelectorAll('.permission-file-row')) label.hidden = !label.querySelector('input').value.toLowerCase().includes(q)
-})
 $('general-permissions-php').addEventListener('change', updatePermissionSelection)
+$('general-permissions-clear').addEventListener('click', () => { if (!generalActive && !generalBusy) { generalSelectedPaths.clear(); updatePermissionSelection() } })
 $('general-permissions-allow').addEventListener('click', () => changeGeneralPermissions('allow'))
 $('general-permissions-restore').addEventListener('click', () => changeGeneralPermissions('restore'))
 let externalPoll = null

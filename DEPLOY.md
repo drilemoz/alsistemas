@@ -1,3 +1,7 @@
+## Atualização 2.0.32 — Arquivos em tela única
+
+A partir da 2.0.31, não muda o conjunto de scripts administrativos. A 2.0.32 reorganiza a seleção de arquivos elegíveis e usuário PHP no próprio explorador. O servidor continua verificando o perfil na API de permissões e bloqueia escrita fora dos arquivos selecionados. Depois da atualização, confirme a versão em `/api/health`, teste a seleção e a restauração no projeto autorizado. Faça backup/snapshot antes de conceder escrita em produção.
+
 ## Atualização 2.0.31 — Permissões tipo Explorer
 
 Antes de instalar, guarde backup e confirme acesso SSH para recuperação, pois alterações de `chmod` podem bloquear Nginx ou PHP. A atualização do painel deve copiar também `project_explorer.py` para `/usr/local/libexec/` (incluído no `instalar.sh`), com proprietário root e modo 0700. Os endpoints ficam protegidos pela sessão e pelo CSRF. O explorador lista **metadados** e permite apenas mudar modos Unix em arquivos/pastas permitidos; ele não abre, edita, move, remove nem faz download do conteúdo. A pasta de testes `iguatama-teste` é bloqueada.
