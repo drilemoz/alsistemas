@@ -1,4 +1,4 @@
-# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.25
+# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.26
 
 ## Superfícies e permissões
 
@@ -70,3 +70,7 @@ O fluxo atual de Releases usa ZIP e manifesto SHA-256 (sem assinatura Ed25519). 
 ## Alteração 2.0.25: uma verificação de identidade por sessão
 
 Senha e TOTP são exigidos somente no login (e no cadastro inicial da conta); não há step-up para DNS, repositório, pacotes, manutenção de arquivos e revogações. Isso **reduz a segurança** caso uma sessão ativa seja capturada ou usada indevidamente. Permanecem cookie protegido, CSRF, origem, auditoria, rate limiting, confirmações de ações, allowlists de pacotes e as verificações do helper root. O backup cifrado continua exigindo a frase secreta para criptografia.
+
+## 2.0.26: preenchimento automático do login
+
+Dispositivos confiáveis continuam exigindo a senha correta, mas **não** exigem TOTP no login durante a validade do token confiável. O frontend desativa o input TOTP quando oculto, impedindo que um código preenchido pelo navegador seja incluído por FormData; a API também ignora códigos antigos/inesperados quando o cookie confiável é validado. Dispositivos não confiáveis continuam exigindo TOTP novo, com controle de reutilização. Cookies e segredos não são escritos em logs. Se a senha salva não corresponder ao hash do administrador, o login continua recusado.

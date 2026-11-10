@@ -642,7 +642,21 @@ $('setup-finish').addEventListener('submit', e => {
 $('login-form').addEventListener('submit', e => {
   e.preventDefault()
   submit(e.currentTarget, async data => {
-    const sess = await api('/api/login', 'POST', { password: data.password, otp: data.otp || '', trustDevice: data.trustDevice === 'yes' })
+    // FormData lê o valor real do input, inclusive o que o Chrome preencheu
+    // sem disparar eventos de input. Nunca enviar OTP de um campo desativado.
+    let sess
+    try {
+      sess = await api('/api/login', 'POST', {
+        password: e.currentTarget.elements.namedItem('password').value,
+        otp: $('login-otp').disabled ? '' : (data.otp || ''),
+        trustDevice: !$('trust-device').disabled && data.trustDevice === 'yes'
+      })
+    } catch (error) {
+      if (error.httpStatus === 401) {
+        throw new Error('Senha ou código TOTP inválido. Se usou uma senha salva, confira se ela corresponde à senha atual do painel.')
+      }
+      throw error
+    }
     csrf = sess.csrf
     e.target.reset(); shown('dashboard'); $('logout').classList.remove('hidden')
     activateTab(validAppRoute(appRouteFromUrl()) ? appRouteFromUrl() : 'overview', {record:false})
@@ -814,10 +828,17 @@ $('update-repo').addEventListener('input', () => {
 })
 
 function setTrustedLogin(enabled) {
-  $('login-otp-row').classList.toggle('hidden', !!enabled)
-  $('trusted-note').classList.toggle('hidden', !enabled)
-  $('login-otp').required = !enabled
-  if (enabled) { $('login-otp').value = ''; $('trust-device').checked = false }
+  const trusted = !!enabled
+  const otp = $('login-otp')
+  const remember = $('trust-device')
+  $('login-otp-row').classList.toggle('hidden', trusted)
+  $('trusted-note').classList.toggle('hidden', !trusted)
+  otp.required = !trusted
+  // Campos ocultos continuam participando de FormData e podem ser preenchidos
+  // novamente pelo navegador. Desativá-los impede enviar um TOTP antigo.
+  otp.disabled = trusted
+  remember.disabled = trusted
+  if (trusted) { otp.value = ''; remember.checked = false }
 }
 for (const button of document.querySelectorAll('.password-toggle')) button.addEventListener('click', () => {
   const input = $(button.dataset.target)

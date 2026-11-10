@@ -41,3 +41,31 @@ test('manutenção externa não solicita senha ou TOTP após o login', () => {
   assert.doesNotMatch(js, /external-password|X-Update-Password|X-Update-Otp/)
   assert.match(js, /resolve\(true\)/)
 })
+
+
+test('login aceita preenchimento automático e impede OTP oculto no FormData', () => {
+  const passwordInput = html.match(/<input[^>]+id="login-password"[^>]*>/)?.[0] || ''
+  assert.match(passwordInput, /autocomplete="current-password"/)
+  assert.match(passwordInput, /name="password"/)
+  assert.match(js, /e\.currentTarget\.elements\.namedItem\('password'\)\.value/)
+  assert.match(js, /senha salva, confira se ela corresponde à\s+senha/i)
+  const start = js.indexOf('function setTrustedLogin(enabled)')
+  const end = js.indexOf('for (const button of document.querySelectorAll(\'.password-toggle\'))', start)
+  assert.ok(start >= 0 && end > start)
+  const code = js.slice(start, end)
+  const elements = Object.fromEntries(['login-otp', 'trust-device', 'login-otp-row', 'trusted-note'].map(id => [id, {
+    disabled: false, required: true, checked: true, value: 'antigo',
+    classList: { toggle: () => {} }
+  }]))
+  const setTrustedLogin = new Function('$', code + '\nreturn setTrustedLogin')((id) => elements[id])
+  setTrustedLogin(true)
+  assert.equal(elements['login-otp'].disabled, true)
+  assert.equal(elements['login-otp'].required, false)
+  assert.equal(elements['login-otp'].value, '')
+  assert.equal(elements['trust-device'].disabled, true)
+  assert.equal(elements['trust-device'].checked, false)
+  setTrustedLogin(false)
+  assert.equal(elements['login-otp'].disabled, false)
+  assert.equal(elements['login-otp'].required, true)
+  assert.equal(elements['trust-device'].disabled, false)
+})

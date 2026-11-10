@@ -1,3 +1,11 @@
+## 2.0.26 — Login compatível com senha salva e TOTP oculto (09/11/2026)
+
+- Corrigida a possibilidade de um dispositivo confiável enviar código TOTP antigo preenchido pelo navegador mesmo com o campo visualmente oculto. O input oculto e a opção de confiar no dispositivo ficam desativados no formulário quando o cookie confiável é reconhecido.
+- O backend ignora códigos TOTP inesperados em logins de dispositivos com token de confiança válido, sem dispensar a senha correta. Dispositivos não confiáveis continuam precisando do TOTP novo.
+- O login lê diretamente o valor do campo de senha, compatível com o preenchimento automático do Chrome e demais navegadores; erro de autenticação sugere conferir se a senha salva está atualizada, sem revelar qual fator falhou.
+- Testes de regressão para TOTP antigo preenchido automaticamente, senha incorreta, exigência de TOTP em dispositivos não confiáveis e estado dos inputs. Nenhuma alteração de credenciais ou reinicialização de dispositivos confiáveis.
+- Não atualiza a EC2 automaticamente. A tela exibida pelo usuário ainda identifica a versão 2.0.24.
+
 ## 2.0.25 — Uma autenticação por sessão (09/11/2026)
 
 - Após entrar com senha e TOTP, o painel VPS não exige novamente esses dados para mudanças de DNS, configuração de repositório, instalações de dependências, revogação de dispositivos, manutenção e atualizações do IguatamaOnline.

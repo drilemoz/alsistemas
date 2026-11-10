@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.25'
+const VERSION = '2.0.26'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -213,9 +213,12 @@ export function createServer({ taskRunner = runTask } = {}) {
         const input = await body(req)
         const admin = readJson('admin.json')
         const trusted = findTrusted(cookies(req).als_trusted)
-        const step = admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
+        // Um dispositivo confiável dispensa TOTP neste login. Ignorar um eventual
+        // código antigo preenchido pelo gerenciador de senhas ou enviado por um
+        // navegador com cache, sem reduzir a exigência de senha correta.
+        const step = !trusted && admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
         const totpValid = step !== null && step > (admin?.lastTotpStep ?? -1)
-        if (!admin || !verifyPassword(input.password, admin.passwordHash) || (!trusted && !totpValid) || (input.otp && !totpValid)) {
+        if (!admin || !verifyPassword(input.password, admin.passwordHash) || (!trusted && !totpValid)) {
           audit('login_failed', { ip }); return fail(res, 401, 'Senha ou código TOTP inválido')
         }
         if (totpValid) writeJson('admin.json', { ...admin, lastTotpStep: step })

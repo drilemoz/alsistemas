@@ -43,6 +43,14 @@ test('dispositivo confiável: 30 dias, senha obrigatória, revogação, CSRF', a
     assert.equal(result.status, 401)
     result = await call('/api/login', 'POST', { password, otp: '' }, trusted)
     assert.equal(result.status, 200)
+    // Autofill pode restaurar o código já consumido no primeiro login.
+    // Isso não deve impedir um login de dispositivo confiável com senha certa.
+    result = await call('/api/login', 'POST', { password, otp: totp(secret) }, trusted)
+    assert.equal(result.status, 200, 'TOTP antigo em dispositivo confiável deve ser ignorado')
+    result = await call('/api/login', 'POST', { password, otp: 'codigo-invalido' }, trusted)
+    assert.equal(result.status, 200, 'TOTP inesperado deve ser ignorado para dispositivo confiável')
+    result = await call('/api/login', 'POST', { password: 'senhaErrada', otp: 'codigo-invalido' }, trusted)
+    assert.equal(result.status, 401, 'senha incorreta continua bloqueada')
     result = await call('/api/security/devices', 'GET', undefined, `${session}; ${trusted}`)
     assert.equal(result.status, 200)
     assert.equal(result.body.devices.length, 1)
