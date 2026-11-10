@@ -444,3 +444,41 @@ label{font-size:.82rem;margin-bottom:11px}
   .project-log-event-heading{display:grid;gap:4px}
   .project-update-grid .panel{margin-bottom:11px}
 }
+
+/* 2.0.31 — explorador real de arquivos do projeto */
+.explorer-panel{min-width:0}
+.explorer-panel .project-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.explorer-panel .project-panel-head h2{display:flex;align-items:center;gap:8px;margin:0}
+.explorer-panel .project-panel-head .icon{width:20px;height:20px}
+.explorer-crumbs{display:flex;align-items:center;gap:5px;overflow-x:auto;padding:12px 1px 6px;scrollbar-width:thin}
+.explorer-crumb{white-space:nowrap;min-height:36px;padding:6px 10px;font-size:.82rem}
+.explorer-crumb:disabled{color:var(--text);opacity:1;background:var(--bg)}
+.explorer-crumb-separator{color:var(--muted)}
+.explorer-summary{font-size:.83rem;color:var(--muted);margin:6px 0 12px;overflow-wrap:anywhere}
+.explorer-search-label{margin:0 0 12px}
+.explorer-search-label input{margin-top:7px}
+.explorer-list{display:grid;gap:7px;min-width:0}
+.explorer-entry{display:flex;gap:11px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:13px;min-width:0}
+.explorer-entry-glyph{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));color:var(--accent)}
+.explorer-entry-glyph.is-link{color:var(--muted);background:var(--bg)}
+.explorer-entry-glyph .icon{width:20px;height:20px}
+.explorer-entry-main{flex:1;min-width:0;display:grid;gap:4px;text-align:left;padding:0;border:0;background:transparent;color:var(--text);font-size:.88rem;min-height:36px;justify-content:start;align-content:center}
+.explorer-entry-main:disabled{opacity:1}
+.explorer-entry-main strong{font-size:.88rem;overflow-wrap:anywhere}
+.explorer-entry-main small{font-size:.74rem;overflow-wrap:anywhere}
+.explorer-entry-action{display:flex;align-items:center;gap:5px;padding:6px 9px;flex:0 0 auto;min-height:36px;font-size:.79rem}
+.explorer-entry-action .icon{width:15px;height:15px}
+.explorer-empty{padding:16px 10px}
+.explorer-bottom{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.explorer-bottom p{margin:0}
+.explorer-advanced{border:1px solid var(--border);border-radius:15px;overflow:hidden;margin-bottom:20px}
+.explorer-advanced>summary{padding:16px;cursor:pointer;font-weight:650;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.explorer-advanced>summary .icon{height:20px;width:20px}
+.explorer-advanced>.panel{margin:8px 12px 12px}
+.explorer-mode-table{display:grid;grid-template-columns:minmax(54px,1fr) repeat(3,minmax(55px,1fr));gap:8px 2px;align-items:center;margin:14px 0}
+.explorer-mode-table>strong{text-align:center;font-size:.75rem}
+.explorer-mode-table>span{font-size:.83rem;font-weight:600}
+.explorer-mode-table label{margin:0;display:flex;justify-content:center}
+.explorer-mode-table input{width:20px;height:20px;min-height:20px;margin:0;accent-color:var(--accent)}
+.explorer-mode-dialog .dialog-body{padding:18px}
+@media(max-width:520px){.explorer-entry{gap:7px;padding:8px}.explorer-entry-glyph{width:33px;height:33px;flex-basis:33px}.explorer-entry-action{padding:6px 7px}.explorer-entry-action span{display:none}.explorer-entry-main strong{font-size:.81rem}.explorer-entry-main small{font-size:.7rem}}

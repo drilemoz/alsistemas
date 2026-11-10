@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.30'
+const VERSION = '2.0.31'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -390,6 +390,43 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/backups' && req.method === 'GET') {
         try { return json(res, 200, await taskRunner({ action: 'list_backups' })) }
         catch (err) { return fail(res, 503, 'Inventário de backups indisponível: ' + err.message) }
+      }
+      // Explorador com modos UNIX: somente dentro do projeto e sem seguir links.
+      const explorerRoute = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/files(?:\/(mode))?$/.exec(path)
+      if (explorerRoute && ['GET', 'POST'].includes(req.method)) {
+        const [, name, section] = explorerRoute
+        if (['iguatama-teste', 'alsistemas'].includes(name) || name.includes('--'))
+          return fail(res, 404, 'Projeto não autorizado')
+        if (!limit(ip, 'file-explorer', req.method === 'POST' ? 18 : 180)) return fail(res, 429, 'Muitas consultas')
+        let task
+        if (req.method === 'GET' && !section) {
+          const params = new URL(req.url, 'http://localhost').searchParams
+          if ([...params.keys()].some(key => !['dir', 'offset'].includes(key))) return fail(res, 400, 'Parâmetros inesperados')
+          const directory = params.get('dir') || ''
+          const offset = Number(params.get('offset') || '0')
+          if (directory.length > 512 || !Number.isSafeInteger(offset) || offset < 0 || offset > 4000)
+            return fail(res, 400, 'Caminho ou página inválida')
+          task = { action: 'project_file_explorer', name, mode: 'browse', directory, offset }
+        } else if (req.method === 'POST' && section === 'mode') {
+          const input = await body(req)
+          if (Object.keys(input).sort().join(',') !== 'expectedMode,inode,newMode,path' ||
+              typeof input.path !== 'string' || input.path.length > 512 ||
+              typeof input.inode !== 'string' || !/^[0-9]{1,24}$/.test(input.inode) ||
+              !Number.isInteger(input.expectedMode) || input.expectedMode < 0 || input.expectedMode > 511 ||
+              !Number.isInteger(input.newMode) || input.newMode < 0 || input.newMode > 511)
+            return fail(res, 400, 'Informações de permissão inválidas')
+          task = { action: 'project_file_explorer', name, mode: 'chmod', path: input.path,
+                   newMode: input.newMode, expectedMode: input.expectedMode, inode: input.inode }
+        } else return fail(res, 405, 'Método não permitido')
+        try {
+          const result = await taskRunner(task)
+          if (task.mode === 'chmod') audit('project_file_mode_changed', { ip, name, path: task.path,
+            previousMode: task.expectedMode.toString(8), mode: task.newMode.toString(8) })
+          return json(res, 200, result)
+        } catch (error) {
+          if (task.mode === 'chmod') audit('project_file_mode_failed', { ip, name, path: task.path })
+          return fail(res, 422, error.message)
+        }
       }
       // Gerenciador de arquivos do projeto: leitura e configuração por helper privilegiado.
       // Nunca aceita caminhos absolutos ou operações fora de /var/www/projetos.

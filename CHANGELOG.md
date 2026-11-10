@@ -1,3 +1,12 @@
+## 2.0.31 — Explorador de arquivos e permissões do projeto (10/11/2026)
+
+- **Projetos → Permissões:** explorador com pastas navegáveis, breadcrumb, busca local, paginação (120 itens por vez), cartões de arquivos com ícones e propriedades de dono/grupo/modo Unix. O usuário pode abrir pastas e tocar nos arquivos para consultar permissões.
+- **Permissões por item:** diálogo com seleção de leitura, escrita e execução para dono/grupo/outros; mostra modo octal anterior e novo; pede confirmação visual. Não pede novamente senha ou TOTP durante sessão válida.
+- **Backend seguro:** novos endpoints GET `/api/projects/:name/files` e POST `/api/projects/:name/files/mode` exigem sessão; POST exige CSRF e origem. Helper root usa descritores com `O_NOFOLLOW`, verifica inode e modo esperados, preserva owner/grupo, limita paths a `/var/www/projetos/<projeto>/` e nega diretório de testes, `.env`, arquivos sensíveis, links, escrita pública e diretórios graváveis por grupo/terceiros. Diretório raiz não pode ser alterado. Nenhum chmod recursivo, criação, exclusão ou edição de conteúdo.
+- **Compatibilidade:** seleção antiga de até 12 arquivos para escrita PHP temporária e sua restauração mantidas em `Escrita temporária para o PHP (opção avançada)`. Chmod individual fica bloqueado enquanto uma liberação temporária estiver ativa.
+- **Instalação:** instala o módulo restrito `project_explorer.py` junto ao helper. Atualizados README, DEPLOY, testes e metadados de versões.
+- **Limites:** testes locais não representam teste real no Chrome Android ou EC2. Confirmar alterações cuidadosamente pois chmod pode tirar acesso do Nginx/PHP.
+
 ## 2.0.30 — Redesign de manutenção AWS: permissões, atualizações, backups e histórico (09/11/2026)
 
 - **Permissões:** tela reduzida a um único acesso ao gerenciador de arquivos, sem três atalhos repetidos para a mesma tela. Orientações técnicas deslocadas para modal de informações. As operações de seleção, liberação e restauração existentes em 2.0.29 continuam disponíveis.

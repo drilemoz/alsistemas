@@ -1,3 +1,9 @@
+## Atualização 2.0.31 — Permissões tipo Explorer
+
+Antes de instalar, guarde backup e confirme acesso SSH para recuperação, pois alterações de `chmod` podem bloquear Nginx ou PHP. A atualização do painel deve copiar também `project_explorer.py` para `/usr/local/libexec/` (incluído no `instalar.sh`), com proprietário root e modo 0700. Os endpoints ficam protegidos pela sessão e pelo CSRF. O explorador lista **metadados** e permite apenas mudar modos Unix em arquivos/pastas permitidos; ele não abre, edita, move, remove nem faz download do conteúdo. A pasta de testes `iguatama-teste` é bloqueada.
+
+Após a instalação, abra Projetos → projeto → Permissões, entre numa pasta, toque em um arquivo e teste inicialmente uma mudança não destrutiva. Confira que o site continua funcionando. A suíte de testes roda sem alterar a VPS real.
+
 ## Atualização 2.0.30
 
 Aplicar somente depois de verificar o ZIP, ter backup e confirmar acesso de recuperação. Usa o atualizador normal do AL Sistemas. As mudanças desta versão são no frontend da manutenção AWS; não alteram serviços ou permissões da EC2 até a instalação. O gerenciador de permissões da 2.0.29 permanece no backend. Para validar, entre em Projetos → IguatamaOnline → Manutenção na AWS e verifique os quatro pop-ups ⓘ e o histórico legível.

@@ -256,6 +256,140 @@ function renderProjectPage(name) {
   }
 }
 function openProjectDetails(item) { navigateApp(`project/${item.name}`) }
+// 2.0.31 — navegador de arquivos scoped, sem operações fora de projetos.
+let explorerProject = ''
+let explorerDir = ''
+let explorerOffset = 0
+let explorerEntries = []
+let explorerRequest = 0
+let explorerCurrentItem = null
+let explorerHasActiveGrant = false
+function explorerModeText(value) { return value.toString(8).padStart(3, '0') }
+function explorerNewMode() {
+  return [...document.querySelectorAll('#explorer-mode-table input[data-bit]:checked')]
+    .reduce((bits, check) => bits | Number(check.dataset.bit), 0)
+}
+function explorerUpdateModeControls() {
+  const value = explorerNewMode()
+  $('explorer-mode-new').textContent = explorerModeText(value)
+  const item = explorerCurrentItem
+  const isDir = item?.kind === 'directory'
+  const valid = !Boolean(value & 0o002) && (!isDir || (!(value & 0o020) && (value & 0o500) === 0o500))
+  $('explorer-mode-save').disabled = !item?.editable || explorerHasActiveGrant || !valid || value === parseInt(item.mode, 8)
+}
+function explorerOpenMode(item) {
+  explorerCurrentItem = item
+  $('explorer-mode-title').textContent = item.name
+  $('explorer-mode-meta').textContent = `${item.path} · ${item.owner}:${item.group} · ${item.kind === 'directory' ? 'pasta' : item.kind === 'file' ? 'arquivo' : 'link ou item especial'}`
+  $('explorer-mode-current').textContent = item.mode
+  for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) {
+    const bit = Number(check.dataset.bit)
+    check.checked = Boolean(parseInt(item.mode, 8) & bit)
+    check.disabled = !item.editable || explorerHasActiveGrant || bit === 2 || (item.kind === 'directory' && (bit === 16 || bit === 256 || bit === 64))
+  }
+  $('explorer-mode-warning').textContent = explorerHasActiveGrant
+    ? 'Há escrita temporária do PHP ativa. Restaure-a antes de alterar modos manualmente.'
+    : !item.editable ? 'Este item é protegido, simbólico ou não pode ser alterado com segurança.'
+      : item.kind === 'directory'
+        ? 'O dono deve manter leitura e entrada na pasta. Escrita de grupo ou pública não é permitida; o proprietário e o grupo não serão modificados.'
+        : 'Atenção: permissões incorretas podem interromper o site. Não há escrita pública nem troca de proprietário.'
+  explorerUpdateModeControls()
+  $('explorer-mode-dialog').showModal()
+}
+function explorerRenderEntries() {
+  const search = $('explorer-search').value.trim().toLocaleLowerCase('pt-BR')
+  const container = $('explorer-items')
+  container.replaceChildren()
+  const matching = explorerEntries.filter(item => !search || item.name.toLocaleLowerCase('pt-BR').includes(search))
+  if (!matching.length) container.append(node('p', search ? 'Nenhum item encontrado nesta página.' : 'Esta pasta está vazia.', 'explorer-empty small muted'))
+  for (const item of matching) {
+    const row = node('div', '', 'explorer-entry')
+    const glyph = node('span', '', 'explorer-entry-glyph ' + (item.kind === 'directory' ? 'is-folder' : item.kind === 'link' ? 'is-link' : 'is-file'))
+    glyph.append(iconGraphic(item.kind === 'directory' ? 'folder' : item.kind === 'file' ? 'file' : 'lock'))
+    const main = node('button', '', 'explorer-entry-main')
+    main.type = 'button'
+    main.addEventListener('click', () => item.enterable ? void explorerBrowse(item.path) : explorerOpenMode(item))
+    const title = node('strong', item.name, 'explorer-entry-title')
+    const description = node('small', `${item.kind === 'directory' ? 'Pasta' : item.kind === 'file' ? 'Arquivo' : item.kind === 'link' ? 'Atalho simbólico' : 'Especial'} · ${item.owner}:${item.group} · ${item.mode}`, 'muted')
+    main.append(title, description)
+    const action = node('button', '', 'outline explorer-entry-action')
+    action.type = 'button'
+    action.setAttribute('aria-label', `Ver permissões de ${item.name}`)
+    action.append(iconGraphic(item.editable ? 'shield' : 'lock'), node('span', 'Permissões'))
+    action.addEventListener('click', () => explorerOpenMode(item))
+    row.append(glyph, main, action)
+    container.append(row)
+  }
+}
+function explorerCrumbs() {
+  const crumbs = $('explorer-crumbs')
+  crumbs.replaceChildren()
+  const root = node('button', 'Projeto', 'outline explorer-crumb')
+  root.type = 'button'; root.disabled = !explorerDir
+  root.addEventListener('click', () => void explorerBrowse(''))
+  crumbs.append(root)
+  const parts = explorerDir ? explorerDir.split('/') : []
+  for (let index = 0; index < parts.length; index++) {
+    crumbs.append(node('span', '›', 'explorer-crumb-separator'))
+    const part = node('button', parts[index], 'outline explorer-crumb')
+    part.type = 'button'; part.disabled = index === parts.length - 1
+    const path = parts.slice(0, index + 1).join('/')
+    part.addEventListener('click', () => void explorerBrowse(path))
+    crumbs.append(part)
+  }
+}
+async function explorerBrowse(directory = '', offset = 0) {
+  if (!explorerProject) return
+  const requestId = ++explorerRequest
+  const name = explorerProject
+  if (!offset) {
+    explorerDir = directory
+    explorerEntries = []
+    $('explorer-search').value = ''
+    $('explorer-items').replaceChildren(node('p', 'Abrindo pasta…', 'small muted explorer-empty'))
+    explorerCrumbs()
+  }
+  $('explorer-more').disabled = true
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(name)}/files?dir=${encodeURIComponent(directory)}&offset=${offset}`)
+    if (requestId !== explorerRequest || name !== explorerProject || currentAppRoute !== `project/${name}/permissions`) return
+    explorerDir = directory
+    explorerOffset = result.nextOffset
+    explorerEntries = offset ? [...explorerEntries, ...(result.items || [])] : (result.items || [])
+    $('explorer-summary').textContent = `${result.total} item(ns) · proprietário do projeto: ${result.owner}`
+    $('explorer-note').textContent = result.limited ? 'Listagem limitada a 4.000 itens por pasta.' : 'Toque na pasta para abrir ou em Permissões para consultar e ajustar.'
+    $('explorer-more').hidden = result.nextOffset == null
+    $('explorer-more').disabled = false
+    explorerCrumbs()
+    explorerRenderEntries()
+  } catch (error) {
+    if (requestId !== explorerRequest) return
+    $('explorer-summary').textContent = 'Não foi possível acessar a pasta'
+    $('explorer-items').replaceChildren(node('p', error.message, 'small bad explorer-empty'))
+    $('explorer-more').hidden = true
+  }
+}
+$('explorer-refresh').addEventListener('click', () => void explorerBrowse(explorerDir))
+$('explorer-search').addEventListener('input', explorerRenderEntries)
+$('explorer-more').addEventListener('click', () => { if (explorerOffset != null) void explorerBrowse(explorerDir, explorerOffset) })
+for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) check.addEventListener('change', explorerUpdateModeControls)
+$('explorer-mode-save').addEventListener('click', async () => {
+  const item = explorerCurrentItem
+  if (!item?.editable) return
+  const newMode = explorerNewMode()
+  const expectedMode = parseInt(item.mode, 8)
+  if (newMode === expectedMode) return
+  const label = `Alterar ${item.path} de ${item.mode} para ${explorerModeText(newMode)}? Isso pode mudar o funcionamento do site.`
+  $('explorer-mode-dialog').close()
+  if (!await confirmAction(label, 'Aplicar permissões')) return
+  try {
+    await api(`/api/projects/${encodeURIComponent(explorerProject)}/files/mode`, 'POST', {
+      path: item.path, inode: item.inode, newMode, expectedMode
+    })
+    await explorerBrowse(explorerDir)
+    $('explorer-summary').textContent = `Permissões alteradas: ${item.path} (${explorerModeText(newMode)})`
+  } catch (error) { notice(error.message, true); await explorerBrowse(explorerDir) }
+})
 let generalPermissionsName = ''
 let generalCatalog = []
 let generalActive = false
@@ -271,6 +405,7 @@ function updatePermissionSelection() {
 function renderPermissionCatalog(catalog, config) {
   generalCatalog = catalog.files || []
   generalActive = !!config.active
+  explorerHasActiveGrant = generalActive
   $('general-permissions-config').hidden = generalActive
   $('general-permissions-owner').textContent = `Proprietário detectado: ${catalog.owner} · ${generalCatalog.length} arquivo(s) elegível(is).`
   const select = $('general-permissions-php')
@@ -294,6 +429,9 @@ function renderPermissionCatalog(catalog, config) {
 }
 async function loadGeneralPermissions(name) {
   generalPermissionsName = name
+  explorerProject = name
+  explorerHasActiveGrant = false
+  void explorerBrowse('')
   $('general-project-permissions-title').textContent = 'Permissões · ' + name
   $('general-permissions-back').textContent = '‹ ' + (name === 'iguatamaonline' ? 'Manutenção AWS' : name)
   $('general-permissions-result').textContent = ''

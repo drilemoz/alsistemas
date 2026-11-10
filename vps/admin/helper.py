@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, ProjectError,
     inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root)
 from other_project_permissions import ProfileError, handle_permissions, configure_profile
+from project_explorer import browse_project, update_mode
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -543,6 +544,13 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return backup_project(task, root)
     if action == 'list_backups':
         return list_backups(task)
+    if action == 'project_file_explorer':
+        if task.get('mode') == 'browse' and set(task) == {'action', 'name', 'mode', 'directory', 'offset'}:
+            return browse_project(task['name'], task['directory'], task['offset'])
+        if task.get('mode') == 'chmod' and set(task) == {'action', 'name', 'mode', 'path', 'newMode', 'expectedMode', 'inode'}:
+            ensure_project_worker_idle()
+            return update_mode(task['name'], task['path'], task['newMode'], task['inode'], task['expectedMode'])
+        raise TaskError('Parâmetros do explorador inválidos.')
     if action == 'other_project_permissions':
         if not isinstance(task.get('mode'), str):
             raise TaskError('Modo inválido.')
