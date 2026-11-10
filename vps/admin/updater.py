@@ -174,7 +174,7 @@ def health_diagnostics(expected):
         result['healthErrorType'] = type(error).__name__
     try:
         probe = subprocess.run(['/usr/bin/systemctl', 'is-active', 'alsistemas-vps'], capture_output=True, text=True, timeout=5)
-        result['service'] = probe.stdout.strip()[:30] or 'indisponível'
+        result['service'] = (probe.stdout or '').strip()[:30] or 'indisponível'
     except (OSError, subprocess.TimeoutExpired):
         result['service'] = 'indisponível'
     return result
@@ -210,7 +210,11 @@ def local_request():
 def run_installer(root):
     proc = subprocess.run(['/usr/bin/bash', str(root / 'instalar.sh'), '--allow-existing-host', '--core-upgrade'], cwd=root, capture_output=True, timeout=330)
     if proc.returncode != 0:
-        raise RuntimeError('Instalador falhou: ' + proc.stderr.decode('utf-8', 'replace')[-350:])
+        stderr_tail = proc.stderr.decode('utf-8', 'replace')[-1600:]
+        error = RuntimeError('Instalador falhou: ' + stderr_tail[-350:])
+        error.returncode = proc.returncode
+        error.stderr_tail = stderr_tail
+        raise error
 
 
 def restore_core_safely(saved, target):
@@ -243,108 +247,145 @@ def apply(request=None):
         raise RuntimeError('Execução somente pelo serviço root')
     current = read_current()
     mode = (request or {}).get('mode', 'github')
-    with tempfile.TemporaryDirectory(prefix='als-update-', dir=BACKUP) as tmp:
-        folder = Path(tmp)
-        if mode == 'file':
-            filename = request['archive']
-            archive = BACKUP / filename
-            if not trusted_local_archive(archive):
-                raise RuntimeError('Arquivo de upload inseguro ou com tamanho inválido')
-            status('validating', 'Conferindo SHA-256 e estrutura do ZIP enviado', source='file')
-            if hashlib.sha256(archive.read_bytes()).hexdigest() != request['sha256']:
-                raise RuntimeError('SHA-256 do upload divergiu durante a transferência')
-            target_version = None
-        else:
-            cfg = json.loads((DATA / 'updates-config.json').read_text(encoding='utf-8'))
-            repo = cfg.get('repo')
-            if not isinstance(repo, str) or not REPO_RE.fullmatch(repo) or '..' in repo or repo.endswith('.git'):
-                raise RuntimeError('Repositório não autorizado')
-            status('checking', 'Consultando Release do repositório configurado')
-            release = json.loads(fetch(f'https://api.github.com/repos/{repo}/releases/latest', repo, 1024 * 1024))
-            version = str(release.get('tag_name', '')).removeprefix('v')
-            if version_tuple(version) <= version_tuple(current):
-                status('up_to_date', 'Nenhuma versão superior à instalada', installed=current)
+    repo = None
+    archive_name = None
+    sha256_prefix = None
+    target_version = None
+    installed = None
+    snapshot = None
+    rollback_errors = []
+    try:
+        with tempfile.TemporaryDirectory(prefix='als-update-', dir=BACKUP) as tmp:
+            folder = Path(tmp)
+            if mode == 'file':
+                filename = request['archive']
+                archive_name = filename
+                archive = BACKUP / filename
+                sha256_prefix = str(request.get('sha256', ''))[:16]
+                if not trusted_local_archive(archive):
+                    raise RuntimeError('Arquivo de upload inseguro ou com tamanho inválido')
+                status('validating', 'Conferindo SHA-256 e estrutura do ZIP enviado', source='file', archive=archive_name, sha256Prefix=sha256_prefix, installedBefore=current)
+                if hashlib.sha256(archive.read_bytes()).hexdigest() != request['sha256']:
+                    raise RuntimeError('SHA-256 do upload divergiu durante a transferência')
+            else:
+                cfg = json.loads((DATA / 'updates-config.json').read_text(encoding='utf-8'))
+                repo = cfg.get('repo')
+                if not isinstance(repo, str) or not REPO_RE.fullmatch(repo) or '..' in repo or repo.endswith('.git'):
+                    raise RuntimeError('Repositório não autorizado')
+                status('checking', 'Consultando Release do repositório configurado', repo=repo, installedBefore=current)
+                release = json.loads(fetch(f'https://api.github.com/repos/{repo}/releases/latest', repo, 1024 * 1024))
+                version = str(release.get('tag_name', '')).removeprefix('v')
+                if version_tuple(version) <= version_tuple(current):
+                    status('up_to_date', 'Nenhuma versão superior à instalada', installed=current, repo=repo)
+                    return
+                assets = {a.get('name'): a.get('browser_download_url') for a in release.get('assets', []) if isinstance(a, dict)}
+                archive_name = f'AL-Sistemas-v{version}-VPS.zip'
+                names = [archive_name, 'update-manifest.json']
+                if not all(n in assets and safe_url(assets[n], repo, n) for n in names):
+                    raise RuntimeError('Release sem assets obrigatórios ou com URL inválida')
+                status('downloading', 'Baixando manifesto SHA-256 e ZIP da Release', target=version, repo=repo, archive=archive_name, installedBefore=current)
+                manifest = fetch(assets[names[1]], repo, 16384, names[1])
+                data = json.loads(manifest)
+                if set(data) != {'schema', 'version', 'asset', 'sha256'} or data['schema'] != 1 or data['version'] != version or data['asset'] != archive_name or not re.fullmatch('[0-9a-f]{64}', str(data['sha256'])):
+                    raise RuntimeError('Manifesto SHA-256 com informações divergentes')
+                sha256_prefix = str(data['sha256'])[:16]
+                def progress(percent, received, total):
+                    status('downloading', 'Baixando pacote do GitHub', target=version, repo=repo, archive=archive_name,
+                           percent=percent, bytesReceived=received, bytesTotal=total, sha256Prefix=sha256_prefix, installedBefore=current)
+                zip_bytes = fetch(assets[archive_name], repo, MAX_ZIP, archive_name, progress)
+                if hashlib.sha256(zip_bytes).hexdigest() != data['sha256']:
+                    raise RuntimeError('SHA-256 do ZIP não confere')
+                archive = folder / archive_name
+                archive.write_bytes(zip_bytes)
+                target_version = version
+            status('validating', 'Validando conteúdo, caminhos e versão do ZIP', target=target_version, archive=archive_name, sha256Prefix=sha256_prefix, installedBefore=current)
+            with zipfile.ZipFile(archive) as z:
+                archive_validate(z)
+                unpack = folder / 'unpacked'
+                unpack.mkdir()
+                z.extractall(unpack)
+            for needed in ('instalar.sh', 'vps/src/server.js', 'vps/admin/helper.py', 'vps/package.json', 'vps/admin/updater.py'):
+                if not (unpack / needed).is_file():
+                    raise RuntimeError('Pacote de atualização incompleto')
+            installed = json.loads((unpack / 'vps/package.json').read_text(encoding='utf-8'))['version']
+            if target_version is not None and installed != target_version:
+                raise RuntimeError('Versão interna divergente')
+            if version_tuple(installed) <= version_tuple(current):
+                status('up_to_date', 'Arquivo não contém versão superior à instalada', installed=current, target=installed, archive=archive_name)
                 return
-            assets = {a.get('name'): a.get('browser_download_url') for a in release.get('assets', []) if isinstance(a, dict)}
-            archive_name = f'AL-Sistemas-v{version}-VPS.zip'
-            names = [archive_name, 'update-manifest.json']
-            if not all(n in assets and safe_url(assets[n], repo, n) for n in names):
-                raise RuntimeError('Release sem assets obrigatórios ou com URL inválida')
-            status('downloading', 'Baixando manifesto SHA-256 e ZIP da Release', target=version)
-            manifest = fetch(assets[names[1]], repo, 16384, names[1])
-            data = json.loads(manifest)
-            if set(data) != {'schema', 'version', 'asset', 'sha256'} or data['schema'] != 1 or data['version'] != version or data['asset'] != archive_name or not re.fullmatch('[0-9a-f]{64}', str(data['sha256'])):
-                raise RuntimeError('Manifesto SHA-256 com informações divergentes')
-            def progress(percent, received, total):
-                status('downloading', 'Baixando pacote do GitHub', target=version,
-                       percent=percent, bytesReceived=received, bytesTotal=total)
-            zip_bytes = fetch(assets[archive_name], repo, MAX_ZIP, archive_name, progress)
-            if hashlib.sha256(zip_bytes).hexdigest() != data['sha256']:
-                raise RuntimeError('SHA-256 do ZIP não confere')
-            archive = folder / archive_name
-            archive.write_bytes(zip_bytes)
-            target_version = version
-        status('validating', 'Validando conteúdo, caminhos e versão do ZIP', target=target_version)
-        with zipfile.ZipFile(archive) as z:
-            archive_validate(z)
-            unpack = folder / 'unpacked'
-            unpack.mkdir()
-            z.extractall(unpack)
-        for needed in ('instalar.sh', 'vps/src/server.js', 'vps/admin/helper.py', 'vps/package.json', 'vps/admin/updater.py'):
-            if not (unpack / needed).is_file():
-                raise RuntimeError('Pacote de atualização incompleto')
-        installed = json.loads((unpack / 'vps/package.json').read_text(encoding='utf-8'))['version']
-        if target_version is not None and installed != target_version:
-            raise RuntimeError('Versão interna divergente')
-        if version_tuple(installed) <= version_tuple(current):
-            status('up_to_date', 'Arquivo não contém versão superior à instalada', installed=current)
-            return
-        if not health():
-            raise RuntimeError('Painel não respondeu à verificação inicial')
-        status('backup', 'Criando cópia de segurança antes da instalação', target=installed)
-        snapshot = BACKUP / f'pre-update-{datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")}-{os.getpid()}'
-        snapshot.mkdir(mode=0o700)
-        shutil.copytree(TARGET, snapshot / 'current', symlinks=True)
-        shutil.copytree(DATA, snapshot / 'data', symlinks=True)
-        for source, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers')):
-            shutil.copy2(source, snapshot / name)
-        # Atualizador e unidade também são versionados: restaurá-los em falha.
-        for source, name in ((Path('/usr/local/libexec/alsistemas-updater'), 'updater'),
-                             (Path('/etc/systemd/system/alsistemas-updater.service'), 'updater-service')):
-            if source.is_file(): shutil.copy2(source, snapshot / name)
-        status('installing', 'Instalando arquivos e reiniciando o serviço', target=installed)
+            if not health():
+                raise RuntimeError('Painel não respondeu à verificação inicial')
+            status('backup', 'Criando cópia de segurança antes da instalação', target=installed, archive=archive_name, candidateVersion=installed, installedBefore=current)
+            snapshot = BACKUP / f'pre-update-{datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")}-{os.getpid()}'
+            snapshot.mkdir(mode=0o700)
+            shutil.copytree(TARGET, snapshot / 'current', symlinks=True)
+            shutil.copytree(DATA, snapshot / 'data', symlinks=True)
+            for source, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers')):
+                shutil.copy2(source, snapshot / name)
+            for source, name in ((Path('/usr/local/libexec/alsistemas-updater'), 'updater'),
+                                 (Path('/etc/systemd/system/alsistemas-updater.service'), 'updater-service')):
+                if source.is_file(): shutil.copy2(source, snapshot / name)
+            status('installing', 'Instalando arquivos e reiniciando o serviço', target=installed, archive=archive_name, backupSnapshot=snapshot.name, candidateVersion=installed, installedBefore=current)
+            try:
+                run_installer(unpack)
+                status('verifying', 'Aguardando nova versão responder à verificação de saúde', target=installed, archive=archive_name, backupSnapshot=snapshot.name, candidateVersion=installed, installedBefore=current)
+                if read_current() != installed or not wait_healthy(installed):
+                    raise RuntimeError('A nova versão não passou na verificação de saúde: ' + json.dumps(health_diagnostics(installed), ensure_ascii=False))
+            except Exception as err:
+                status('rolling_back', 'Instalação falhou; preparando restauração segura', target=installed, archive=archive_name, backupSnapshot=snapshot.name, candidateVersion=installed, installedBefore=current)
+                rollback_errors = []
+                try:
+                    restore_core_safely(snapshot / 'current', TARGET)
+                except Exception as restore_error:
+                    rollback_errors.append('código: ' + str(restore_error))
+                for dest, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers'),
+                                   (Path('/usr/local/libexec/alsistemas-updater'), 'updater'),
+                                   (Path('/etc/systemd/system/alsistemas-updater.service'), 'updater-service')):
+                    if (snapshot / name).is_file():
+                        try:
+                            shutil.copy2(snapshot / name, dest)
+                        except OSError as restore_error:
+                            rollback_errors.append(name + ': ' + str(restore_error))
+                try:
+                    subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], timeout=15, check=True)
+                    subprocess.run(['/usr/bin/systemctl', 'restart', 'alsistemas-vps'], timeout=30, check=True)
+                    if not wait_healthy(current, timeout=30):
+                        rollback_errors.append('versão anterior não respondeu à verificação de saúde')
+                except Exception as restore_error:
+                    rollback_errors.append('serviço: ' + str(restore_error))
+                if rollback_errors:
+                    raise RuntimeError('Falha na instalação (' + str(err) + '); reversão não confirmada: ' + '; '.join(rollback_errors)) from err
+                raise RuntimeError('Instalação revertida e versão anterior verificada: ' + str(err)) from err
+            status('completed', 'Versão instalada e verificada. Atualize a página para carregar a nova interface.',
+                   installed=installed, target=installed, archive=archive_name, backupSnapshot=snapshot.name,
+                   candidateVersion=installed, percent=100)
+    except Exception as err:
+        diagnostics = {'installedBefore': current, 'mode': mode, 'errorType': type(err).__name__}
+        if target_version is not None:
+            diagnostics['target'] = target_version
+        if installed is not None:
+            diagnostics['candidateVersion'] = installed
         try:
-            run_installer(unpack)
-            status('verifying', 'Aguardando nova versão responder à verificação de saúde', target=installed)
-            if read_current() != installed or not wait_healthy(installed):
-                raise RuntimeError('A nova versão não passou na verificação de saúde: ' + json.dumps(health_diagnostics(installed), ensure_ascii=False))
-        except Exception as err:
-            status('rolling_back', 'Instalação falhou; preparando restauração segura', target=installed)
-            rollback_errors = []
-            try:
-                restore_core_safely(snapshot / 'current', TARGET)
-            except Exception as restore_error:
-                rollback_errors.append('código: ' + str(restore_error))
-            for dest, name in ((HELPER, 'helper'), (UNIT, 'service'), (SUDOERS, 'sudoers'),
-                               (Path('/usr/local/libexec/alsistemas-updater'), 'updater'),
-                               (Path('/etc/systemd/system/alsistemas-updater.service'), 'updater-service')):
-                if (snapshot / name).is_file():
-                    try:
-                        shutil.copy2(snapshot / name, dest)
-                    except OSError as restore_error:
-                        rollback_errors.append(name + ': ' + str(restore_error))
-            try:
-                subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], timeout=15, check=True)
-                subprocess.run(['/usr/bin/systemctl', 'restart', 'alsistemas-vps'], timeout=30, check=True)
-                if not wait_healthy(current, timeout=30):
-                    rollback_errors.append('versão anterior não respondeu à verificação de saúde')
-            except Exception as restore_error:
-                rollback_errors.append('serviço: ' + str(restore_error))
-            if rollback_errors:
-                raise RuntimeError('Falha na instalação (' + str(err) + '); reversão não confirmada: ' + '; '.join(rollback_errors)) from err
-            raise RuntimeError('Instalação revertida e versão anterior verificada: ' + str(err)) from err
-        status('completed', 'Versão instalada e verificada. Atualize a página para carregar a nova interface.',
-               installed=installed, percent=100)
+            diagnostics['installed'] = read_current()
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            pass
+        if repo:
+            diagnostics['repo'] = repo
+        if archive_name:
+            diagnostics['archive'] = archive_name
+        if sha256_prefix:
+            diagnostics['sha256Prefix'] = sha256_prefix
+        if snapshot is not None:
+            diagnostics['backupSnapshot'] = snapshot.name
+        if rollback_errors:
+            diagnostics['rollbackErrors'] = rollback_errors
+        if hasattr(err, 'returncode'):
+            diagnostics['installerExitCode'] = err.returncode
+        if hasattr(err, 'stderr_tail'):
+            diagnostics['installerStderrTail'] = err.stderr_tail
+        diagnostics['healthDiagnostics'] = health_diagnostics(installed or current)
+        status('failed', str(err)[:350], **diagnostics)
+        raise
 
 
 def main():
@@ -356,7 +397,12 @@ def main():
             OPERATION_ID, OPERATION_MODE = request['id'], request['mode']
         apply(request)
     except Exception as err:
-        status('failed', str(err)[:350])
+        try:
+            current_status = json.loads((DATA / 'update-status.json').read_text(encoding='utf-8')) if (DATA / 'update-status.json').exists() else {}
+        except (OSError, ValueError, json.JSONDecodeError):
+            current_status = {}
+        if current_status.get('stage') != 'failed':
+            status('failed', str(err)[:350], errorType=type(err).__name__)
         print(str(err), file=sys.stderr)
         sys.exit(1)
     finally:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.21: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.23: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -208,7 +208,7 @@ RestartSec=5
 UMask=0077
 ProtectSystem=strict
 ExecStartPre=+/usr/bin/install -d -o root -g root -m 0700 /run/alsistemas-vps
-ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled
+ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
@@ -292,6 +292,44 @@ NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true
 PROJECT_SERVICE
+# Caixa de entrada root: soltar o ZIP em /var/lib/alsistemas-inbox atualiza o núcleo sem o painel.
+INBOX_WORKER='/usr/local/libexec/alsistemas-inbox'
+[[ ! -L "$INBOX_WORKER" ]] || fail 'Executor da caixa de entrada existente é link simbólico.'
+install -o root -g root -m 0700 "$BASE/vps/admin/inbox.py" "$INBOX_WORKER"
+[[ ! -L /var/lib/alsistemas-inbox ]] || fail 'Caixa de entrada é link simbólico; recusado.'
+install -d -o root -g root -m 0700 /var/lib/alsistemas-inbox
+INBOX_UNIT='/etc/systemd/system/alsistemas-inbox.service'
+INBOX_PATH_UNIT='/etc/systemd/system/alsistemas-inbox.path'
+for existing in "$INBOX_UNIT" "$INBOX_PATH_UNIT"; do
+  if [[ -e "$existing" ]]; then
+    [[ ! -L "$existing" ]] || fail 'Unidade da caixa de entrada é link simbólico.'
+    grep -Fq 'Description=AL Sistemas VPS - caixa de entrada' "$existing" || fail 'Unidade da caixa de entrada não pertence ao painel.'
+  fi
+done
+cat > "$INBOX_UNIT" <<'INBOX_SERVICE'
+[Unit]
+Description=AL Sistemas VPS - caixa de entrada de atualizacao do nucleo
+After=local-fs.target
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/alsistemas-inbox
+TimeoutStartSec=240
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+INBOX_SERVICE
+cat > "$INBOX_PATH_UNIT" <<'INBOX_PATH'
+[Unit]
+Description=AL Sistemas VPS - caixa de entrada: vigia da pasta
+[Path]
+DirectoryNotEmpty=/var/lib/alsistemas-inbox
+Unit=alsistemas-inbox.service
+[Install]
+WantedBy=multi-user.target
+INBOX_PATH
 # O teste do Nginx não pode herdar o filesystem read-only da unidade Node.
 # O systemd executa este comando fixo fora do sandbox web, sem argumentos do navegador.
 NGINX_CHECK_UNIT='/etc/systemd/system/alsistemas-nginx-check.service'
@@ -334,6 +372,7 @@ CORE_ACTIVATED=1
 systemctl daemon-reload
 systemctl enable --now alsistemas-vps
 systemctl restart alsistemas-vps
+systemctl enable --now alsistemas-inbox.path || log 'Aviso: caixa de entrada não ativada; o painel e o atualizar-vps.sh seguem disponíveis.'
 systemctl is-active --quiet alsistemas-vps || fail 'Serviço al-sistemas não iniciou; consulte journalctl -u alsistemas-vps.'
 if [[ -n "$DOMAIN" ]]; then
   apt-get install -y certbot

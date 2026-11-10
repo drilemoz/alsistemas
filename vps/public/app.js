@@ -147,26 +147,46 @@ for (const button of document.querySelectorAll('[data-project-back]')) button.ad
 for (const button of document.querySelectorAll('[data-project-route]')) button.addEventListener('click', () => navigateApp('project/iguatamaonline/aws/' + button.dataset.projectRoute))
 function renderProjectPage(name) {
   const item = knownProjects.get(name)
+  const techDialog = $('project-tech-dialog')
   if (!item) {
     $('project-details-title').textContent = 'Projeto não encontrado'
     $('project-detail-subtitle').textContent = 'Volte à lista e atualize os projetos.'
     $('project-summary').replaceChildren()
     $('project-detail-actions').replaceChildren()
     $('project-details-content').replaceChildren()
+    $('project-tech-title').textContent = 'Ficha técnica indisponível'
+    $('project-tech-description').textContent = 'Atualize a lista para consultar domínios e estrutura do projeto.'
+    if (techDialog.open) techDialog.close()
     return
   }
+  const technology = { php:'PHP', node:'Node.js', static:'HTML / estático' }[item.type] || 'Tecnologia não identificada'
+  const managedLabel = item.managed ? 'Gerenciado pelo AL Sistemas' : 'Projeto externo · acesso restrito'
   $('project-details-title').textContent = item.name
-  $('project-detail-subtitle').textContent = `${{ php:'PHP', node:'Node.js', static:'HTML / estático' }[item.type] || 'Tecnologia não identificada'} · ${item.managed ? 'Gerenciado pelo AL Sistemas' : 'Projeto externo · acesso restrito'}`
+  $('project-detail-subtitle').textContent = `${technology} · ${managedLabel}`
+  $('project-tech-title').textContent = `Ficha técnica · ${item.name}`
+  $('project-tech-description').textContent = 'Leitura em somente visualização para conferir domínios, diretório e limites de acesso.'
+  const domains = [...new Set([...(item.domain ? [item.domain] : []), ...(Array.isArray(item.domains) ? item.domains : [])])]
+  const summaryItems = [
+    ['Diretório', item.path || 'Não identificado'],
+    ['Tecnologia', technology],
+    ['Acesso', item.managed ? 'Gerenciado' : 'Restrito'],
+    ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Não identificado'],
+  ]
+  if (domains[0]) summaryItems.push(['Domínio principal', domains[0]])
   const summary = $('project-summary')
   summary.replaceChildren()
-  for (const [label, value] of [['Diretório', item.path], ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Não identificado']]) {
+  for (const [label, value] of summaryItems) {
     const block = node('div', '', 'project-summary-field')
-    block.append(node('span', label, 'small muted'), node('strong', value))
+    block.append(node('span', label), node('strong', value))
     summary.append(block)
   }
   const content = $('project-details-content')
   content.replaceChildren()
-  const domains = [...new Set([...(item.domain ? [item.domain] : []), ...(Array.isArray(item.domains) ? item.domains : [])])]
+  const overview = node('div', '', 'project-detail-field')
+  overview.append(node('span', 'Resumo técnico', 'small muted'))
+  overview.append(node('strong', `${item.name} · ${technology}`))
+  overview.append(node('span', `${managedLabel}. Diretório atual: ${item.path || 'não identificado'}.`, 'small muted'))
+  content.append(overview)
   const domainBox = node('div', '', 'project-detail-field')
   domainBox.append(node('span', 'Domínios identificados pelo Nginx', 'small muted'))
   if (!domains.length) domainBox.append(node('strong', 'Nenhum domínio identificado'))
@@ -177,7 +197,14 @@ function renderProjectPage(name) {
     link.rel = 'noopener noreferrer'
     domainBox.append(link)
   }
-  content.append(domainBox, node('p', 'Domínios detectados não autorizam modificar configurações externas.', 'small muted'))
+  content.append(domainBox)
+  const accessBox = node('div', '', 'project-detail-field')
+  accessBox.append(node('span', 'Limites e observações', 'small muted'))
+  accessBox.append(node('strong', item.managed ? 'Operações liberadas: backup e controle do site.' : 'Operações externas permanecem restritas.'))
+  accessBox.append(node('span', item.name === 'iguatamaonline'
+    ? 'A manutenção AWS fica separada para diagnóstico, permissões, atualizações, backups e relatórios.'
+    : 'Domínios detectados não autorizam alterar provedores, DNS ou ambientes externos automaticamente.', 'small muted'))
+  content.append(accessBox)
   const actions = $('project-detail-actions')
   actions.replaceChildren()
   if (item.name === 'iguatamaonline') {
@@ -394,6 +421,7 @@ async function externalFileUpdate() {
       xhr.send(selected)
     })
     $('external-zip').value = ''
+    syncFilePicker('external-zip', 'external-zip-name', 'Nenhum arquivo selecionado.')
     maintenanceMessage('Atualização iniciada: ' + result.operationId)
     externalUploading = false
     startExternalPolling()
@@ -569,6 +597,26 @@ for (const button of document.querySelectorAll('[data-theme-choice]')) {
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close())
 }
+function syncFilePicker(inputId, textId, emptyText = 'Nenhum arquivo selecionado.') {
+  const input = $(inputId)
+  const label = $(textId)
+  if (!input || !label) return
+  const file = input.files?.[0]
+  label.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : emptyText
+}
+for (const [buttonId, inputId] of [['update-file-trigger', 'update-file-input'], ['external-zip-trigger', 'external-zip']]) {
+  const button = $(buttonId)
+  const input = $(inputId)
+  if (button && input) button.addEventListener('click', () => input.click())
+}
+$('update-file-input').addEventListener('change', () => syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.'))
+$('external-zip').addEventListener('change', () => syncFilePicker('external-zip', 'external-zip-name', 'Nenhum arquivo selecionado.'))
+for (const id of ['project-tech-open', 'project-tech-shortcut']) {
+  const button = $(id)
+  if (button) button.addEventListener('click', () => $('project-tech-dialog').showModal())
+}
+syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
+syncFilePicker('external-zip', 'external-zip-name', 'Nenhum arquivo selecionado.')
 $('setup-begin').addEventListener('submit', e => {
   e.preventDefault()
   submit(e.currentTarget, async data => {
@@ -925,14 +973,14 @@ let currentOperation = null
 let latestUpdateReport = ''
 function composeUpdateReport(state) {
   const when = state?.time || new Date().toISOString()
-  const error = String(state?.message || 'Falha sem mensagem do serviço.').slice(0, 1200)
+  const error = String(state?.message || 'Falha sem mensagem do serviço.').slice(0, 2400)
   const status = state?.httpStatus ? `HTTP ${state.httpStatus}` : 'não informado'
   const hint = state?.httpStatus === 413
     ? 'O servidor recusou o tamanho do envio. Verifique client_max_body_size no Nginx do painel (incluindo proxy intermediário).'
     : /verificação de saúde/i.test(error)
       ? 'Verifique a versão instalada, a resposta de /api/health e os logs de alsistemas-vps e alsistemas-updater na EC2.'
       : 'Confira os logs de alsistemas-updater.service na VPS para identificar a causa.'
-  return [
+  const lines = [
     'AL Sistemas | Relatório de erro de atualização',
     `Data/hora (UTC): ${when}`,
     `Método: ${state?.mode === 'file' ? 'Arquivo ZIP' : state?.mode === 'github' ? 'GitHub Releases' : updateMethod}`,
@@ -942,8 +990,33 @@ function composeUpdateReport(state) {
     `Versão do painel (navegador): ${document.querySelector('footer')?.textContent?.match(/v\d+\.\d+\.\d+/)?.[0] || 'não confirmada'}`,
     `Mensagem: ${error}`,
     `Orientação: ${hint}`,
-    'Observação: o relatório não substitui os logs da EC2; remova informações privadas antes de compartilhá-lo.'
-  ].join('\n')
+  ]
+  const append = (label, value) => {
+    if (value === undefined || value === null || value === '') return
+    if (typeof value === 'object') lines.push(`${label}: ${JSON.stringify(value, null, 2)}`)
+    else lines.push(`${label}: ${String(value)}`)
+  }
+  append('Versão instalada antes da tentativa', state?.installedBefore)
+  append('Versão alvo informada', state?.target)
+  append('Versão candidata do pacote', state?.candidateVersion)
+  append('Versão instalada após tentativa', state?.installed)
+  append('Arquivo/asset informado', state?.archive)
+  append('Repositório configurado', state?.repo)
+  append('SHA-256 informado (prefixo)', state?.sha256Prefix)
+  append('Snapshot de backup', state?.backupSnapshot)
+  append('Diagnóstico de saúde', state?.healthDiagnostics)
+  append('Retorno do instalador', state?.installerExitCode)
+  append('Saída do instalador', state?.installerStderrTail)
+  append('Falhas de reversão', state?.rollbackErrors)
+  append('Bytes recebidos', typeof state?.bytesReceived === 'number' ? `${state.bytesReceived}${typeof state?.bytesTotal === 'number' ? ` / ${state.bytesTotal}` : ''}` : '')
+  const ignored = new Set(['time','message','mode','id','stage','httpStatus','installedBefore','target','candidateVersion','installed','archive','repo','sha256Prefix','backupSnapshot','healthDiagnostics','installerExitCode','installerStderrTail','rollbackErrors','bytesReceived','bytesTotal','percent'])
+  const extras = Object.entries(state || {}).filter(([key]) => !ignored.has(key))
+  if (extras.length) {
+    lines.push('Outros campos recebidos:')
+    for (const [key, value] of extras) append(` - ${key}`, value)
+  }
+  lines.push('Observação: o relatório agora tenta reunir o máximo de contexto do painel, mas ainda não substitui os logs da EC2. Remova informações privadas antes de compartilhar.')
+  return lines.join('\n')
 }
 function openProgress() {
   if (!$('update-progress-dialog').open) $('update-progress-dialog').showModal()
@@ -1038,12 +1111,14 @@ function configureUpdateDialog(method) {
     : 'O painel baixará a Release, validará o manifesto SHA-256 e o ZIP, fará backup e reiniciará o serviço.'
   $('update-file-label').classList.toggle('hidden', method !== 'file')
   $('update-file-input').required = method === 'file'
+  if (method !== 'file') { $('update-file-input').value = '' }
+  syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
   $('update-submit').textContent = method === 'file' ? 'Enviar e instalar' : 'Instalar'
   $('update-dialog').showModal()
 }
 $('apply-update').addEventListener('click', () => configureUpdateDialog('github'))
 $('upload-update').addEventListener('click', () => configureUpdateDialog('file'))
-$('update-cancel').addEventListener('click', () => $('update-dialog').close())
+$('update-cancel').addEventListener('click', () => { $('update-dialog').close(); $('update-apply-form').reset(); syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.') })
 $('update-progress-hide').addEventListener('click', () => $('update-progress-dialog').close())
 $('update-progress-close').addEventListener('click', () => $('update-progress-dialog').close())
 $('update-progress-reload').addEventListener('click', () => window.location.reload())
@@ -1125,6 +1200,7 @@ $('update-apply-form').addEventListener('submit', async e => {
       ? await sendZip(file, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))
       : await api('/api/updates/apply', 'POST', {})
     form.reset()
+    syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
     beginTrackedUpdate(result)
   } catch (error) {
     showUpdateProgress({ stage:'failed', message:error.message, mode:updateMethod, httpStatus:error.httpStatus })

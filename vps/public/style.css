@@ -303,3 +303,38 @@ label{font-size:.82rem;margin-bottom:11px}
 .project-entry{width:100%;background:transparent;color:var(--text);border:0;border-bottom:1px solid var(--border);border-radius:0;text-align:left;justify-content:flex-start;min-height:65px}
 .project-entry:hover,.project-entry:focus-visible{background:color-mix(in srgb,var(--accent) 5%,var(--surface));border-radius:9px}
 .project-entry-chevron{font-size:1.5rem;color:var(--muted);margin-left:auto}
+
+/* v2.0.22 — ajustes visuais no login, seletor de arquivo e páginas de projeto */
+.password-wrap{position:relative;display:flex;align-items:center}
+.password-wrap input{padding-right:112px}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:34px;padding:5px 10px;font-size:.75rem;display:inline-flex;align-items:center;justify-content:center}
+.visually-hidden-file{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+.custom-file-field{display:grid;gap:8px}
+.custom-file-picker{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;padding:11px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+.custom-file-picker button{flex:0 0 auto;min-width:150px}
+.custom-file-picker span{flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.project-page-heading-hero{position:relative;overflow:hidden;padding:18px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--border));border-radius:18px;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface) 58%);box-shadow:0 14px 36px color-mix(in srgb,var(--accent) 8%,transparent);margin-bottom:16px}
+.project-page-heading-hero::after{content:"";position:absolute;right:-36px;top:-44px;width:150px;height:150px;border-radius:50%;background:color-mix(in srgb,var(--accent) 10%,transparent);pointer-events:none}
+.project-hero-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.project-summary-panel{border-color:color-mix(in srgb,var(--accent) 14%,var(--border));box-shadow:0 12px 28px color-mix(in srgb,var(--accent) 6%,transparent)}
+.project-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.project-panel-head h2{margin:0 0 4px}
+.project-summary-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+.project-summary-field{padding:16px;border-radius:15px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--bg));border:1px solid color-mix(in srgb,var(--accent) 9%,var(--border));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--surface) 70%,transparent)}
+.project-summary-field span{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.project-summary-field strong{font-size:1rem;line-height:1.35}
+.project-actions-stack{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));display:grid;gap:10px}
+.project-actions-stack>button{width:100%;justify-content:flex-start;padding:13px 14px;border-radius:14px;box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 5%,transparent)}
+.project-tool-list{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.project-tool{min-height:92px;border-radius:16px;box-shadow:0 12px 28px color-mix(in srgb,var(--accent) 5%,transparent)}
+.project-tool-icon{border-radius:14px}
+.project-tech-dialog{width:min(94vw,760px);max-height:90dvh;overflow-y:auto}
+.project-tech-stack{display:grid;gap:10px}
+.project-tech-stack .project-detail-field{background:var(--bg);border:1px solid color-mix(in srgb,var(--accent) 8%,var(--border));border-radius:14px;padding:14px}
+@media(max-width:520px){
+  .password-wrap input{padding-right:98px}
+  .password-toggle{padding:4px 9px;font-size:.72rem}
+  .custom-file-picker{align-items:flex-start}
+  .custom-file-picker button{width:100%}
+  .project-panel-head,.project-hero-actions{flex-direction:column;align-items:stretch}
+}

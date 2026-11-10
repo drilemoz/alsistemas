@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from project_maintenance import (
     PROJECT_NAME, BACKUP_ROOT, MAX_ARCHIVE, ProjectError, backup_list,
-    deploy_archive, validate_archive,
+    deploy_archive, validate_archive, private_backup_root,
 )
 
 REQUEST = Path('/run/alsistemas-vps/project-request.json')
@@ -95,10 +95,14 @@ def main():
         raise ProjectError('Solicitação inválida.')
     archive = None
     details = {}
+    preview = None
+    requested_mode = req.get('mode')
+    requested_archive = req.get('archive') if isinstance(req.get('archive'), str) else None
+    requested_sha = str(req.get('sha256') or '')[:16]
     try:
         private_backup_root(BACKUP_ROOT)
-        status(op_id, 'validating', 'Validando solicitação')
-        if req.get('mode') == 'file':
+        status(op_id, 'validating', 'Validando solicitação', mode=requested_mode, archive=requested_archive, sha256Prefix=requested_sha)
+        if requested_mode == 'file':
             filename = req.get('archive')
             if not isinstance(filename, str) or not re.fullmatch(r'project-upload-[0-9a-f]{24}\.zip', filename):
                 raise ProjectError('Arquivo de entrada inválido.')
@@ -109,19 +113,19 @@ def main():
                 actual_hash = hashlib.file_digest(content, 'sha256').hexdigest()
             if actual_hash != req.get('sha256'):
                 raise ProjectError('SHA-256 do upload não corresponde à solicitação.')
-        elif req.get('mode') == 'github':
+        elif requested_mode == 'github':
             archive = BACKUP_ROOT / ('project-upload-' + op_id + '.zip')
-            status(op_id, 'downloading', 'Consultando Release do GitHub')
+            status(op_id, 'downloading', 'Consultando Release do GitHub', mode=requested_mode, repo=req.get('repo'))
             details = github_download(req.get('repo'), archive, op_id)
         else:
             raise ProjectError('Modo de atualização inválido.')
-        status(op_id, 'validating', 'Validando caminhos, arquivos e versão do ZIP')
+        status(op_id, 'validating', 'Validando caminhos, arquivos e versão do ZIP', mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
         preview = validate_archive(archive)
-        status(op_id, 'backup', 'Preparando backup do código alterado', version=preview['version'])
-        installed = deploy_archive(archive, update_status=lambda stage, message: status(op_id, stage, message, version=preview['version']))
-        status(op_id, 'complete', 'Atualização concluída e arquivos verificados', percent=100, result=installed, **details)
+        status(op_id, 'backup', 'Preparando backup do código alterado', version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
+        installed = deploy_archive(archive, update_status=lambda stage, message: status(op_id, stage, message, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo')))
+        status(op_id, 'complete', 'Atualização concluída e arquivos verificados', percent=100, result=installed, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, **details)
     except Exception as exc:
-        status(op_id, 'failed', 'Falha na atualização: ' + str(exc)[:210])
+        status(op_id, 'failed', 'Falha na atualização: ' + str(exc)[:210], mode=requested_mode, repo=details.get('repo') or req.get('repo'), archive=archive.name if archive else requested_archive, sha256Prefix=requested_sha, version=preview['version'] if preview else None, errorType=type(exc).__name__)
         raise
     finally:
         if archive is not None and archive.name.startswith('project-upload-'):

@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.21'
+const VERSION = '2.0.23'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -332,9 +332,16 @@ export function createServer({ taskRunner = runTask } = {}) {
         if (!updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
         if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(updateInfo(VERSION).status?.stage))
           return fail(res, 409, 'Atualização já está em andamento')
-        const result = await taskRunner({ action: 'start_update' })
-        audit('update_requested', { ip })
-        return json(res, 202, result)
+        try {
+          const result = await taskRunner({ action: 'start_update' })
+          audit('update_requested', { ip })
+          return json(res, 202, result)
+        } catch (error) {
+          // Mostra o motivo real do executor restrito em vez de mascarar como "Falha interna".
+          if (error.code === 'ENOENT') throw error
+          audit('update_failed', { ip, reason: error.message })
+          return fail(res, error.status || 422, error.message)
+        }
       }
       if (path === '/api/updates/upload' && req.method === 'POST') {
         if (!limit(ip, 'update-upload', 5)) return fail(res, 429, 'Muitas tentativas de envio')
@@ -349,6 +356,10 @@ export function createServer({ taskRunner = runTask } = {}) {
           const result = await taskRunner({ action: 'start_update', upload: saved.name, sha256: saved.sha256 })
           audit('update_requested', { ip })
           return json(res, 202, result)
+        } catch (error) {
+          if (error.code === 'ENOENT') throw error
+          audit('update_failed', { ip, reason: error.message })
+          return fail(res, error.status || 422, error.message)
         } finally {
           if (saved) fs.rmSync(dataPath(saved.name), { force: true })
         }

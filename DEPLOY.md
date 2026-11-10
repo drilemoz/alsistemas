@@ -1,4 +1,4 @@
-> **Núcleo VPS 2.0.21:** leia `tutorial-instalacao.html` e `vps/docs/ATUALIZACAO-2.0.21.md`. Este DEPLOY contém orientações do legado; não use como substituto do instalador VPS.
+> **Núcleo VPS 2.0.23:** leia `tutorial-instalacao.html` e `vps/docs/ATUALIZACAO-2.0.23.md`. Este DEPLOY contém orientações do legado; não use como substituto do instalador VPS.
 
 # 🚀 Deploy legado — Render (Backend) + Vercel (Frontend)
 

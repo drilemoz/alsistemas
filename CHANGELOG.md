@@ -1,11 +1,20 @@
-## 2.0.21 — Autoatualização sem senha repetida e instalação reversível (09/11/2026)
+## 2.0.23 — Correção do atualizador do painel e atualização por fora (10/11/2026)
 
-- Atualização do próprio painel pelo GitHub ou ZIP passa a exigir apenas **sessão de administrador válida, origem confiável e token CSRF**. A senha não é solicitada novamente ao clicar em Instalar ou enviar o arquivo. O login existente continua obrigatório; mudar o repositório autorizado e outras ações privilegiadas permanecem separadamente protegidas.
-- `instalar.sh` prepara o núcleo em diretório temporário dentro de `/opt/alsistemas-vps/`, valida a estrutura e só então substitui `current` por renomeação. Mantém cópia anterior, tenta restaurá-la em erro e aguarda a API `/api/health` responder com a versão esperada.
-- A reversão do atualizador deixa de apagar `current` antes da cópia: prepara e verifica o backup em pasta irmã, move a instalação atual para quarentena e restaura o código anterior; se uma renomeação falhar, tenta devolver a pasta ativa.
-- Corrigida permanentemente a incompatibilidade observada na EC2: `/var/backups/alsistemas` é criado como root-only e explicitamente incluído em `ReadWritePaths` de `alsistemas-vps.service`, sem desativar `ProtectSystem=strict`.
-- Upload passa a limpar os listeners de erro/dreno da stream corretamente, evitando acúmulo de `error listeners` em uploads longos.
-- Novos testes de ativação/reversão simuladas, falha de cópia, autenticação de upload/instalação por sessão e integridade dos arquivos. **Não foi efetuada instalação real na EC2.**
+- **Correção do HTTP 500 "Falha interna"** ao atualizar por ZIP ou GitHub: `alsistemas-vps.service` usa `ProtectSystem=strict` e não liberava `/etc/alsistemas-vps`, onde o helper grava o pedido para o atualizador. `instalar.sh` agora inclui esse caminho em `ReadWritePaths` (somente root consegue gravar nele).
+- `server.js` deixa de mascarar erros do executor restrito: `/api/updates/apply` e `/api/updates/upload` devolvem o motivo real (HTTP 422) e registram `update_failed` na auditoria.
+- `admin/updater.py`: corrige `NameError` (`STATUS` indefinido) que escondia a causa real quando o atualizador falhava, e torna o diagnóstico de saúde tolerante a saída vazia do systemctl.
+- **Caixa de entrada** (`alsistemas-inbox.path` + `.service`): quem tem root solta `AL-Sistemas-vX.Y.Z-VPS.zip` em `/var/lib/alsistemas-inbox/` e o mesmo atualizador do painel (backup, rollback, verificação de saúde) é acionado, sem depender do navegador. Arquivos recusados vão para `/var/backups/alsistemas/inbox-rejected/` com o motivo.
+- **`atualizar-vps.sh`**: atualização manual por SSH/Termux (`sudo bash atualizar-vps.sh ARQUIVO.zip`), com validação do ZIP, comparação de versão e teste de saúde ao final.
+- Testes de regressão para o erro 422 com mensagem, `ReadWritePaths`, caixa de entrada e `main()` do atualizador. Implantação real em systemd na EC2 continua precisando de validação manual.
+
+## 2.0.22 — Refino visual dos fluxos de atualização e projeto (09/11/2026)
+
+- Tela de login ajustada para centralizar corretamente o botão **Mostrar** dentro do campo de senha, melhorando o toque no mobile.
+- Atualização por ZIP do núcleo e do IguatamaOnline passa a usar seletor de arquivo com rótulo personalizado (**Escolher arquivo**) e nome do arquivo exibido ao lado.
+- Página interna do projeto foi redesenhada com cabeçalho destacado, cartões de visão geral e atalho para **Ficha técnica** em pop-up, levando domínios e estrutura para um painel mais limpo.
+- O relatório de erro da atualização do painel ficou mais completo: inclui operação, método, versão anterior, versão-alvo/candidata, arquivo ou Release, snapshot de backup, bytes recebidos, diagnóstico de saúde e retorno do instalador ou reversão quando disponíveis.
+- `admin/updater.py` e `admin/project_updater.py` passaram a persistir mais metadados nas falhas para facilitar diagnóstico real no painel.
+- Validações locais: testes Node do VPS, `node --check` dos arquivos JS principais e `python3 -m py_compile` nos workers Python atualizados.
 
 ## 2.0.20 — Navegação por páginas nos projetos e manutenção da AWS (09/11/2026)
 
