@@ -45,11 +45,11 @@ test('rotas de manutenção da AWS não apontam para outros projetos externos', 
   }
 })
 
-test('credenciais aparecem somente no diálogo de ação crítica e não na página de manutenção', () => {
+test('somente TOTP no diálogo de ação crítica, sem senha repetida', () => {
   const dialogStart = html.indexOf('<dialog id="external-auth-dialog"')
   const dialogEnd = html.indexOf('</dialog>', dialogStart)
   assert.ok(dialogStart >= 0 && dialogEnd > dialogStart)
-  assert.ok(html.indexOf('id="external-password"') > dialogStart && html.indexOf('id="external-password"') < dialogEnd)
+  assert.equal(html.includes('id="external-password"'), false)
   assert.ok(html.indexOf('id="external-otp"') > dialogStart && html.indexOf('id="external-otp"') < dialogEnd)
   assert.match(app, /requestExternalCredentials\('Atualizar pelo GitHub'/)
   assert.match(app, /requestExternalCredentials\('Atualizar pelo ZIP'/)

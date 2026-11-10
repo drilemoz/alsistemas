@@ -1,3 +1,12 @@
+## 2.0.24 — Confirmação simplificada e diagnóstico de propriedade (09/11/2026)
+
+- A manutenção do IguatamaOnline (liberar/restaurar permissões, backup e restauração de código, atualização pelo GitHub/ZIP) não solicita mais a senha administrativa uma segunda vez. Continua exigindo login válido, CSRF, limite de solicitações e TOTP novo com prevenção de reutilização.
+- Modal de confirmação do IguatamaOnline agora apresenta somente o código TOTP. Upload ZIP não transmite mais a senha em cabeçalho HTTP.
+- Inspeção de permissões agora informa os donos da pasta de produção e da pasta superior, sinalizando expressamente quando operações privilegiadas estão bloqueadas.
+- Antes de ações de manutenção o painel faz vistoria sem efeito colateral e evita solicitar TOTP quando o problema de proprietário já bloqueia a operação. O backend verifica tudo novamente ao executar.
+- A restrição de propriedade e isolamento do helper root **não foi removida**: quando o dono real não for root/ubuntu, a EC2 exige revisão manual para evitar que um diretório controlado por terceiros seja alterado como root.
+- Sem modificações em login, TOTP, configuração de pacotes, DNS, arquivos do IguatamaOnline ou site de testes. Validação em EC2 permanece pendente.
+
 ## 2.0.23 — Correção do atualizador do painel e atualização por fora (10/11/2026)
 
 - **Correção do HTTP 500 "Falha interna"** ao atualizar por ZIP ou GitHub: `alsistemas-vps.service` usa `ProtectSystem=strict` e não liberava `/etc/alsistemas-vps`, onde o helper grava o pedido para o atualizador. `instalar.sh` agora inclui esse caminho em `ReadWritePaths` (somente root consegue gravar nele).

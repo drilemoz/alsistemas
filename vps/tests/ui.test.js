@@ -33,3 +33,11 @@ test('tutorial é idêntico no ZIP e webroot e tem índice navegável', () => {
   assert.match(rootDoc, /inicio-termux.sh/)
   assert.match(rootDoc, /id="indice"/)
 })
+
+test('manutenção externa solicita somente TOTP e nunca transmite a senha de login', () => {
+  const dialog = html.slice(html.indexOf('id="external-auth-dialog"'), html.indexOf('id="project-dialog"'))
+  assert.doesNotMatch(dialog, /external-password|Senha do AL Sistemas/)
+  assert.match(dialog, /id="external-otp"/)
+  assert.doesNotMatch(js, /external-password|X-Update-Password/)
+  assert.match(js, /resolve\(\{ otp \}\)/)
+})

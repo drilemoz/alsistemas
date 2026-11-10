@@ -265,6 +265,10 @@ async function reloadExternalInspection() {
         item.problem || 'Caminho inseguro ou inexistente', 'small muted'))
       area.append(line)
     }
+    if (data.mutationAllowed === false) {
+      area.append(node('p', 'Ações privilegiadas bloqueadas: ' + (data.mutationBlocker || 'revisão manual necessária.'), 'error small'))
+      if (data.rootOwner) area.append(node('p', `Proprietário de produção: ${data.rootOwner}; pai: ${data.parentOwner || 'não identificado'}.`, 'small muted'))
+    }
     area.append(node('p', data.note || 'O diagnóstico não concede permissões.', 'small muted'))
     area.append(node('p', data.permissionsGrantActive ? '⚠️ Escrita temporária ainda está ativa.' : 'Permissões temporárias não habilitadas.', data.permissionsGrantActive ? 'error small' : 'small muted'))
     const select = $('external-backups')
@@ -325,20 +329,19 @@ function requestExternalCredentials(label, description) {
   $('external-auth-title').textContent = label
   $('external-auth-description').textContent = description
   authDialog.showModal()
-  $('external-password').focus()
+  $('external-otp').focus()
   return new Promise(resolve => { externalAuthResolve = resolve })
 }
 $('external-auth-form').addEventListener('submit', event => {
   event.preventDefault()
-  const password = $('external-password').value
   const otp = $('external-otp').value.trim()
-  if (!password || !/^\d{6}$/.test(otp)) { $('external-otp').setCustomValidity('Informe um código TOTP de 6 dígitos.'); $('external-otp').reportValidity(); return }
+  if (!/^\d{6}$/.test(otp)) { $('external-otp').setCustomValidity('Informe um código TOTP de 6 dígitos.'); $('external-otp').reportValidity(); return }
   $('external-otp').setCustomValidity('')
   const resolve = externalAuthResolve
   externalAuthResolve = null
   $('external-auth-form').reset()
   closeExternalAuth()
-  if (resolve) resolve({ password, otp })
+  if (resolve) resolve({ otp })
 })
 $('external-otp').addEventListener('input', () => $('external-otp').setCustomValidity(''))
 authDialog.addEventListener('close', () => {
@@ -361,6 +364,14 @@ async function externalCritical(mode) {
     mode === 'restore' ? 'Restaurar os proprietários, grupos e modos registrados na liberação?' :
     mode === 'backup_code' ? 'Criar cópia privada do código sem banco de dados ou uploads?' :
     `Restaurar os arquivos da produção a partir de ${backup}? Banco de dados e uploads não serão restaurados.`
+  // A vistoria não altera nada. Se a árvore for insegura, não pedir código à toa.
+  try {
+    const inspection = await api(externalRoot + '/maintenance')
+    if (inspection.mutationAllowed === false) {
+      externalResult(inspection.mutationBlocker || 'A propriedade do projeto exige revisão manual antes da operação.', true)
+      return
+    }
+  } catch (error) { externalResult('Não foi possível verificar o projeto: ' + error.message, true); return }
   const credentials = await requestExternalCredentials(label, detail)
   if (!credentials) return
   try {
@@ -401,7 +412,6 @@ async function externalFileUpdate() {
       xhr.withCredentials = true
       xhr.setRequestHeader('Content-Type', 'application/zip')
       xhr.setRequestHeader('X-CSRF-Token', csrf)
-      xhr.setRequestHeader('X-Update-Password', credentials.password)
       xhr.setRequestHeader('X-Update-Otp', credentials.otp)
       xhr.upload.onprogress = event => {
         if (!event.lengthComputable) return
@@ -444,7 +454,10 @@ $('external-preview-permissions').addEventListener('click', async () => {
   try {
     const data = await api(externalRoot + '/maintenance')
     const files = (data.files || []).map(f => `${f.path}: ${f.safePath ? 'caminho validado' : 'caminho inseguro'}; escrita PHP estimada: ${f.phpWritableEstimate === true ? 'sim' : f.phpWritableEstimate === false ? 'não' : 'indeterminada'}`).join('\n')
-    preview.textContent = `Prévia apenas, nenhuma alteração aplicada.\n${files}\nA conta do pool real precisa ser confirmada antes de liberar escrita.`
+    const ownership = data.mutationAllowed === false
+      ? `\nBLOQUEADO: ${data.mutationBlocker || 'proprietário exige revisão manual'}`
+      : '\nPropriedade apta à verificação de escrita.'
+    preview.textContent = `Prévia apenas, nenhuma alteração aplicada.\n${files}${ownership}\nA conta do pool PHP real precisa ser confirmada antes de liberar escrita.`
   } catch (error) { preview.textContent = error.message }
 })
 $('external-refresh-logs').addEventListener('click', () => void loadExternalReport())

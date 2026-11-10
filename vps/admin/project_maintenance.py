@@ -117,6 +117,19 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
                            'phpWritableEstimate': _can_write(target, uid, gid), 'safePath': True})
         except (ProjectError, KeyError, OSError) as exc:
             fields.append({'path': rel, 'exists': False, 'safePath': False, 'problem': str(exc)[:160]})
+    # Explicar o bloqueio antes de solicitar um TOTP e sem afrouxar a proteção root.
+    def owner_of(folder):
+        uid = folder.stat().st_uid
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError:
+            return 'uid:' + str(uid)
+    root_owner, parent_owner = owner_of(root), owner_of(root.parent)
+    mutation_allowed, mutation_blocker = True, None
+    try:
+        guard_mutation_ownership(root)
+    except ProjectError as exc:
+        mutation_allowed, mutation_blocker = False, str(exc)
     version = None
     try:
         version = checked_target(root, 'VERSION').read_text(encoding='utf-8').strip()[:60]
@@ -124,6 +137,8 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
         pass
     return {'ok': True, 'name': name, 'path': str(root), 'version': version,
             'phpDefaultPool': user, 'phpPoolVerifiedForSite': False,
+            'rootOwner': root_owner, 'parentOwner': parent_owner,
+            'mutationAllowed': mutation_allowed, 'mutationBlocker': mutation_blocker,
             'files': fields, 'writablePaths': [f['path'] for f in fields if f.get('phpWritableEstimate')],
             'note': 'Estimativa do pool padrão. Se o Nginx usar outro pool, confirmar o usuário antes de liberar escrita.',
             'webUpdaterSafe': False}
@@ -156,7 +171,7 @@ def guard_mutation_ownership(root):
         try: trusted.add(pwd.getpwnam('ubuntu').pw_uid)
         except KeyError: pass
         if root.stat().st_uid not in trusted or root.parent.stat().st_uid != 0:
-            raise ProjectError('Propriedade da pasta não é root/ubuntu; correção root exige revisão manual.')
+            raise ProjectError('A pasta de produção pertence a um usuário diferente de root/ubuntu. Confira o dono real por SSH (stat -c %U:%G /var/www/projetos/iguatamaonline); alteração automática como root bloqueada.')
     return actor
 
 

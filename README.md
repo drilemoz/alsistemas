@@ -1,4 +1,4 @@
-**Novo na 2.0.23:** corrige o erro HTTP 500 "Falha interna" ao atualizar o painel por ZIP/GitHub (o serviço não conseguia gravar o pedido em `/etc/alsistemas-vps`), mostra o motivo real do erro e adiciona a caixa de entrada `/var/lib/alsistemas-inbox` e o script `atualizar-vps.sh` para atualizar por SSH/Termux.
+**Novo na 2.0.24:** ações críticas do IguatamaOnline deixam de pedir a senha novamente (mantêm sessão + CSRF + TOTP novo); a vistoria de permissões informa o proprietário real e impede solicitar TOTP quando a correção está bloqueada. **A propriedade da pasta na EC2 ainda deve ser conferida por SSH antes de qualquer mudança root.**
 
 **Novo na 2.0.22:** ajustes visuais no login e nas páginas de projeto, com botão **Mostrar** alinhado corretamente, seletor de ZIP com rótulo personalizado e ficha técnica do projeto em pop-up. A tela interna do projeto ganhou visual mais estiloso com resumo rápido e atalhos melhores. O relatório de falha da atualização do painel agora tenta reunir o máximo de contexto disponível, incluindo versão anterior, arquivo/Release, snapshot de backup, diagnóstico de saúde e detalhes do instalador/reversão quando existirem. Veja `vps/docs/ATUALIZACAO-2.0.22.md`.
 
@@ -6,7 +6,7 @@
 
 **Novo na 2.0.19:** na aba **Atualizações**, o botão `?` abre as novidades em pop-up, com outro pop-up para o README. Os botões **GitHub**, **Arquivo ZIP** e **Andamento** aparecem lado a lado em dispositivos móveis. Quando uma atualização falha, o acompanhamento oferece relatório de erro em janela própria, com copiar e baixar TXT. Corrigido o Nginx para aceitar ZIPs de até 32 MiB apenas nas duas rotas autenticadas, mantendo 64 KiB nas demais; upgrades do núcleo também migrarão o vhost já gerenciado. Falhas de saúde passam a registrar um diagnóstico resumido da versão, serviço e endpoint. Nenhuma alteração foi executada na EC2; veja `vps/docs/ATUALIZACAO-2.0.19.md`.
 
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.23 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.24 + legado preservado
 
 A versão **2.0.16** adicionou gerenciamento DNS controlado à Spaceship: criar registros A, CNAME e TXT; editar apenas o TTL de registros personalizados; e excluir registros personalizados não protegidos. Antes de escrever, o servidor consulta a zona novamente e valida os registros; requer login, token CSRF, senha administrativa e confirmação. Nomes críticos (`@`, `painel`, `www`, `mail`, `migrar` e outros) ficam bloqueados. A versão 2.0.16 **não** alterava automaticamente DNS ao criar projetos, nem permite alterar valores de registros existentes. A API exige `dnsrecords:read` e `dnsrecords:write` para essas ações. Nenhuma mudança DNS foi executada em produção durante o desenvolvimento.
 

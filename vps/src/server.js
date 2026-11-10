@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.23'
+const VERSION = '2.0.24'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -402,13 +402,13 @@ export function createServer({ taskRunner = runTask } = {}) {
         if (!limit(ip, 'external-repair', 8)) return fail(res, 429, 'Muitas solicitações de manutenção')
         const input = await body(req)
         if (!['allow', 'restore', 'restore_code', 'backup_code'].includes(input.mode) ||
-            Object.keys(input).sort().join(',') !== (input.mode === 'restore_code' ? 'backup,mode,otp,password' : 'mode,otp,password') ||
+            Object.keys(input).sort().join(',') !== (input.mode === 'restore_code' ? 'backup,mode,otp' : 'mode,otp') ||
             (input.mode === 'restore_code' && (typeof input.backup !== 'string' || !/^code-\d{8}T\d{6}Z-[0-9a-f]{8}$/.test(input.backup))))
           return fail(res, 400, 'Parâmetros de manutenção inválidos')
         const admin = readJson('admin.json')
         const step = admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || typeof input.password !== 'string' || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Senha e novo código TOTP são obrigatórios')
+        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
+          return fail(res, 401, 'Novo código TOTP obrigatório')
         writeJson('admin.json', { ...admin, lastTotpStep: step })
         const task = input.mode === 'restore_code'
           ? { action: 'restore_project_code', name: 'iguatamaonline', backup: input.backup }
@@ -428,12 +428,12 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/projects/iguatamaonline/update/github' && req.method === 'POST') {
         if (!limit(ip, 'external-github', 5)) return fail(res, 429, 'Limite de atualizações excedido')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'otp,password,repo' || !validateRepo(input.repo))
+        if (Object.keys(input).sort().join(',') !== 'otp,repo' || !validateRepo(input.repo))
           return fail(res, 400, 'Repositório ou parâmetros inválidos')
         const admin = readJson('admin.json')
         const step = admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || typeof input.password !== 'string' || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Senha e novo código TOTP são obrigatórios')
+        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
+          return fail(res, 401, 'Novo código TOTP obrigatório')
         writeJson('admin.json', { ...admin, lastTotpStep: step })
         try {
           const result = await taskRunner({ action: 'start_project_update', name: 'iguatamaonline', mode: 'github', repo: input.repo })
@@ -443,12 +443,11 @@ export function createServer({ taskRunner = runTask } = {}) {
       }
       if (path === '/api/projects/iguatamaonline/update/upload' && req.method === 'POST') {
         if (!limit(ip, 'external-upload', 5)) return fail(res, 429, 'Limite de uploads excedido')
-        const password = req.headers['x-update-password']
         const otp = req.headers['x-update-otp']
         const admin = readJson('admin.json')
         const step = admin && typeof otp === 'string' ? matchingTotpStep(admin.totpSecret, otp) : null
-        if (!admin || typeof password !== 'string' || !verifyPassword(password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Senha e novo código TOTP são obrigatórios')
+        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
+          return fail(res, 401, 'Novo código TOTP obrigatório')
         writeJson('admin.json', { ...admin, lastTotpStep: step })
         let saved
         try {

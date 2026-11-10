@@ -6,6 +6,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 MODULE = Path(__file__).resolve().parents[1] / 'admin' / 'project_maintenance.py'
@@ -45,10 +46,21 @@ class ProjectMaintenanceTests(unittest.TestCase):
         report = p.inspect_project(root=self.root)
         self.assertEqual(report['version'], '1.0.0')
         self.assertEqual(len(report['files']), 3)
+        self.assertIn('rootOwner', report)
+        self.assertIn('parentOwner', report)
+        self.assertIn('mutationAllowed', report)
+        self.assertTrue(report['mutationAllowed'])
         with self.assertRaises(p.ProjectError): p.verify_project('iguatama-teste', self.root)
         (self.root / 'app/updater.php').unlink()
         report = p.inspect_project(root=self.root)
         self.assertFalse(report['files'][1]['safePath'])
+
+    def test_inspection_reports_unsafe_php_owner_without_changing_permissions(self):
+        with patch.object(p, 'php_account', return_value=('site-php', self.root.stat().st_uid, self.root.stat().st_gid)):
+            report = p.inspect_project(root=self.root)
+        self.assertFalse(report['mutationAllowed'])
+        self.assertIn('controlado pelo usuário do PHP-FPM', report['mutationBlocker'])
+        self.assertEqual((self.root / 'VERSION').read_bytes(), self.files['VERSION'])
 
     def test_accepts_safe_zip_deploy_and_restore_without_test_mutation(self):
         self.package()
