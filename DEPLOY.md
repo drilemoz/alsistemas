@@ -1,3 +1,7 @@
+## Atualização 2.0.35 — Inventário de backups por projeto
+
+Após atualizar o painel, abra Projetos → projeto → Backups e recuperação. Para projetos criados pelo AL Sistemas, a cópia criptografada cobre apenas `public/`, e a verificação SHA-256 confere o arquivo criptografado frente ao manifesto local. A confirmação não testa recuperação nem substitui cópia externa. O IguatamaOnline mantém seu backup privado de código na Manutenção AWS. Banco de dados e uploads exigem backups independentes. Não habilite permissões globais para fazer a verificação funcionar. Consulte `vps/docs/ATUALIZACAO-2.0.35.md`.
+
 ## Atualização 2.0.34 — Logs e erros de projetos
 
 Novo leitor restrito de logs de projeto, somente leitura. Após instalar, abra Projetos → seu projeto → Logs e erros. Se aparecer “nenhum log” ou “sem permissão”, não altere permissões globais de `/var/log` nem do PHP; configure um log dedicado por vhost de maneira independente e consciente. O recurso não lê logs globais, não garante ocultar todos os dados sensíveis e não verifica disponibilidade pública. Veja `vps/docs/ATUALIZACAO-2.0.34.md`.

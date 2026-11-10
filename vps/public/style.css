@@ -566,3 +566,8 @@ label{font-size:.82rem;margin-bottom:11px}
 .project-log-group>strong{overflow-wrap:anywhere;font-size:.91rem}
 .project-log-line{font: .78rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px 9px;border:1px solid var(--border);background:var(--surface);border-radius:8px}
 @media(max-width:410px){.project-log-filters{grid-template-columns:1fr}.project-runtime-logs-content{max-height:48vh}}
+
+/* v2.0.35: central de backups por projeto */
+.project-backup-entry,.project-backup-scope{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px;border:1px solid var(--border);background:var(--surface);border-radius:13px;min-width:0;overflow-wrap:anywhere}
+.project-backup-entry button{margin:4px 0}
+#project-backup-center-list>button{width:100%;max-width:340px}

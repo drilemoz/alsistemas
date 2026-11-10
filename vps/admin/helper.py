@@ -496,11 +496,13 @@ def backup_project(task, root=PROJECTS, backup_root=BACKUPS, gpg='/usr/bin/gpg')
 
 
 def list_backups(task, backup_root=BACKUPS):
-    if set(task) != {'action'}:
+    if set(task) not in ({'action'}, {'action', 'name'}) or task.get('action') != 'list_backups':
         raise TaskError('Parâmetros não permitidos na listagem.')
+    name = valid_name(task['name']) if 'name' in task else None
     check_backup_root(backup_root)
     entries = []
-    for meta_path in sorted(backup_root.glob('*.tar.gpg.json'), reverse=True)[:100]:
+    pattern = f'{name}-*.tar.gpg.json' if name else '*.tar.gpg.json'
+    for meta_path in sorted(backup_root.glob(pattern), reverse=True)[:100]:
         if meta_path.is_symlink() or not meta_path.is_file():
             continue
         st = meta_path.stat()
@@ -508,7 +510,9 @@ def list_backups(task, backup_root=BACKUPS):
             continue
         try:
             meta = json.loads(meta_path.read_text(encoding='utf-8'))
-            if meta.get('archive') + '.json' != meta_path.name or meta.get('encrypted') is not True:
+            if (not isinstance(meta.get('archive'), str) or
+                    meta['archive'] + '.json' != meta_path.name or meta.get('encrypted') is not True or
+                    (name and meta.get('name') != name)):
                 continue
             encrypted = backup_root / meta['archive']
             if encrypted.is_symlink() or not encrypted.is_file():
@@ -521,6 +525,55 @@ def list_backups(task, backup_root=BACKUPS):
             continue
     return {'ok': True, 'backups': entries[:50]}
 
+
+
+
+def verify_backup(task, backup_root=BACKUPS):
+    """Confere bytes criptografados e manifesto, sem abrir/decriptar o backup."""
+    if set(task) != {'action', 'name', 'archive'}:
+        raise TaskError('Parâmetros de verificação não permitidos.')
+    name = valid_name(task.get('name'))
+    archive_name = task.get('archive')
+    if not isinstance(archive_name, str) or not re.fullmatch(
+            re.escape(name) + r'-\d{8}T\d{6}Z-[a-f0-9]{8}\.tar\.gpg', archive_name):
+        raise TaskError('Nome de backup não autorizado para este projeto.')
+    check_backup_root(backup_root)
+    archive = backup_root / archive_name
+    metadata = backup_root / (archive_name + '.json')
+    if metadata.is_symlink() or not metadata.is_file():
+        raise TaskError('Manifesto do backup não encontrado ou inseguro.')
+    mst = metadata.stat()
+    if (not stat.S_ISREG(mst.st_mode) or mst.st_mode & 0o077 or mst.st_size > 4096 or
+            (backup_root == BACKUPS and mst.st_uid != 0)):
+        raise TaskError('Manifesto sem permissões confiáveis.')
+    try:
+        data = json.loads(metadata.read_text(encoding='utf-8'))
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise TaskError('Manifesto do backup inválido.') from exc
+    if (data.get('name') != name or data.get('archive') != archive_name or
+            data.get('encrypted') is not True or data.get('scope') != 'public-only' or
+            not isinstance(data.get('bytes'), int) or not 1 <= data['bytes'] <= MAX_SNAPSHOT_BYTES * 2 or
+            not isinstance(data.get('sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', data['sha256'])):
+        raise TaskError('Manifesto divergente ou fora do escopo autorizado.')
+    fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        archive_stat = os.fstat(fd)
+        if (not stat.S_ISREG(archive_stat.st_mode) or archive_stat.st_nlink != 1 or
+                archive_stat.st_size != data['bytes'] or archive_stat.st_mode & 0o077 or
+                (backup_root == BACKUPS and archive_stat.st_uid != 0)):
+            raise TaskError('Arquivo criptografado mudou ou tem permissões inseguras.')
+        hash_value = hashlib.sha256()
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            for chunk in iter(lambda: stream.read(131072), b''):
+                hash_value.update(chunk)
+        match = secrets.compare_digest(hash_value.hexdigest(), data['sha256'])
+        return {'ok': match, 'name': name, 'archive': archive_name, 'bytes': archive_stat.st_size,
+                'integrity': 'verified' if match else 'mismatch',
+                'note': ('SHA-256 do arquivo criptografado confere com o manifesto.' if match else
+                         'SHA-256 divergente; backup não é confiável.') +
+                        ' Não valida a frase secreta nem garante restauração.'}
+    finally:
+        os.close(fd)
 
 def ensure_project_worker_idle():
     status = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
@@ -544,6 +597,8 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return backup_project(task, root)
     if action == 'list_backups':
         return list_backups(task)
+    if action == 'verify_backup':
+        return verify_backup(task)
     if action == 'project_file_explorer':
         if task.get('mode') == 'browse' and set(task) == {'action', 'name', 'mode', 'directory', 'offset'}:
             return browse_project(task['name'], task['directory'], task['offset'])

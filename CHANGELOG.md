@@ -1,3 +1,13 @@
+## 2.0.35 — Backups por projeto e verificação de integridade (10/11/2026)
+
+- Nova página **Backups e recuperação** em cada projeto: inventário restrito ao projeto atual, tipo de cópia e limites explícitos.
+- Projetos gerenciados podem criar backups criptografados existentes de `public/`, com frase secreta, e verificar o hash SHA-256 de uma cópia gravada na VPS.
+- Conferência de hash autentica os bytes frente ao manifesto gravado, sem descriptografar, sem testar frase secreta e sem prometer restauração.
+- No IguatamaOnline o atalho encaminha à rotina existente de backup/restauração de código, mantendo sua proteção e seus limites.
+- Banco MariaDB/MySQL e uploads não foram incluídos nos backups existentes; nenhuma rotina destrutiva de SQL foi adicionada.
+- Validações de nomes, metadados, tamanho, dono, modo e links simbólicos; acesso administrativo autenticado e CSRF mantidos.
+- Módulo PHP, Nginx, banco e diretório de testes preservados, sem alteração na EC2.
+
 ## 2.0.34 — Logs e erros por projeto (10/11/2026)
 
 - Novo módulo **Projetos → Logs e erros**, disponível para projetos identificados. A API GET `/api/projects/:name/logs` exige sessão autenticada e limite de requisições, com retorno apenas de trechos recentes de logs locais permitidos.

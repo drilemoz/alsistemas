@@ -16,7 +16,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.34'
+const VERSION = '2.0.35'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -392,6 +392,29 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/backups' && req.method === 'GET') {
         try { return json(res, 200, await taskRunner({ action: 'list_backups' })) }
         catch (err) { return fail(res, 503, 'Inventário de backups indisponível: ' + err.message) }
+      }
+      const projectBackupRoute = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/backups(?:\/(verify))?$/.exec(path)
+      if (projectBackupRoute) {
+        const [, name, operation] = projectBackupRoute
+        if (name.includes('--') || ['iguatama-teste', 'alsistemas', 'iguatamaonline'].includes(name) ||
+            !projects().some(item => item.name === name && item.backupEligible))
+          return fail(res, 404, 'Backup de projeto não autorizado')
+        if (!operation && req.method === 'GET') {
+          if (!limit(ip, 'backup-list-project', 30)) return fail(res, 429, 'Muitas consultas de backup')
+          try { return json(res, 200, await taskRunner({ action: 'list_backups', name })) }
+          catch (error) { return fail(res, 503, 'Inventário de backups indisponível') }
+        }
+        if (operation !== 'verify' || req.method !== 'POST') return fail(res, 405, 'Método não permitido')
+        if (!limit(ip, 'backup-verify', 12)) return fail(res, 429, 'Muitas verificações de backup')
+        const input = await body(req)
+        if (Object.keys(input).sort().join(',') !== 'archive' || typeof input.archive !== 'string' ||
+            !new RegExp('^' + name + '-\\d{8}T\\d{6}Z-[a-f0-9]{8}\\.tar\\.gpg$').test(input.archive))
+          return fail(res, 400, 'Nome de backup inválido')
+        try {
+          const result = await taskRunner({ action: 'verify_backup', name, archive: input.archive })
+          audit('project_backup_verified', { ip, name, integrity: result.integrity })
+          return json(res, 200, result)
+        } catch (error) { return fail(res, 422, error.message) }
       }
       // Diagnóstico e histórico por projeto: consulta autenticada e somente leitura.
       // Não fornece terminal, não lê .env e não confunde configuração HTTPS com teste público.

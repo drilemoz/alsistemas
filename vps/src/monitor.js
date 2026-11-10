@@ -80,13 +80,22 @@ export function projects(dir = root) {
           else if (fs.existsSync(path.join(folder, 'package.json'))) type = 'node'
           else if (fs.existsSync(path.join(folder, 'public', 'index.html')) || fs.existsSync(path.join(folder, 'index.html'))) type = 'static'
         } catch { /* sem acesso ao conteúdo: exibir como desconhecido */ }
-        let managed = false, domain = null, enabled = null
+        let managed = false, domain = null, enabled = null, backupEligible = false
         // Metadados opcionais para projetos criados sem domínio; não autorizam operações.
         try {
           const metadata = path.join(folder, '.alsistemas.json')
           if (!fs.lstatSync(metadata).isSymbolicLink() && fs.statSync(metadata).uid === 0) {
-            const info = JSON.parse(fs.readFileSync(metadata, 'utf8'))
-            managed = info.managedBy === 'AL Sistemas'
+            const stat = fs.statSync(metadata)
+            if (stat.size <= 4096 && !(stat.mode & 0o022)) {
+              const info = JSON.parse(fs.readFileSync(metadata, 'utf8'))
+              managed = info.managedBy === 'AL Sistemas'
+              const folderStat = fs.statSync(folder)
+              const pubPath = path.join(folder, 'public')
+              const pubStat = fs.statSync(pubPath)
+              backupEligible = managed && ['php', 'static'].includes(info.type) &&
+                folderStat.uid === 0 && !(folderStat.mode & 0o022) &&
+                pubStat.isDirectory() && !fs.lstatSync(pubPath).isSymbolicLink() && !(pubStat.mode & 0o022)
+            }
           }
         } catch { /* projetos externos não precisam de metadados */ }
         // Só o helper privilegiado confirma se uma mudança é permitida.
@@ -107,7 +116,7 @@ export function projects(dir = root) {
             }
           }
         } catch { /* não há configuração gerenciada */ }
-        return { name: entry.name, type, path: folder, managed, domain: domain || discoverProjectDomain(folder)[0] || null, domains: discoverProjectDomain(folder), enabled }
+        return { name: entry.name, type, path: folder, managed, backupEligible, domain: domain || discoverProjectDomain(folder)[0] || null, domains: discoverProjectDomain(folder), enabled }
       }).filter(Boolean)
   } catch (e) { if (e.code === 'ENOENT') return []; throw e }
 }

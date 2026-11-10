@@ -113,7 +113,7 @@ function appRouteFromUrl() {
 function validAppRoute(route) {
   if (mainTabs.has(route)) return true
   if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[a-z][a-z0-9-]{1,39}\/permissions$/.test(route)) return true
-  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/(?:insights|activity|runtime-logs)$/.test(route)) return true
+  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/(?:insights|activity|runtime-logs|backup-center)$/.test(route)) return true
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
@@ -121,7 +121,7 @@ function showAppRoute(route) {
   if (!validAppRoute(route)) route = 'projects'
   currentAppRoute = route
   const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
-  const genericInformation = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(insights|activity|runtime-logs)$/.exec(route)
+  const genericInformation = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(insights|activity|runtime-logs|backup-center)$/.exec(route)
   const matched = genericPermissions || genericInformation || /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   const page = genericPermissions ? 'project-permissions-general' : genericInformation ? 'project-' + genericInformation[2] : matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
   for (const section of document.querySelectorAll('.tab-page')) section.classList.toggle('hidden', section.id !== `page-${page}`)
@@ -133,6 +133,7 @@ function showAppRoute(route) {
   if (genericInformation && genericInformation[2] === 'insights') void loadProjectInsights(genericInformation[1])
   if (genericInformation && genericInformation[2] === 'activity') void loadProjectActivity(genericInformation[1])
   if (genericInformation && genericInformation[2] === 'runtime-logs') void loadProjectRuntimeLogs(genericInformation[1])
+  if (genericInformation && genericInformation[2] === 'backup-center') void loadProjectBackupCenter(genericInformation[1])
   if (matched && matched[1] === 'iguatamaonline') {
     if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus()
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
@@ -246,6 +247,14 @@ function renderProjectPage(name) {
   logsTool.append(logsIcon, logsLabels, node('span', '›'))
   logsTool.addEventListener('click', () => navigateApp(`project/${item.name}/runtime-logs`))
   actions.append(logsTool)
+  const backupCenterTool = node('button', '', 'project-tool')
+  backupCenterTool.type = 'button'
+  const backupIcon = node('span', '', 'project-tool-icon'); backupIcon.append(iconGraphic('backup'))
+  const backupLabels = node('span')
+  backupLabels.append(node('strong', 'Backups e recuperação'), node('small', 'Cópias de código, integridade e limites de recuperação'))
+  backupCenterTool.append(backupIcon, backupLabels, node('span', '›'))
+  backupCenterTool.addEventListener('click', () => navigateApp(`project/${item.name}/backup-center`))
+  actions.append(backupCenterTool)
   const activityTool = node('button', '', 'project-tool')
   activityTool.type = 'button'
   const activityIcon = node('span', '', 'project-tool-icon'); activityIcon.append(iconGraphic('file'))
@@ -265,10 +274,6 @@ function renderProjectPage(name) {
     actions.append(permissionTool)
   }
   if (item.managed) {
-    const backup = node('button', 'Criar backup criptografado', 'outline')
-    backup.type = 'button'
-    backup.addEventListener('click', () => openBackup(item.name))
-    actions.append(backup)
     if (item.domain && typeof item.enabled === 'boolean') {
       const toggle = node('button', item.enabled ? 'Desativar site' : 'Ativar site', 'outline')
       toggle.type = 'button'
@@ -380,7 +385,7 @@ async function loadProjectActivity(name) {
 }
 for (const id of ['project-insights-back', 'project-activity-back']) {
   $(id).addEventListener('click', () => {
-    const path = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(?:insights|activity|runtime-logs)$/.exec(currentAppRoute)
+    const path = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(?:insights|activity|runtime-logs|backup-center)$/.exec(currentAppRoute)
     if (path) navigateApp(`project/${path[1]}`)
   })
 }
@@ -1364,6 +1369,77 @@ $('logout').addEventListener('click', async () => {
 bootstrapPage().catch(e => notice(`Não foi possível carregar o painel: ${e.message}`, true))
 
 
+let currentBackupCenterName = ''
+async function loadProjectBackupCenter(name) {
+  currentBackupCenterName = name
+  $('project-backup-center-title').textContent = `Backups · ${name}`
+  $('project-backup-center-status').textContent = 'Consultando inventário…'
+  $('project-backup-center-list').replaceChildren()
+  $('project-backup-center-scopes').replaceChildren()
+  const item = knownProjects.get(name)
+  if (!item) {
+    $('project-backup-center-status').textContent = 'Projeto não encontrado. Atualize a lista.'
+    return
+  }
+  const info = (title, detail) => {
+    const block = node('div', '', 'project-backup-scope')
+    block.append(node('strong', title), node('span', detail, 'small muted'))
+    $('project-backup-center-scopes').append(block)
+  }
+  const managedCopy = item.backupEligible && name !== 'iguatamaonline' && /^[a-z][a-z0-9-]{1,39}$/.test(name)
+  if (name === 'iguatamaonline') {
+    info('Código de produção', 'Backups privados do código podem ser criados e restaurados na Manutenção AWS.')
+    const link = node('button', 'Abrir backups do IguatamaOnline', 'outline')
+    link.type = 'button'
+    link.addEventListener('click', () => navigateApp('project/iguatamaonline/aws/backups'))
+    $('project-backup-center-list').append(link)
+    $('project-backup-center-status').textContent = 'Cópias privadas do código; banco e uploads não incluídos.'
+  } else if (managedCopy) {
+    info('Código público', 'Backups criptografados de public/; não abrangem arquivos privados, banco nem uploads fora de public/.')
+    const create = node('button', 'Criar backup criptografado de public/', 'outline')
+    create.type = 'button'
+    create.addEventListener('click', () => openBackup(name))
+    $('project-backup-center-list').append(create)
+    try {
+      const result = await api(`/api/projects/${encodeURIComponent(name)}/backups`)
+      if (currentAppRoute !== `project/${name}/backup-center`) return
+      const matching = (result.backups || []).filter(b => b.name === name && b.scope === 'public-only')
+      for (const backup of matching) {
+        const row = node('div', '', 'project-backup-entry')
+        row.append(node('strong', new Date(backup.createdAt).toLocaleString('pt-BR')),
+          node('span', `${projectReadableSize(backup.bytes)} criptografados · ${backup.files} arquivos · public/`, 'small muted'),
+          node('small', backup.archive, 'small muted break-text'))
+        const verify = node('button', 'Verificar SHA-256', 'outline button-small')
+        verify.type = 'button'
+        const feedback = node('span', 'Verificação não executada.', 'small muted')
+        verify.addEventListener('click', async () => {
+          verify.disabled = true
+          feedback.textContent = 'Conferindo bytes do arquivo armazenado…'
+          try {
+            const data = await api(`/api/projects/${encodeURIComponent(name)}/backups/verify`, 'POST', { archive: backup.archive })
+            feedback.textContent = data.ok ? 'SHA-256 confere com o manifesto. A restauração não foi testada.' : 'SHA-256 divergente. Não confie nesta cópia.'
+            feedback.className = data.ok ? 'small good' : 'small bad'
+          } catch (error) {
+            feedback.textContent = 'Verificação indisponível: ' + error.message
+            feedback.className = 'small bad'
+          } finally { verify.disabled = false }
+        })
+        row.append(verify, feedback)
+        $('project-backup-center-list').append(row)
+      }
+      $('project-backup-center-status').textContent = `${matching.length} cópia(s) criptografada(s) de public/ registrada(s) neste projeto.`
+    } catch (error) {
+      $('project-backup-center-status').textContent = 'Não foi possível listar os backups: ' + error.message
+    }
+  } else {
+    info('Código', 'Backup pelo painel indisponível para projetos externos ou não reconhecidos como gerenciados.')
+    $('project-backup-center-status').textContent = 'Nenhuma operação de backup autorizada para este projeto.'
+  }
+  info('Banco de dados', 'Não incluído. Backup e restauração SQL ainda não estão implementados nesta versão.')
+  info('Uploads e arquivos privados', 'Não garantidos por backup de public/. É necessária uma estratégia própria e cópia fora da EC2.')
+}
+$('project-backup-center-back').addEventListener('click', () => navigateApp(`project/${currentBackupCenterName}`))
+$('project-backup-center-refresh').addEventListener('click', () => { if (currentBackupCenterName) void loadProjectBackupCenter(currentBackupCenterName) })
 let backupName = ''
 function openBackup(name) {
   backupName = name
@@ -1431,6 +1507,7 @@ $('backup-form').addEventListener('submit', async e => {
     $('backup-form').reset()
     $('backup-dialog').close()
     await updateBackups()
+    if (currentAppRoute === `project/${backupName}/backup-center`) await loadProjectBackupCenter(backupName)
     notice(`Backup criptografado criado: ${result.backup.archive}. Guarde a frase secreta e copie o arquivo para fora da VPS.`)
   } catch (e) { notice(e.message, true) }
   finally {
