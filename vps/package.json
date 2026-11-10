@@ -1,6 +1,6 @@
 {
   "name": "al-sistemas-vps",
-  "version": "2.0.32",
+  "version": "2.0.33",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/server.js && node --check src/security.js && node --check src/monitor.js && node --check src/store.js && node --check src/trusted.js && node --check src/updates.js && node --check public/app.js && node --check src/dependencies.js && node --check src/integrations.js && node --check public/integrations.js"
+    "check": "node --check src/server.js && node --check src/project_overview.js && node --check src/security.js && node --check src/monitor.js && node --check src/store.js && node --check src/trusted.js && node --check src/updates.js && node --check public/app.js && node --check src/dependencies.js && node --check src/integrations.js && node --check public/integrations.js"
   },
   "dependencies": {}
 }

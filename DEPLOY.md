@@ -1,3 +1,7 @@
+## Atualização 2.0.33 — Centro de Projetos
+
+Atualização do núcleo e interface do AL Sistemas, sem necessidade de mudanças nos diretórios de hospedagem. Confirme backup/snapshot recuperável e acesso SSH antes da instalação. Depois de atualizar, abra Projetos → projeto e teste as páginas Diagnóstico e Histórico. Um teste HTTP não garante que o site esteja disponível pela Internet. Os novos recursos são de leitura; operações de escrita e backup seguem fluxos anteriores. Veja `vps/docs/ATUALIZACAO-2.0.33.md`.
+
 ## Atualização 2.0.32 — Arquivos em tela única
 
 A partir da 2.0.31, não muda o conjunto de scripts administrativos. A 2.0.32 reorganiza a seleção de arquivos elegíveis e usuário PHP no próprio explorador. O servidor continua verificando o perfil na API de permissões e bloqueia escrita fora dos arquivos selecionados. Depois da atualização, confirme a versão em `/api/health`, teste a seleção e a restauração no projeto autorizado. Faça backup/snapshot antes de conceder escrita em produção.

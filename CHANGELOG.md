@@ -1,3 +1,14 @@
+## 2.0.33 — Central de administração por projeto (10/11/2026)
+
+- **Projeto → Visão geral:** mantém as três informações compactas (Tecnologia, Acesso, Nginx), acrescenta versão e tamanho observado, com aviso de coleta parcial, e organiza os atalhos de administração de forma responsiva.
+- **Arquivos e escrita:** atalho disponível diretamente a partir da ficha para projetos autorizados, reutilizando explorador, controle temporário de escrita e restauração existentes. IguatamaOnline mantém separadamente a Manutenção na AWS.
+- **Diagnóstico por projeto:** adiciona API autenticada somente leitura para versão declarada, quantidade/tamanho de arquivos acessíveis (limite de amostragem, sem seguir links), espaço livre do sistema de arquivos, PHP CLI (diferente de PHP-FPM), contagem das dependências Composer, estado global do MariaDB e domínios/HTTPS identificados na configuração do Nginx.
+- **Teste HTTP local:** ação manual, limitada, que envia HEAD para 127.0.0.1:80 com Host de vhost Nginx habilitado, sem consultar DNS nem seguir redirecionamentos. Não atesta funcionamento público nem validade do certificado.
+- **Histórico administrativo:** endpoint autenticado filtra eventos registrados especificamente para cada projeto; omite IP e textos de erro potencialmente sensíveis e fornece cópia e download TXT do relatório. Não confundir com logs integrais de Nginx/PHP.
+- **Segurança:** nenhuma credencial é lida; limites de arquivos/profundidade, recusa de diretórios protegidos e links simbólicos, autenticação e limites de requisição. Banco, uploads, permissões e demais projetos não são alterados pelos novos módulos de leitura.
+- **Funcionalidades posteriores:** editor de arquivos, exportação/restauração do banco, logs Nginx/PHP segregados, alertas, certificado SSL e backups agendados exigem implementação e testes específicos e não estão disponíveis nesta versão.
+- Testes novos para isolamento, arquivos sensíveis, resposta HTTP local, login e rotas protegidas. Não houve implantação na EC2.
+
 ## 2.0.32 — Arquivos em painel único (10/11/2026)
 
 - Página genérica de permissões renomeada para **Arquivos · nome do projeto**. O módulo da manutenção AWS abre diretamente este explorador.

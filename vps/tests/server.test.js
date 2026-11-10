@@ -46,6 +46,15 @@ test('setup TOTP, autenticação, sessão e CSRF', async () => {
     const csrf = r.body.csrf
     r = await call('/api/session', 'GET', undefined, cookie)
     assert.equal(r.res.status, 200)
+    // Módulos por projeto exigem sessão; nunca expõem diretórios protegidos.
+    r = await call('/api/projects/iguatama-teste/overview')
+    assert.equal(r.res.status, 401)
+    r = await call('/api/projects/iguatama-teste/overview', 'GET', undefined, cookie)
+    assert.equal(r.res.status, 404)
+    r = await call('/api/projects/iguatama-teste/activity', 'GET', undefined, cookie)
+    assert.equal(r.res.status, 404)
+    r = await call('/api/projects/site-nao-existe/probe', 'POST', {}, cookie, csrf)
+    assert.equal(r.res.status, 405)
     r = await call('/api/tasks', 'POST', { action: 'delete_all' }, cookie, csrf)
     assert.equal(r.res.status, 400)
     r = await call('/api/tasks', 'POST', { action: 'create_project', name: 'test', type: 'static' }, cookie)

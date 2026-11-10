@@ -113,6 +113,7 @@ function appRouteFromUrl() {
 function validAppRoute(route) {
   if (mainTabs.has(route)) return true
   if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[a-z][a-z0-9-]{1,39}\/permissions$/.test(route)) return true
+  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/(?:insights|activity)$/.test(route)) return true
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
@@ -120,14 +121,17 @@ function showAppRoute(route) {
   if (!validAppRoute(route)) route = 'projects'
   currentAppRoute = route
   const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
-  const matched = genericPermissions || /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
-  const page = genericPermissions ? 'project-permissions-general' : matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
+  const genericInformation = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(insights|activity)$/.exec(route)
+  const matched = genericPermissions || genericInformation || /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
+  const page = genericPermissions ? 'project-permissions-general' : genericInformation ? 'project-' + genericInformation[2] : matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
   for (const section of document.querySelectorAll('.tab-page')) section.classList.toggle('hidden', section.id !== `page-${page}`)
   const navTab = matched ? 'projects' : route
   for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === navTab)
   if ($('more-dialog').open) $('more-dialog').close()
   if (matched && page === 'project-detail') renderProjectPage(matched[1])
   if (genericPermissions) void loadGeneralPermissions(genericPermissions[1])
+  if (genericInformation && genericInformation[2] === 'insights') void loadProjectInsights(genericInformation[1])
+  if (genericInformation && genericInformation[2] === 'activity') void loadProjectActivity(genericInformation[1])
   if (matched && matched[1] === 'iguatamaonline') {
     if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus()
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
@@ -213,6 +217,8 @@ function renderProjectPage(name) {
   content.append(accessBox)
   const actions = $('project-detail-actions')
   actions.replaceChildren()
+  $('project-live-overview').textContent = 'Consultando armazenamento e versão…'
+  void loadProjectMiniOverview(item.name)
   if (item.name === 'iguatamaonline') {
     const aws = node('button', '', 'project-tool')
     aws.type = 'button'
@@ -223,12 +229,28 @@ function renderProjectPage(name) {
     aws.addEventListener('click', () => openExternalProject())
     actions.append(aws)
   }
-  if (item.name !== 'iguatamaonline') {
+  const insightsTool = node('button', '', 'project-tool')
+  insightsTool.type = 'button'
+  const insightsIcon = node('span', '', 'project-tool-icon'); insightsIcon.append(iconGraphic('activity'))
+  const insightsLabels = node('span')
+  insightsLabels.append(node('strong', 'Diagnóstico e armazenamento'), node('small', 'PHP, domínios, configuração HTTPS e espaço do projeto'))
+  insightsTool.append(insightsIcon, insightsLabels, node('span', '›'))
+  insightsTool.addEventListener('click', () => navigateApp(`project/${item.name}/insights`))
+  actions.append(insightsTool)
+  const activityTool = node('button', '', 'project-tool')
+  activityTool.type = 'button'
+  const activityIcon = node('span', '', 'project-tool-icon'); activityIcon.append(iconGraphic('file'))
+  const activityLabels = node('span')
+  activityLabels.append(node('strong', 'Histórico administrativo'), node('small', 'Operações e atualizações registradas, com relatório copiável'))
+  activityTool.append(activityIcon, activityLabels, node('span', '›'))
+  activityTool.addEventListener('click', () => navigateApp(`project/${item.name}/activity`))
+  actions.append(activityTool)
+  if (/^[a-z][a-z0-9-]{1,39}$/.test(item.name) && !['iguatama-teste','alsistemas'].includes(item.name)) {
     const permissionTool = node('button', '', 'project-tool')
     permissionTool.type = 'button'
     const icon = node('span', '', 'project-tool-icon'); icon.append(iconGraphic('lock'))
     const labels = node('span')
-    labels.append(node('strong', 'Arquivos do projeto'), node('small', 'Explorador, liberação e restauração de escrita'))
+    labels.append(node('strong', 'Arquivos e escrita'), node('small', 'Explorador, permissões temporárias e restauração'))
     permissionTool.append(icon, labels, node('span', '›'))
     permissionTool.addEventListener('click', () => navigateApp(`project/${item.name}/permissions`))
     actions.append(permissionTool)
@@ -255,6 +277,146 @@ function renderProjectPage(name) {
     }
   }
 }
+
+// Diagnóstico local de cada projeto. A API informa quando o valor é parcial ou não verificado.
+function projectReadableSize(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 'Indisponível'
+  if (value < 1024) return value + ' B'
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)) - 1)
+  return (value / (1024 ** (index + 1))).toFixed(index === 0 ? 0 : 1) + ' ' + units[index]
+}
+function projectInfoField(label, value, note = '') {
+  const field = node('div', '', 'project-insight-card')
+  field.append(node('span', label, 'small muted'), node('strong', String(value ?? 'Indisponível')))
+  if (note) field.append(node('small', note, 'small muted'))
+  return field
+}
+async function loadProjectMiniOverview(name) {
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(name)}/overview`)
+    if (currentAppRoute !== `project/${name}`) return
+    const estimated = projectReadableSize(result.storage?.bytes)
+    $('project-live-overview').textContent = `Versão: ${result.version || 'não identificada'} · Arquivos: ${result.storage?.files ?? '?'} · Espaço lido: ${estimated}${result.storage?.incomplete ? ' (parcial)' : ''}`
+  } catch (error) {
+    if (currentAppRoute === `project/${name}`) $('project-live-overview').textContent = 'Diagnóstico resumido indisponível: ' + error.message
+  }
+}
+async function loadProjectInsights(name) {
+  $('project-insights-title').textContent = 'Diagnóstico · ' + name
+  $('project-insights-back').textContent = '‹ ' + name
+  $('project-insights-status').textContent = 'Consultando projeto…'
+  $('project-probe-output').textContent = 'Teste opcional do Nginx local. Acesso público não verificado.'
+  $('project-insights-grid').replaceChildren()
+  $('project-insights-sites').replaceChildren()
+  const route = `project/${name}/insights`
+  try {
+    const info = await api(`/api/projects/${encodeURIComponent(name)}/overview`)
+    if (currentAppRoute !== route) return
+    const sizeNote = info.storage?.incomplete ? 'Estimativa parcial; limite de varredura atingido' : 'Arquivos acessíveis contabilizados, sem ler conteúdo'
+    const entries = [
+      ['Tecnologia', info.type || 'Não identificada'],
+      ['Versão do projeto', info.version || 'Não identificada'],
+      ['Arquivos encontrados', info.storage?.files ?? 'Indisponível', sizeNote],
+      ['Tamanho observado', projectReadableSize(info.storage?.bytes), sizeNote],
+      ['Pasta(s) observadas', info.storage?.directories ?? 'Indisponível'],
+      ['Disco disponível na VPS', projectReadableSize(info.diskFreeBytes), 'Espaço do volume, não cota específica do site'],
+      ['PHP (CLI)', info.php?.version || (info.type === 'php' ? 'Indisponível' : 'Não se aplica'), info.php?.source || ''],
+      ['Composer', info.composer?.present ? `${info.composer.dependencies} dependência(s) declarada(s)` : 'Não identificado', info.composer?.note || 'Não se aplica'],
+      ['MariaDB (VPS)', info.database?.mariadbService || 'Não identificado', 'Estado do serviço global, sem vincular bancos ao projeto'],
+      ['Nginx', info.nginx?.enabled === true ? 'Configuração gerenciada ativa' : info.nginx?.enabled === false ? 'Configuração gerenciada inativa' : 'Configuração não confirmada'],
+    ]
+    const grid = $('project-insights-grid')
+    grid.replaceChildren(...entries.map(([label, value, note]) => projectInfoField(label, value, note)))
+    const sites = $('project-insights-sites')
+    if (!info.sites?.length) sites.append(node('p', 'Nenhum domínio vinculado foi identificado no Nginx.', 'small muted'))
+    for (const site of info.sites || []) {
+      const card = projectInfoField(site.name, site.httpsConfigured ? 'HTTPS configurado' : 'HTTP configurado', site.nginxEnabled ? 'Arquivo Nginx habilitado' : 'Configuração desabilitada ou não confirmada')
+      sites.append(card)
+    }
+    $('project-insights-status').textContent = 'Consulta local de ' + new Date(info.checkedAt).toLocaleString('pt-BR') + '. Nenhuma configuração alterada.'
+    $('project-insights-footer').textContent = (info.httpsNote || '') + ' ' + (info.database?.note || '')
+  } catch (error) {
+    if (currentAppRoute === route) $('project-insights-status').textContent = 'Falha no diagnóstico: ' + error.message
+  }
+}
+let projectActivityReport = ''
+async function loadProjectActivity(name) {
+  $('project-activity-title').textContent = 'Histórico · ' + name
+  $('project-activity-back').textContent = '‹ ' + name
+  $('project-activity-status').textContent = 'Consultando auditoria…'
+  $('project-activity-events').replaceChildren()
+  projectActivityReport = ''
+  const route = `project/${name}/activity`
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(name)}/activity`)
+    if (currentAppRoute !== route) return
+    const events = $('project-activity-events')
+    if (!data.events?.length) events.append(node('p', 'Nenhuma operação registrada para este projeto.', 'small muted'))
+    for (const event of data.events || []) {
+      const title = event.action ? `${event.event} · ${event.action}` : event.event
+      const time = event.time ? new Date(event.time).toLocaleString('pt-BR') : 'Horário não disponível'
+      const row = node('div', '', 'project-activity-event')
+      row.append(node('strong', title || 'Evento'), node('span', time, 'small muted'))
+      events.append(row)
+    }
+    if (data.lastProjectUpdate) {
+      events.prepend(projectInfoField('Última atualização de código', data.lastProjectUpdate.stage || 'Não identificada', data.lastProjectUpdate.message || ''))
+    }
+    $('project-activity-status').textContent = `${data.events?.length || 0} evento(s) disponível(is) · somente histórico administrativo.`
+    projectActivityReport = ['AL Sistemas · Histórico do projeto ' + name, 'Gerado: ' + new Date().toISOString(), data.note || '', '', ...(data.lastProjectUpdate ? [JSON.stringify(data.lastProjectUpdate, null, 2), ''] : []), ...((data.events || []).map(ev => JSON.stringify(ev)))].join('\n')
+  } catch (error) {
+    if (currentAppRoute === route) $('project-activity-status').textContent = 'Falha ao consultar histórico: ' + error.message
+  }
+}
+for (const id of ['project-insights-back', 'project-activity-back']) {
+  $(id).addEventListener('click', () => {
+    const path = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(?:insights|activity)$/.exec(currentAppRoute)
+    if (path) navigateApp(`project/${path[1]}`)
+  })
+}
+$('project-probe-run').addEventListener('click', async () => {
+  const found = /^project\/([^/]+)\/insights$/.exec(currentAppRoute)
+  if (!found) return
+  const name = found[1]
+  const button = $('project-probe-run')
+  button.disabled = true
+  $('project-probe-output').textContent = 'Testando Nginx local…'
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(name)}/probe`)
+    if (currentAppRoute !== `project/${name}/insights`) return
+    $('project-probe-output').textContent = data.checked
+      ? `Resposta HTTP ${data.statusCode} · ${data.elapsedMs} ms · ${data.site}. Medição local; acesso público não verificado.`
+      : 'Teste indisponível: ' + (data.note || data.errorCode || 'sem resposta')
+  } catch (error) { if (currentAppRoute === `project/${name}/insights`) $('project-probe-output').textContent = 'Erro no teste: ' + error.message }
+  finally { button.disabled = false }
+})
+$('project-insights-reload').addEventListener('click', () => {
+  const found = /^project\/([^/]+)\/insights$/.exec(currentAppRoute)
+  if (found) void loadProjectInsights(found[1])
+})
+$('project-activity-reload').addEventListener('click', () => {
+  const found = /^project\/([^/]+)\/activity$/.exec(currentAppRoute)
+  if (found) void loadProjectActivity(found[1])
+})
+$('project-activity-copy').addEventListener('click', async () => {
+  if (!projectActivityReport) { notice('Relatório ainda indisponível.', true); return }
+  try { await navigator.clipboard.writeText(projectActivityReport); notice('Relatório copiado.') }
+  catch { notice('Cópia indisponível no navegador.', true) }
+})
+$('project-activity-download').addEventListener('click', () => {
+  if (!projectActivityReport) { notice('Relatório ainda indisponível.', true); return }
+  const name = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/activity$/.exec(currentAppRoute)?.[1] || 'projeto'
+  const url = URL.createObjectURL(new Blob([projectActivityReport + '\n'], {type:'text/plain;charset=utf-8'}))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `AL-Sistemas-${name}-historico.txt`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+
 function openProjectDetails(item) { navigateApp(`project/${item.name}`) }
 // 2.0.31 — navegador de arquivos scoped, sem operações fora de projetos.
 let explorerProject = ''
