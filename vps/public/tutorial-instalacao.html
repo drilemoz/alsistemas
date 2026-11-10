@@ -75,7 +75,7 @@ sudo bash instalar.sh --allow-existing-host \
 sudo journalctl -u alsistemas-vps -n 80 --no-pager
 sudo journalctl -u alsistemas-updater -n 80 --no-pager
 curl -i http://127.0.0.1:8181/api/health</code></pre></div><p>Não apague <code>/var/lib/alsistemas/admin.json</code> nem as chaves TOTP para tentar resolver erro de login: isso pode causar perda de acesso. Mantenha o SSH e backups de credenciais disponíveis e evite registrar segredos em screenshots.</p><a class="back-index" href="#indice">↑ Voltar aos tópicos</a></section>
-<footer>AL Sistemas VPS 2.0.12 • Tutorial independente, offline e sem recursos externos. Última revisão: 09/11/2026.</footer>
+<footer>AL Sistemas VPS 2.0.28 • Tutorial independente, offline e sem recursos externos. Última revisão: 09/11/2026.</footer>
 </main><script>
 // Script de conveniência apenas para o tutorial local, sem rede e sem coleta de dados.
 for(const button of document.querySelectorAll('.copy'))button.addEventListener('click',async()=>{const text=button.parentElement.querySelector('code').textContent;try{await navigator.clipboard.writeText(text);button.textContent='Copiado!';setTimeout(()=>button.textContent='Copiar',1600)}catch{const selection=window.getSelection();const range=document.createRange();range.selectNodeContents(button.parentElement.querySelector('code'));selection.removeAllRanges();selection.addRange(range);button.textContent='Selecione e copie'}})

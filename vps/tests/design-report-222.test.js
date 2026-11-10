@@ -11,16 +11,18 @@ const updater = fs.readFileSync(path.join(root, 'vps/admin/updater.py'), 'utf8')
 const projectUpdater = fs.readFileSync(path.join(root, 'vps/admin/project_updater.py'), 'utf8')
 
 test('login, seletor de arquivos e ficha técnica receberam a nova interface', () => {
-  for (const id of ['project-tech-dialog', 'project-tech-open', 'project-tech-shortcut', 'update-file-trigger', 'update-file-name', 'external-zip-trigger', 'external-zip-name']) {
+  for (const id of ['project-tech-dialog', 'project-tech-open', 'project-directory-open', 'project-diagnostics-info-open', 'update-file-trigger', 'update-file-name', 'external-zip-trigger', 'external-zip-name']) {
     assert.match(html, new RegExp(`id="${id}"`), id)
   }
   assert.match(html, /Ficha técnica/)
-  assert.match(html, /Domínios e estrutura/)
+  assert.doesNotMatch(html, /id="project-tech-shortcut"/, 'atalho redundante removido')
+  assert.match(html, /id="project-hero-title-row"|class="project-hero-title-row"/)
   assert.match(css, /\.password-toggle\{[^}]*top:50%[^}]*translateY\(-50%\)/s)
   assert.match(css, /\.custom-file-picker\{/)
   assert.match(css, /\.project-tech-dialog\{/)
   assert.match(js, /function syncFilePicker\(/)
-  assert.match(js, /project-tech-open', 'project-tech-shortcut/)
+  assert.match(js, /project-tech-open/)
+  assert.doesNotMatch(js, /project-tech-shortcut/)
   assert.match(js, /project-tech-dialog'\)\.showModal\(\)/)
 })
 

@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, ProjectError,
     inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root)
+from other_project_permissions import ProfileError, handle_permissions
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -542,6 +543,11 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return backup_project(task, root)
     if action == 'list_backups':
         return list_backups(task)
+    if action == 'other_project_permissions':
+        if set(task) != {'action', 'name', 'mode'} or task['mode'] not in ('inspect', 'allow', 'restore'):
+            raise TaskError('Parâmetros de permissões do projeto inválidos.')
+        if task['mode'] != 'inspect': ensure_project_worker_idle()
+        return handle_permissions(task['name'], task['mode'])
     if action == 'inspect_external_project':
         if set(task) != {'action', 'name'} or task['name'] != PROJECT_NAME:
             raise TaskError('Projeto não autorizado.')
@@ -781,6 +787,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, ProjectError, OSError, subprocess.TimeoutExpired) as err:
+    except (TaskError, ProjectError, ProfileError, OSError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)

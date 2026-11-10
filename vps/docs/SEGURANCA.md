@@ -1,4 +1,4 @@
-# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.27
+# Segurança do núcleo de hospedagem AL Sistemas VPS 2.0.28
 
 ## Superfícies e permissões
 
@@ -78,3 +78,7 @@ Dispositivos confiáveis continuam exigindo a senha correta, mas **não** exigem
 ## 2.0.27: sessões após reinício e atualização móvel
 
 O hash SHA-256 dos cookies de sessão, CSRF e expiração de oito horas são armazenados em `sessions.json`, no diretório privado do serviço (`/var/lib/alsistemas` em produção, modo 0600). O cookie em claro não é persistido. O arquivo é substituído de forma atômica pelo usuário do painel. A revogação geral apaga as sessões, inclusive as persistidas; a senha e TOTP continuam obrigatórios apenas no login. Os indicadores de progresso de atualização refletem etapas recebidas do servidor, separando falhas de conexão de falhas do instalador.
+
+## 2.0.28: perfis de escrita restritos por projeto
+
+Para outros projetos, escrita não é liberada por diretório nem por caminhos fornecidos pelo navegador. O helper lê perfis predefinidos em configuração root-owned 0600, confirma o dono da pasta, o usuário PHP indicado, arquivos regulares sem links simbólicos/hardlinks e snapshots privados das permissões originais. O login, CSRF e auditoria continuam obrigatórios. Os projetos `iguatamaonline` e `iguatama-teste` continuam isolados do fluxo genérico. A seleção exata do usuário PHP precisa ser confirmada na EC2; a detecção de pool padrão não prova qual usuário executa o site.

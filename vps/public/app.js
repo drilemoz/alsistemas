@@ -112,19 +112,22 @@ function appRouteFromUrl() {
 }
 function validAppRoute(route) {
   if (mainTabs.has(route)) return true
+  if (/^project\/(?!iguatamaonline(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/permissions$/.test(route)) return true
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
 function showAppRoute(route) {
   if (!validAppRoute(route)) route = 'projects'
   currentAppRoute = route
-  const matched = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
-  const page = matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
+  const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
+  const matched = genericPermissions || /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
+  const page = genericPermissions ? 'project-permissions-general' : matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
   for (const section of document.querySelectorAll('.tab-page')) section.classList.toggle('hidden', section.id !== `page-${page}`)
   const navTab = matched ? 'projects' : route
   for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === navTab)
   if ($('more-dialog').open) $('more-dialog').close()
   if (matched && page === 'project-detail') renderProjectPage(matched[1])
+  if (genericPermissions) void loadGeneralPermissions(genericPermissions[1])
   if (matched && matched[1] === 'iguatamaonline') {
     if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus()
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
@@ -170,17 +173,17 @@ function renderProjectPage(name) {
   $('project-tech-description').textContent = 'Leitura em somente visualização para conferir domínios, diretório e limites de acesso.'
   const domains = [...new Set([...(item.domain ? [item.domain] : []), ...(Array.isArray(item.domains) ? item.domains : [])])]
   const summaryItems = [
-    ['Diretório', item.path || 'Não identificado'],
-    ['Tecnologia', technology],
-    ['Acesso', item.managed ? 'Gerenciado' : 'Restrito'],
-    ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo (HTTP)' : 'Desativado') : 'Não identificado'],
+    ['Tecnologia', technology, 'code'],
+    ['Acesso', item.managed ? 'Gerenciado' : 'Restrito', 'shield'],
+    ['Nginx', typeof item.enabled === 'boolean' ? (item.enabled ? 'Ativo' : 'Inativo') : 'Não identificado', 'globe'],
   ]
-  if (domains[0]) summaryItems.push(['Domínio principal', domains[0]])
   const summary = $('project-summary')
   summary.replaceChildren()
-  for (const [label, value] of summaryItems) {
+  for (const [label, value, glyph] of summaryItems) {
     const block = node('div', '', 'project-summary-field')
-    block.append(node('span', label), node('strong', value))
+    const caption = node('span', '', 'project-summary-label')
+    caption.append(iconGraphic(glyph), node('span', label))
+    block.append(caption, node('strong', value))
     summary.append(block)
   }
   const content = $('project-details-content')
@@ -220,6 +223,16 @@ function renderProjectPage(name) {
     aws.addEventListener('click', () => openExternalProject())
     actions.append(aws)
   }
+  if (item.name !== 'iguatamaonline') {
+    const permissionTool = node('button', '', 'project-tool')
+    permissionTool.type = 'button'
+    const icon = node('span', '', 'project-tool-icon'); icon.append(iconGraphic('lock'))
+    const labels = node('span')
+    labels.append(node('strong', 'Permissões do projeto'), node('small', 'Arquivos autorizados, liberação temporária e restauração'))
+    permissionTool.append(icon, labels, node('span', '›'))
+    permissionTool.addEventListener('click', () => navigateApp(`project/${item.name}/permissions`))
+    actions.append(permissionTool)
+  }
   if (item.managed) {
     const backup = node('button', 'Criar backup criptografado', 'outline')
     backup.type = 'button'
@@ -243,6 +256,62 @@ function renderProjectPage(name) {
   }
 }
 function openProjectDetails(item) { navigateApp(`project/${item.name}`) }
+let generalPermissionsName = ''
+async function loadGeneralPermissions(name) {
+  generalPermissionsName = name
+  $('general-project-permissions-title').textContent = 'Permissões · ' + name
+  $('general-permissions-back').textContent = '‹ ' + name
+  $('general-permissions-status').replaceChildren(node('p', 'Verificando perfil de permissões…', 'small muted'))
+  $('general-permissions-allow').disabled = true
+  $('general-permissions-restore').disabled = true
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(name)}/permissions`)
+    if (generalPermissionsName !== name || currentAppRoute !== `project/${name}/permissions`) return
+    const area = $('general-permissions-status')
+    area.replaceChildren()
+    if (!data.configured) {
+      area.append(diagnosticCard('lock', 'Configuração necessária',
+        'Este projeto ainda não tem uma lista de arquivos autorizados. Cadastre o perfil no servidor e consulte o botão de informações.', 'diagnostic-warning'))
+      return
+    }
+    area.append(diagnosticCard(data.active ? 'alert' : 'success',
+      data.active ? 'Escrita temporária ativa' : 'Perfil autorizado',
+      data.active ? 'Quando terminar, use Restaurar permissões.' : 'A liberação afetará somente os arquivos listados abaixo.',
+      data.active ? 'diagnostic-warning' : 'diagnostic-good'))
+    const meta = node('p', `Dono autorizado: ${data.owner} · Usuário PHP: ${data.phpUser}`, 'small muted')
+    area.append(meta)
+    for (const file of data.files || []) {
+      area.append(diagnosticCard('file', file.path, file.phpWritable
+        ? 'Escrita pelo PHP: permitida atualmente.' : 'Escrita pelo PHP: não permitida atualmente.'))
+    }
+    $('general-permissions-allow').disabled = !!data.active
+    $('general-permissions-restore').disabled = !data.active
+  } catch (error) {
+    $('general-permissions-status').replaceChildren(diagnosticCard('alert', 'Inspeção indisponível', error.message, 'diagnostic-warning'))
+  }
+}
+async function changeGeneralPermissions(mode) {
+  const name = generalPermissionsName
+  if (!name || currentAppRoute !== `project/${name}/permissions`) return
+  const phrase = mode === 'allow' ? 'Liberar escrita temporária' : 'Restaurar permissões originais'
+  const detail = mode === 'allow'
+    ? `Liberar temporariamente escrita PHP apenas nos arquivos aprovados do projeto ${name}?`
+    : `Restaurar as permissões que foram registradas para o projeto ${name}?`
+  if (!await confirmAction(detail, phrase)) return
+  for (const id of ['general-permissions-allow', 'general-permissions-restore']) $(id).disabled = true
+  $('general-permissions-result').classList.remove('error')
+  $('general-permissions-result').textContent = 'Executando…'
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(name)}/permissions`, 'POST', { mode })
+    $('general-permissions-result').textContent = result.warning || 'Operação concluída.'
+  } catch (error) {
+    $('general-permissions-result').textContent = error.message
+    $('general-permissions-result').classList.add('error')
+  } finally { await loadGeneralPermissions(name) }
+}
+$('general-permissions-back').addEventListener('click', () => navigateApp(`project/${generalPermissionsName}`))
+$('general-permissions-allow').addEventListener('click', () => changeGeneralPermissions('allow'))
+$('general-permissions-restore').addEventListener('click', () => changeGeneralPermissions('restore'))
 let externalPoll = null
 let externalLastError = ''
 const externalRoot = '/api/projects/iguatamaonline'
@@ -253,31 +322,59 @@ function maintenanceMessage(message, problem = false) {
   view.classList.toggle('error', problem)
   if (problem) externalLastError = String(message).slice(0, 1000)
 }
+// Diagnóstico em linguagem simples: acesso, escrita e permissão para alterar são estados diferentes.
+function diagnosticCard(icon, title, description, tone = '') {
+  const card = node('div', '', 'diagnostic-card ' + tone)
+  const glyph = node('span', '', 'diagnostic-card-icon'); glyph.append(iconGraphic(icon))
+  const text = node('div', '', 'diagnostic-card-body')
+  text.append(node('strong', title), node('span', description, 'small muted'))
+  card.append(glyph, text)
+  return card
+}
 async function reloadExternalInspection() {
   const area = $('external-diagnosis')
-  area.replaceChildren(node('p', 'Verificando arquivos e permissões…', 'small muted'))
+  area.replaceChildren(node('p', 'Analisando arquivos…', 'small muted'))
   try {
     const data = await api(externalRoot + '/maintenance')
     area.replaceChildren()
-    area.append(node('p', `Versão: ${data.version || 'não identificada'} · pool PHP padrão: ${data.phpDefaultPool || 'não identificado'}`, 'small muted'))
     $('external-current-version').textContent = data.version || 'Não identificada'
-    for (const item of data.files || []) {
-      const line = node('div', '', 'project-detail-field')
-      line.append(node('strong', `${item.safePath ? '✓' : '✕'} ${item.path}`), node('span', item.safePath ?
-        `${item.owner}:${item.group} · modo ${item.mode} · escrita PHP (estimativa): ${item.phpWritableEstimate === true ? 'sim' : item.phpWritableEstimate === false ? 'não' : 'indeterminada'}` :
-        item.problem || 'Caminho inseguro ou inexistente', 'small muted'))
-      area.append(line)
+    const files = data.files || []
+    const valid = files.filter(f => f.safePath).length
+    const danger = data.permissionsGrantActive
+    const blocked = data.mutationAllowed === false
+    area.append(diagnosticCard(danger ? 'alert' : blocked ? 'lock' : 'success',
+      danger ? 'Escrita temporária ativa' : blocked ? 'Alterações bloqueadas' : 'Verificação concluída',
+      danger ? 'Restaure as permissões assim que terminar.' : blocked ? 'A propriedade do projeto precisa ser revisada antes de liberar escrita.' : 'O painel conseguiu inspecionar o projeto.',
+      danger || blocked ? 'diagnostic-warning' : 'diagnostic-good'))
+    const counters = node('div', '', 'diagnostic-overview')
+    const ver = node('div'); ver.append(node('span', 'Versão', 'small muted'), node('strong', data.version || 'Desconhecida'))
+    const found = node('div'); found.append(node('span', 'Arquivos verificados', 'small muted'), node('strong', `${valid} de ${files.length}`))
+    counters.append(ver, found); area.append(counters)
+    if (blocked) {
+      const caution = node('div', '', 'diagnostic-alert')
+      caution.append(iconGraphic('alert'))
+      const text = node('div'); text.append(node('strong', 'Por que está bloqueado?'))
+      text.append(node('span', `Proprietário da pasta: ${data.rootOwner || 'desconhecido'}. A política de segurança atual não autoriza esse proprietário.`, 'small muted'))
+      caution.append(text); area.append(caution)
     }
-    if (data.mutationAllowed === false) {
-      area.append(node('p', 'Ações privilegiadas bloqueadas: ' + (data.mutationBlocker || 'revisão manual necessária.'), 'error small'))
-      if (data.rootOwner) area.append(node('p', `Proprietário de produção: ${data.rootOwner}; pai: ${data.parentOwner || 'não identificado'}.`, 'small muted'))
+    area.append(node('h3', 'Arquivos protegidos', 'diagnostic-subtitle'))
+    for (const item of files) {
+      const canWrite = item.phpWritableEstimate
+      const main = diagnosticCard(item.safePath ? 'file' : 'alert', item.path,
+        !item.safePath ? 'Não foi possível validar este arquivo.' :
+          canWrite === true ? 'O PHP provavelmente pode escrever.' :
+          canWrite === false ? 'Sem escrita pelo PHP (estimativa).' : 'Permissão de escrita desconhecida.',
+        !item.safePath ? 'diagnostic-warning' : '')
+      const footer = node('span', '', 'diagnostic-file-state ' + (item.safePath ? 'diagnostic-file-ok' : 'diagnostic-file-error'))
+      footer.textContent = item.safePath ? '✓ Arquivo encontrado' : '⚠ Verificação incompleta'
+      main.append(footer)
+      area.append(main)
     }
-    area.append(node('p', data.note || 'O diagnóstico não concede permissões.', 'small muted'))
-    area.append(node('p', data.permissionsGrantActive ? '⚠️ Escrita temporária ainda está ativa.' : 'Permissões temporárias não habilitadas.', data.permissionsGrantActive ? 'error small' : 'small muted'))
+    if (files.length === 0) area.append(node('p', 'Nenhum arquivo retornado pelo diagnóstico.', 'muted'))
     const select = $('external-backups')
     select.replaceChildren(new Option('Escolha um backup', ''))
     for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}`, item.id))
-  } catch (error) { area.replaceChildren(node('p', error.message, 'error')) }
+  } catch (error) { area.replaceChildren(diagnosticCard('alert', 'Não foi possível verificar', error.message, 'diagnostic-warning')) }
 }
 function stopExternalPolling() {
   if (externalPoll) clearInterval(externalPoll)
@@ -644,10 +741,17 @@ function reconcileFilePickers() {
 window.addEventListener('focus', () => setTimeout(reconcileFilePickers, 100))
 document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(reconcileFilePickers, 100) })
 window.addEventListener('pageshow', reconcileFilePickers)
-for (const id of ['project-tech-open', 'project-tech-shortcut']) {
+for (const id of ['project-tech-open']) {
   const button = $(id)
   if (button) button.addEventListener('click', () => $('project-tech-dialog').showModal())
 }
+$('project-directory-open').addEventListener('click', () => $('project-directory-dialog').showModal())
+$('project-diagnostics-info-open').addEventListener('click', () => $('project-diagnostics-info-dialog').showModal())
+$('general-permissions-info-open').addEventListener('click', () => $('general-permissions-info-dialog').showModal())
+$('project-directory-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('project-directory-path').textContent); notice('Caminho copiado.') }
+  catch { notice('Copie o caminho exibido na janela.', true) }
+})
 syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
 syncFilePicker('external-zip', 'external-zip-name', 'Nenhum arquivo selecionado.')
 $('setup-begin').addEventListener('submit', e => {

@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.27'
+const VERSION = '2.0.28'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -390,6 +390,30 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/backups' && req.method === 'GET') {
         try { return json(res, 200, await taskRunner({ action: 'list_backups' })) }
         catch (err) { return fail(res, 503, 'Inventário de backups indisponível: ' + err.message) }
+      }
+      // Outros projetos: apenas perfis de arquivos cadastrados em política root-owned.
+      const generalPermission = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/permissions$/.exec(path)
+      if (generalPermission && ['GET', 'POST'].includes(req.method)) {
+        const name = generalPermission[1]
+        if (['iguatamaonline', 'iguatama-teste', 'alsistemas'].includes(name) || name.includes('--'))
+          return fail(res, 404, 'Projeto não disponível para esta operação')
+        if (!limit(ip, 'other-project-permissions', req.method === 'POST' ? 8 : 24)) return fail(res, 429, 'Muitas consultas')
+        let mode = 'inspect'
+        if (req.method === 'POST') {
+          const input = await body(req)
+          if (Object.keys(input).sort().join(',') !== 'mode' || !['allow', 'restore'].includes(input.mode))
+            return fail(res, 400, 'Parâmetros não permitidos')
+          mode = input.mode
+        }
+        const task = { action: 'other_project_permissions', name, mode }
+        try {
+          const result = await taskRunner(task)
+          if (req.method === 'POST') audit('project_permissions', { ip, name, mode })
+          return json(res, 200, result)
+        } catch (error) {
+          if (req.method === 'POST') audit('project_permissions_failed', { ip, name, mode })
+          return fail(res, 422, error.message)
+        }
       }
       // Manutenção de projeto externo: escopo fixo, nunca aceita caminhos do navegador.
       if (path === '/api/projects/iguatamaonline/maintenance' && req.method === 'GET') {

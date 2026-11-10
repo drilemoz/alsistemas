@@ -347,3 +347,42 @@ label{font-size:.82rem;margin-bottom:11px}
 .update-progress-file{padding:9px 11px;border:1px solid var(--border);background:var(--bg);border-radius:9px;overflow-wrap:anywhere;word-break:break-word}
 .update-progress-connection{padding:8px 10px;border-radius:8px;background:var(--bg);font-size:.76rem}
 .update-progress-connection.connection-issue{border:1px solid var(--danger);color:var(--danger)}
+
+/* 2.0.28 — hierarquia compacta e diagnóstico direto */
+.project-hero-title-row,.project-heading-with-action{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.project-hero-title-row h1{min-width:0;flex:1 1 auto;margin:2px 0;overflow-wrap:anywhere}
+.project-hero-title-row button{white-space:nowrap;flex:0 0 auto;min-height:40px}
+.project-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.project-summary-field{padding:12px;gap:8px;min-width:0}
+.project-summary-label{display:flex;align-items:center;gap:6px;letter-spacing:0!important}
+.project-summary-label .icon{width:15px;height:15px;flex:0 0 15px}
+.project-heading-with-action{margin-bottom:16px;align-items:center}
+.project-heading-with-action h1{margin:2px 0}
+.project-directory-button{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.project-directory-button .icon,.diagnostic-toolbar .icon{width:18px;height:18px}
+.project-info-dialog{width:min(94vw,560px);max-height:85dvh;overflow-y:auto}
+.project-dir-path{display:block;padding:14px;overflow-wrap:anywhere;background:var(--bg);border-radius:12px;border:1px solid var(--border)}
+.diagnostic-help-list{padding-left:22px;line-height:1.55;display:grid;gap:9px}
+.diagnostic-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px;flex-wrap:wrap}
+.diagnostic-toolbar h2{margin:0!important}
+.diagnostic-toolbar button{display:inline-flex;align-items:center;gap:7px}
+.diagnostic-layout{display:grid;gap:10px}
+.diagnostic-card{display:grid;grid-template-columns:38px 1fr;align-items:start;gap:10px;border:1px solid var(--border);border-radius:14px;padding:13px;min-width:0}
+.diagnostic-card-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+.diagnostic-card-icon .icon{width:21px;height:21px}
+.diagnostic-card-body{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
+.diagnostic-card-body strong{font-size:.9rem}
+.diagnostic-good{border-color:color-mix(in srgb,var(--success) 28%,var(--border))}
+.diagnostic-warning{border-color:color-mix(in srgb,var(--danger,#bc523f) 35%,var(--border))}
+.diagnostic-warning .diagnostic-card-icon{color:var(--danger,#bc523f);background:color-mix(in srgb,var(--danger,#bc523f) 8%,var(--surface))}
+.diagnostic-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.diagnostic-overview>div{background:var(--bg);padding:14px;border-radius:12px;display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
+.diagnostic-overview strong{font-size:1rem}
+.diagnostic-subtitle{font-size:.93rem;margin:9px 0 0}
+.diagnostic-file-state{grid-column:2;display:inline-flex;font-size:.76rem;font-weight:650}
+.diagnostic-file-ok{color:var(--success)}
+.diagnostic-file-error{color:var(--danger,#b54438)}
+.diagnostic-alert{display:flex;gap:12px;padding:13px;border-radius:12px;background:color-mix(in srgb,var(--danger,#b54438) 6%,var(--surface));border:1px solid var(--border)}
+.diagnostic-alert>.icon{color:var(--danger,#b54438);width:22px;height:22px;flex:0 0 22px}
+.diagnostic-alert>div{display:grid;gap:6px}
+@media(max-width:520px){.project-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.project-summary-field{padding:10px 7px}.project-summary-field strong{font-size:.78rem}.project-summary-label{font-size:.66rem!important;gap:3px}.project-summary-label .icon{width:12px;height:12px;flex-basis:12px}.project-hero-title-row button{font-size:.75rem;padding:7px 8px}.project-hero-title-row button .icon{width:14px;height:14px}.project-info-button{margin-left:auto}}

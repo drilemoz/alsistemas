@@ -1,3 +1,12 @@
+## 2.0.28 — Organização do projeto, diagnóstico claro e permissões por perfil (09/11/2026)
+
+- Projeto: Ficha técnica ao lado do nome, três cartões compactos (Tecnologia, Acesso e Nginx). Removidos Diretório e Domínio principal da visão geral, incluindo o atalho redundante Domínios e estrutura.
+- Manutenção AWS: cabeçalho limpo, botão **Diretório** abre janela com caminho de produção, botão para copiar e aviso de isolamento da instalação de testes.
+- Diagnóstico: removido texto introdutório redundante; cards com ícones para inspeção, estado, arquivos verificados, bloqueios de propriedade e escrita PHP estimada. Detalhes técnicos e limites ficam no botão **i**. Diagnóstico permanece somente leitura.
+- Outros projetos: tela de Permissões no projeto, API autenticada com CSRF e helper de perfis cadastrados em `/etc/alsistemas-vps/project-permissions.json` (0600, root). Somente arquivos explícitos, usuários conhecidos, caminhos canônicos, sem links simbólicos ou diretórios inseguros; permissões originais ficam registradas e podem ser restauradas. Sem perfil, liberação desativada.
+- Mantido o bloqueio atual de proprietário `iguanews-deploy` no fluxo especializado do IguatamaOnline, até que a propriedade seja revisada no servidor. Sem `chmod -R` ou abertura irrestrita de pastas. Não altera código do portal ou instalação de testes.
+- Validar instalação e visual no Android e políticas em EC2 real. Testes locais e validação do pacote documentados.
+
 ## 2.0.27 — ZIP visível e acompanhamento resiliente (09/11/2026)
 
 - Corrigido `ReferenceError` da função `formatBytes()` ausente na escolha de arquivos. Nome, tamanho e validação do ZIP aparecem nos seletores do painel e do IguatamaOnline.
