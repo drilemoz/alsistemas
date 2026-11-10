@@ -320,33 +320,25 @@ async function openExternalProject() {
     if (status && !['complete', 'failed'].includes(status.stage)) startExternalPolling()
   } catch (error) { maintenanceMessage('Falha ao consultar operação: ' + error.message, true) }
 }
-let externalAuthResolve = null
+let externalConfirmResolve = null
 const authDialog = $('external-auth-dialog')
 function closeExternalAuth() { if (authDialog.open) authDialog.close() }
-function requestExternalCredentials(label, description) {
-  if (externalAuthResolve) return Promise.reject(new Error('Já existe uma confirmação aberta.'))
-  $('external-auth-form').reset()
+function requestExternalConfirmation(label, description) {
+  if (externalConfirmResolve) return Promise.reject(new Error('Já existe uma confirmação aberta.'))
   $('external-auth-title').textContent = label
   $('external-auth-description').textContent = description
   authDialog.showModal()
-  $('external-otp').focus()
-  return new Promise(resolve => { externalAuthResolve = resolve })
+  return new Promise(resolve => { externalConfirmResolve = resolve })
 }
 $('external-auth-form').addEventListener('submit', event => {
   event.preventDefault()
-  const otp = $('external-otp').value.trim()
-  if (!/^\d{6}$/.test(otp)) { $('external-otp').setCustomValidity('Informe um código TOTP de 6 dígitos.'); $('external-otp').reportValidity(); return }
-  $('external-otp').setCustomValidity('')
-  const resolve = externalAuthResolve
-  externalAuthResolve = null
-  $('external-auth-form').reset()
+  const resolve = externalConfirmResolve
+  externalConfirmResolve = null
   closeExternalAuth()
-  if (resolve) resolve({ otp })
+  if (resolve) resolve(true)
 })
-$('external-otp').addEventListener('input', () => $('external-otp').setCustomValidity(''))
 authDialog.addEventListener('close', () => {
-  $('external-auth-form').reset()
-  if (externalAuthResolve) { const resolve = externalAuthResolve; externalAuthResolve = null; resolve(null) }
+  if (externalConfirmResolve) { const resolve = externalConfirmResolve; externalConfirmResolve = null; resolve(false) }
 })
 $('external-auth-close').addEventListener('click', closeExternalAuth)
 $('external-auth-cancel').addEventListener('click', closeExternalAuth)
@@ -372,11 +364,10 @@ async function externalCritical(mode) {
       return
     }
   } catch (error) { externalResult('Não foi possível verificar o projeto: ' + error.message, true); return }
-  const credentials = await requestExternalCredentials(label, detail)
-  if (!credentials) return
+  if (!await requestExternalConfirmation(label, detail)) return
   try {
     externalResult('Executando operação administrativa…')
-    const result = await api(externalRoot + '/maintenance', 'POST', { mode, ...credentials, ...(mode === 'restore_code' ? { backup } : {}) })
+    const result = await api(externalRoot + '/maintenance', 'POST', { mode, ...(mode === 'restore_code' ? { backup } : {}) })
     externalResult(result.warning || (mode === 'restore_code' ? 'Código restaurado. Reavalie o portal.' : mode === 'backup_code' ? 'Backup de código salvo no servidor.' : 'Permissões atualizadas.'))
     await reloadExternalInspection()
   } catch (error) { externalResult(error.message, true) }
@@ -384,10 +375,9 @@ async function externalCritical(mode) {
 async function externalGithubUpdate() {
   const repo = $('external-repo').value.trim()
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { externalResult('Informe proprietário/repositório do GitHub.', true); return }
-  const credentials = await requestExternalCredentials('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código?`)
-  if (!credentials) return
+  if (!await requestExternalConfirmation('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código?`)) return
   try {
-    const started = await api(externalRoot + '/update/github', 'POST', { ...credentials, repo })
+    const started = await api(externalRoot + '/update/github', 'POST', { repo })
     maintenanceMessage('Atualização iniciada: ' + started.operationId)
     navigateApp('project/iguatamaonline/aws/progress')
     startExternalPolling()
@@ -398,8 +388,7 @@ async function externalFileUpdate() {
   if (!selected || !selected.name.toLowerCase().endsWith('.zip') || selected.size < 512 || selected.size > 32 * 1024 * 1024) {
     externalResult('Escolha um ZIP válido de 512 B a 32 MiB.', true); return
   }
-  const credentials = await requestExternalCredentials('Atualizar pelo ZIP', `Enviar ${selected.name} e instalar no IguatamaOnline? Será criado backup do código.`)
-  if (!credentials) return
+  if (!await requestExternalConfirmation('Atualizar pelo ZIP', `Enviar ${selected.name} e instalar no IguatamaOnline? Será criado backup do código.`)) return
   const button = $('external-upload')
   button.disabled = true
   externalUploading = true
@@ -412,7 +401,6 @@ async function externalFileUpdate() {
       xhr.withCredentials = true
       xhr.setRequestHeader('Content-Type', 'application/zip')
       xhr.setRequestHeader('X-CSRF-Token', csrf)
-      xhr.setRequestHeader('X-Update-Otp', credentials.otp)
       xhr.upload.onprogress = event => {
         if (!event.lengthComputable) return
         const percent = Math.floor(event.loaded / event.total * 100)
@@ -792,8 +780,7 @@ $('package-form').addEventListener('submit', async e => {
   const submitButton = e.currentTarget.querySelector('button[type=submit]')
   submitButton.disabled = true
   try {
-    const values = Object.fromEntries(new FormData(e.currentTarget))
-    const result = await api('/api/dependencies/install', 'POST', { package: packageToInstall, ...values })
+    const result = await api('/api/dependencies/install', 'POST', { package: packageToInstall })
     $('package-dialog').close()
     await refreshDependencies()
     notice(result.message || 'Solicitação de instalação enviada ao servidor.')
@@ -872,7 +859,7 @@ $('revoke-devices').addEventListener('submit', e => {
   e.preventDefault()
   submit(e.currentTarget, async data => {
     if (!await confirmAction('Revogar o acesso confiável de todos os dispositivos?', 'Revogar todos')) return
-    await api('/api/security/revoke-all', 'POST', data)
+    await api('/api/security/revoke-all', 'POST', {})
     e.target.reset()
     csrf = ''
     shown('login')

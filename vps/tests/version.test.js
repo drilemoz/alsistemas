@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const expected = '2.0.24'
+const expected = '2.0.25'
 
 test('versão consistente nos três componentes e respectivos lockfiles', () => {
   for (const folder of ['vps', 'alsistemas', 'backend']) {
@@ -16,8 +16,8 @@ test('versão consistente nos três componentes e respectivos lockfiles', () => 
       assert.equal(lock.packages[''].version, expected, `${folder}/package-lock.json packages[""]`)
     }
   }
-  assert.match(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'), /^## 2.0.24 —/m)
-  assert.match(fs.readFileSync(path.join(root, 'vps/src/server.js'), 'utf8'), /VERSION = '2.0.24'/)
+  assert.match(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'), /^## 2.0.25 —/m)
+  assert.match(fs.readFileSync(path.join(root, 'vps/src/server.js'), 'utf8'), /VERSION = '2.0.25'/)
 })
 
 

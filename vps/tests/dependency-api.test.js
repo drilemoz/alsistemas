@@ -13,7 +13,7 @@ const password = 'SenhaTestes$22222222222'
 const secret = base32(crypto.randomBytes(20))
 fs.writeFileSync(path.join(dir,'admin.json'), JSON.stringify({passwordHash: hashPassword(password), totpSecret: secret}))
 
-test('API de pacotes exige sessão, CSRF, senha, TOTP e allowlist', async () => {
+test('API de pacotes exige sessão, CSRF e allowlist, sem reautenticação', async () => {
   const received = []
   const server = createServer({taskRunner: async task => {
     received.push(task)
@@ -37,15 +37,12 @@ test('API de pacotes exige sessão, CSRF, senha, TOTP e allowlist', async () => 
     const inv=await call('/api/dependencies','GET',undefined,cookie)
     assert.equal(inv.status,200)
     assert.equal(inv.body.packages.length,8)
-    assert.equal((await call('/api/dependencies/install','POST',{package:'composer',password,otp:totp(secret)},cookie)).status,403)
-    assert.equal((await call('/api/dependencies/install','POST',{package:'curl; rm -rf /',password,otp:totp(secret)},cookie,csrf)).status,400)
-    assert.equal((await call('/api/dependencies/install','POST',{package:'composer',password,otp:totp(secret),cmd:'id'},cookie,csrf)).status,400)
-    assert.equal((await call('/api/dependencies/install','POST',{package:'composer',password:'errada',otp:totp(secret)},cookie,csrf)).status,401)
+    assert.equal((await call('/api/dependencies/install','POST',{package:'composer'},cookie)).status,403)
+    assert.equal((await call('/api/dependencies/install','POST',{package:'curl; rm -rf /'},cookie,csrf)).status,400)
+    assert.equal((await call('/api/dependencies/install','POST',{package:'composer',cmd:'id'},cookie,csrf)).status,400)
+    assert.equal((await call('/api/dependencies/install','POST',{package:'composer',password:'errada'},cookie,csrf)).status,400)
     assert.equal(received.length,0)
-    const admin = JSON.parse(fs.readFileSync(path.join(dir,'admin.json'),'utf8'))
-    admin.lastTotpStep = -1
-    fs.writeFileSync(path.join(dir,'admin.json'),JSON.stringify(admin))
-    const installed=await call('/api/dependencies/install','POST',{package:'php-zip',password,otp:totp(secret)},cookie,csrf)
+    const installed=await call('/api/dependencies/install','POST',{package:'php-zip'},cookie,csrf)
     assert.equal(installed.status,202)
     assert.deepEqual(received,[{action:'install_package',package:'php-zip'}])
     const audit=await call('/api/audit','GET',undefined,cookie)

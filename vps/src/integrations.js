@@ -148,7 +148,7 @@ export async function changeSpaceshipDns(domain, command, options = {}) {
   } else {
     if (existing.length !== 1 || existing[0]?.group?.type !== 'custom' || Number(existing[0].ttl) !== previous.ttl) throw dnsError('Registro foi alterado, não existe ou não é personalizado. Consulte o DNS novamente.', 409)
   }
-  // Exige senha e confirmação via camada HTTP. Este método é invocado somente
+  // Exige sessão autenticada, CSRF e confirmação via camada HTTP. Este método é invocado somente
   // no endpoint autenticado; não aceita requisições diretas do navegador à API.
   const endpoint = `/v1/dns/records/${encodeURIComponent(domain)}`
   const method = action === 'delete' ? 'DELETE' : 'PUT'

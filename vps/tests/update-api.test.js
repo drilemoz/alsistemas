@@ -31,11 +31,10 @@ test('atualização usa sessão, CSRF e repositório, sem senha repetida', async
     const cookie = login.cookies.find(c => c.startsWith('als_session=')).split(';')[0]
     const csrf = login.body.csrf
     assert.equal((await call('/api/updates/apply', 'POST', { password, otp: totp(secret) }, cookie)).code, 403)
-    assert.equal((await call('/api/updates/configure', 'POST', { repo: '../../admin', password, otp: totp(secret) }, cookie, csrf)).code, 400)
+    assert.equal((await call('/api/updates/configure', 'POST', { repo: '../../admin' }, cookie, csrf)).code, 400)
     const info = await call('/api/updates', 'GET', undefined, cookie)
     assert.equal(info.body.signingReady, undefined)
-    const otpNext = totp(secret, Date.now() + 30000)
-    const config = await call('/api/updates/configure', 'POST', { repo: 'owner/repo', password, otp: otpNext }, cookie, csrf)
+    const config = await call('/api/updates/configure', 'POST', { repo: 'owner/repo' }, cookie, csrf)
     assert.equal(config.code, 200)
     assert.equal((await call('/api/updates/apply', 'POST', { password }, cookie, csrf)).code, 400)
     assert.equal((await call('/api/updates/apply', 'POST', {}, undefined, csrf)).code, 401)

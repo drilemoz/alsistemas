@@ -29,7 +29,7 @@ test('falha do executor restrito aparece como 422 com o motivo real, não como "
     const login = await call('/api/login', 'POST', { password, otp: totp(secret) })
     const cookie = login.cookies.find(c => c.startsWith('als_session=')).split(';')[0]
     const csrf = login.body.csrf
-    const config = await call('/api/updates/configure', 'POST', { repo: 'owner/repo', password, otp: totp(secret, Date.now() + 30000) }, cookie, csrf)
+    const config = await call('/api/updates/configure', 'POST', { repo: 'owner/repo' }, cookie, csrf)
     assert.equal(config.code, 200)
     const apply = await call('/api/updates/apply', 'POST', {}, cookie, csrf)
     assert.equal(apply.code, 422)

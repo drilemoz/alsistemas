@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.24'
+const VERSION = '2.0.25'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -248,10 +248,8 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/security/revoke-all' && req.method === 'POST') {
         if (!limit(ip, 'security', 8)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
-        const admin = readJson('admin.json')
-        const step = admin ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1)) return fail(res, 401, 'Confirmação com senha e TOTP necessária')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
+        if (Object.keys(input).length !== 0) return fail(res, 400, 'Parâmetros inesperados')
+        // A sessão autenticada + origem + CSRF autorizam a revogação.
         revokeAllDevices()
         sessions.clear() // Revogação geral invalida também sessões em memória.
         const secure = origin.startsWith('https://') ? '; Secure' : ''
@@ -288,13 +286,8 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/integrations/spaceship/dns/change' && req.method === 'POST') {
         if (!limit(ip, 'integrations_dns_write', 8)) return fail(res, 429, 'Muitas operações DNS. Tente novamente mais tarde.')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'command,domain,password' ||
-            typeof input.password !== 'string' || input.password.length > 256) return fail(res, 400, 'Parâmetros inválidos')
-        const admin = readJson('admin.json')
-        if (!admin || !verifyPassword(input.password, admin.passwordHash)) {
-          audit('dns_write_denied', { ip, success: false })
-          return fail(res, 401, 'Senha administrativa incorreta')
-        }
+        if (Object.keys(input).sort().join(',') !== 'command,domain') return fail(res, 400, 'Parâmetros inválidos')
+        // Edição de DNS requer sessão válida, mesma origem e CSRF, sem senha repetida.
         try {
           const result = await changeSpaceshipDns(input.domain, input.command)
           audit('dns_write_accepted', { ip, provider: 'spaceship', action: result.action, domain: result.domain, type: result.type, name: result.name, success: true })
@@ -314,11 +307,7 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/updates/configure' && req.method === 'POST') {
         if (!limit(ip, 'update-configure', 8)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'otp,password,repo' || !validateRepo(input.repo)) return fail(res, 400, 'Repositório inválido')
-        const admin = readJson('admin.json')
-        const step = admin ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1)) return fail(res, 401, 'Senha e TOTP atual obrigatórios')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
+        if (Object.keys(input).sort().join(',') !== 'repo' || !validateRepo(input.repo)) return fail(res, 400, 'Repositório inválido')
         configureRepo(input.repo)
         audit('update_repo_configured', { ip })
         return json(res, 200, updateInfo(VERSION))
@@ -368,11 +357,7 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/dependencies/install' && req.method === 'POST') {
         if (!limit(ip, 'dependency-install', 6)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'otp,package,password' || !validPackageId(input.package)) return fail(res, 400, 'Pacote ou parâmetros não autorizados')
-        const admin = readJson('admin.json')
-        const step = admin ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || !verifyPassword(input.password, admin.passwordHash) || step === null || step <= (admin.lastTotpStep ?? -1)) return fail(res, 401, 'Senha e TOTP novo obrigatórios')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
+        if (Object.keys(input).sort().join(',') !== 'package' || !validPackageId(input.package)) return fail(res, 400, 'Pacote ou parâmetros não autorizados')
         try {
           const result = await taskRunner({ action: 'install_package', package: input.package })
           audit('package_install_requested', { ip, package: input.package })
@@ -402,14 +387,9 @@ export function createServer({ taskRunner = runTask } = {}) {
         if (!limit(ip, 'external-repair', 8)) return fail(res, 429, 'Muitas solicitações de manutenção')
         const input = await body(req)
         if (!['allow', 'restore', 'restore_code', 'backup_code'].includes(input.mode) ||
-            Object.keys(input).sort().join(',') !== (input.mode === 'restore_code' ? 'backup,mode,otp' : 'mode,otp') ||
+            Object.keys(input).sort().join(',') !== (input.mode === 'restore_code' ? 'backup,mode' : 'mode') ||
             (input.mode === 'restore_code' && (typeof input.backup !== 'string' || !/^code-\d{8}T\d{6}Z-[0-9a-f]{8}$/.test(input.backup))))
           return fail(res, 400, 'Parâmetros de manutenção inválidos')
-        const admin = readJson('admin.json')
-        const step = admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Novo código TOTP obrigatório')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
         const task = input.mode === 'restore_code'
           ? { action: 'restore_project_code', name: 'iguatamaonline', backup: input.backup }
           : input.mode === 'backup_code'
@@ -428,13 +408,8 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (path === '/api/projects/iguatamaonline/update/github' && req.method === 'POST') {
         if (!limit(ip, 'external-github', 5)) return fail(res, 429, 'Limite de atualizações excedido')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'otp,repo' || !validateRepo(input.repo))
+        if (Object.keys(input).sort().join(',') !== 'repo' || !validateRepo(input.repo))
           return fail(res, 400, 'Repositório ou parâmetros inválidos')
-        const admin = readJson('admin.json')
-        const step = admin && typeof input.otp === 'string' ? matchingTotpStep(admin.totpSecret, input.otp) : null
-        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Novo código TOTP obrigatório')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
         try {
           const result = await taskRunner({ action: 'start_project_update', name: 'iguatamaonline', mode: 'github', repo: input.repo })
           audit('task_requested', { ip, action: 'start_project_update', name: 'iguatamaonline' })
@@ -443,12 +418,7 @@ export function createServer({ taskRunner = runTask } = {}) {
       }
       if (path === '/api/projects/iguatamaonline/update/upload' && req.method === 'POST') {
         if (!limit(ip, 'external-upload', 5)) return fail(res, 429, 'Limite de uploads excedido')
-        const otp = req.headers['x-update-otp']
-        const admin = readJson('admin.json')
-        const step = admin && typeof otp === 'string' ? matchingTotpStep(admin.totpSecret, otp) : null
-        if (!admin || step === null || step <= (admin.lastTotpStep ?? -1))
-          return fail(res, 401, 'Novo código TOTP obrigatório')
-        writeJson('admin.json', { ...admin, lastTotpStep: step })
+        // Upload também depende da sessão, origem e CSRF verificados acima.
         let saved
         try {
           saved = await uploadZip(req)

@@ -308,7 +308,7 @@ $('spaceship-confirm-form').addEventListener('submit', async event => {
   const button = $('spaceship-confirm-apply')
   button.disabled = true
   try {
-    const payload = { ...spaceshipDnsPending, password: form.elements.password.value }
+    const payload = { ...spaceshipDnsPending }
     const result = await api('/api/integrations/spaceship/dns/change', 'POST', payload)
     closeIntegrationDialog('spaceship-confirm-dialog')
     closeIntegrationDialog('spaceship-change-dialog')
@@ -318,5 +318,5 @@ $('spaceship-confirm-form').addEventListener('submit', async event => {
     // Consulta novamente o estado real, sem pressupor propagação imediata.
     $('spaceship-dns-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   } catch (error) { $('spaceship-query-status').textContent = `Alteração não confirmada: ${error.message}. Consulte antes de repetir.`; notice(error.message, true) }
-  finally { button.disabled = false; form.elements.password.value = '' }
+  finally { button.disabled = false }
 })

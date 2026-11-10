@@ -52,14 +52,14 @@ test('setup TOTP, autenticação, sessão e CSRF', async () => {
     assert.equal(r.res.status, 403)
     r = await call('/api/projects', 'GET', undefined, cookie)
     assert.equal(r.res.status, 200)
-    // 2.0.16: mudança DNS requer sessão, origem, CSRF e senha confirmada.
-    const dnsPayload = { domain:'example.com', password:'incorreta', command:{action:'create',record:{type:'A',name:'teste',value:'192.0.2.5',ttl:1800}} }
+    // 2.0.25: mudança DNS requer sessão, origem e CSRF, sem senha repetida.
+    const dnsPayload = { domain:'example.com', command:{action:'create',record:{type:'A',name:'teste',value:'192.0.2.5',ttl:1800}} }
     r = await call('/api/integrations/spaceship/dns/change', 'POST', dnsPayload, cookie)
     assert.equal(r.res.status, 403)
     r = await call('/api/integrations/spaceship/dns/change', 'POST', dnsPayload, undefined, csrf)
     assert.equal(r.res.status, 401)
     r = await call('/api/integrations/spaceship/dns/change', 'POST', dnsPayload, cookie, csrf)
-    assert.equal(r.res.status, 401)
+    assert.notEqual(r.res.status, 401, 'sessão já autorizou a requisição; provedor pode estar indisponível')
     r = await call('/api/logout', 'POST', {}, cookie, csrf)
     assert.equal(r.res.status, 200)
     r = await call('/api/session', 'GET', undefined, cookie)

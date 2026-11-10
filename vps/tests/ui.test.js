@@ -34,10 +34,10 @@ test('tutorial é idêntico no ZIP e webroot e tem índice navegável', () => {
   assert.match(rootDoc, /id="indice"/)
 })
 
-test('manutenção externa solicita somente TOTP e nunca transmite a senha de login', () => {
+test('manutenção externa não solicita senha ou TOTP após o login', () => {
   const dialog = html.slice(html.indexOf('id="external-auth-dialog"'), html.indexOf('id="project-dialog"'))
   assert.doesNotMatch(dialog, /external-password|Senha do AL Sistemas/)
-  assert.match(dialog, /id="external-otp"/)
-  assert.doesNotMatch(js, /external-password|X-Update-Password/)
-  assert.match(js, /resolve\(\{ otp \}\)/)
+  assert.doesNotMatch(dialog, /id="external-otp"|name="password"/)
+  assert.doesNotMatch(js, /external-password|X-Update-Password|X-Update-Otp/)
+  assert.match(js, /resolve\(true\)/)
 })

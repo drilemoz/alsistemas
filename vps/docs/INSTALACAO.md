@@ -98,7 +98,7 @@ As versões de código só devem avançar sequencialmente. O código legado (`ba
 ## O que esta versão ainda não faz
 
 - Criar/alterar bancos e usuários MariaDB pela interface.
-- Implantar projetos Node.js, editor de arquivos, restaurar backups completos de projetos e bancos, SSL por site ou migração assistida. A atualização do núcleo via GitHub exige Release pública com ZIP e manifesto SHA-256, além da senha administrativa no painel.
+- Implantar projetos Node.js, editor de arquivos, restaurar backups completos de projetos e bancos, SSL por site ou migração assistida. A atualização do núcleo via GitHub exige Release pública com ZIP e manifesto SHA-256. Desde a versão 2.0.25, a sessão já autenticada autoriza a instalação sem pedir senha ou TOTP novamente.
 - Migrar automaticamente o backend legado MongoDB/Cloudinary para SQLite.
 - Gerenciar usuários Linux por projeto, PHP-FPM pools isolados, backups externos ou rollback automático total de sistema.
 

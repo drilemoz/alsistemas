@@ -1,3 +1,10 @@
+## 2.0.25 — Uma autenticação por sessão (09/11/2026)
+
+- Após entrar com senha e TOTP, o painel VPS não exige novamente esses dados para mudanças de DNS, configuração de repositório, instalações de dependências, revogação de dispositivos, manutenção e atualizações do IguatamaOnline.
+- Removidos campos e cabeçalhos de reautenticação da interface e validações repetidas dos endpoints. Permanecem sessão obrigatória, verificação de origem, CSRF, validações de entrada, limites de solicitação, auditoria e confirmações simples para ações sensíveis.
+- Mantidos senha e TOTP da configuração inicial/login, e a frase secreta independente necessária para criptografar backups. Proteções de caminhos e propriedade do projeto continuam ativas.
+- Atualizados testes de autorização e fluxos no frontend, com versionamento sincronizado.
+
 ## 2.0.24 — Confirmação simplificada e diagnóstico de propriedade (09/11/2026)
 
 - A manutenção do IguatamaOnline (liberar/restaurar permissões, backup e restauração de código, atualização pelo GitHub/ZIP) não solicita mais a senha administrativa uma segunda vez. Continua exigindo login válido, CSRF, limite de solicitações e TOTP novo com prevenção de reutilização.

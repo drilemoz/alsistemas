@@ -45,15 +45,15 @@ test('rotas de manutenção da AWS não apontam para outros projetos externos', 
   }
 })
 
-test('somente TOTP no diálogo de ação crítica, sem senha repetida', () => {
+test('diálogo de ação crítica confirma sem campos de credenciais', () => {
   const dialogStart = html.indexOf('<dialog id="external-auth-dialog"')
   const dialogEnd = html.indexOf('</dialog>', dialogStart)
   assert.ok(dialogStart >= 0 && dialogEnd > dialogStart)
   assert.equal(html.includes('id="external-password"'), false)
-  assert.ok(html.indexOf('id="external-otp"') > dialogStart && html.indexOf('id="external-otp"') < dialogEnd)
-  assert.match(app, /requestExternalCredentials\('Atualizar pelo GitHub'/)
-  assert.match(app, /requestExternalCredentials\('Atualizar pelo ZIP'/)
-  assert.match(app, /requestExternalCredentials\(label, detail\)/)
+  assert.ok(!html.slice(dialogStart, dialogEnd).includes('id="external-otp"'))
+  assert.match(app, /requestExternalConfirmation\('Atualizar pelo GitHub'/)
+  assert.match(app, /requestExternalConfirmation\('Atualizar pelo ZIP'/)
+  assert.match(app, /requestExternalConfirmation\(label, detail\)/)
   assert.match(app, /window\.addEventListener\('popstate'/)
   assert.match(app, /history\.pushState/)
   assert.match(app, /function loadExternalReport\(/)
