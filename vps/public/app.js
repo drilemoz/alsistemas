@@ -439,13 +439,19 @@ async function reloadExternalInspection() {
     }
     if (files.length === 0) area.append(node('p', 'Nenhum arquivo retornado pelo diagnóstico.', 'muted'))
     const select = $('external-backups')
+    const previousBackup = select.value
     select.replaceChildren(new Option('Escolha um backup', ''))
     for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}`, item.id))
+    if ([...select.options].some(item => item.value === previousBackup)) select.value = previousBackup
+    $('external-restore-code').disabled = !select.value
   } catch (error) { area.replaceChildren(diagnosticCard('alert', 'Não foi possível verificar', error.message, 'diagnostic-warning')) }
 }
 function stopExternalPolling() {
   if (externalPoll) clearInterval(externalPoll)
   externalPoll = null
+}
+function projectUpdateStageLabel(stage) {
+  return ({ queued: 'Na fila', checking: 'Verificando', downloading: 'Baixando', validating: 'Validando', backup: 'Criando backup', installing: 'Instalando', verifying: 'Verificando instalação', rolling_back: 'Revertendo', complete: 'Concluída', failed: 'Falhou' })[stage] || ('Etapa: ' + (stage || 'desconhecida'))
 }
 async function checkExternalStatus() {
   try {
@@ -455,7 +461,8 @@ async function checkExternalStatus() {
     if (externalUploading) return
     maintenanceMessage(`${state.stage}: ${state.message || ''}`, state.stage === 'failed')
     $('external-project-status').textContent = 'Última atualização: ' + state.stage + ' · ' + (state.message || '')
-    $('external-update-summary').textContent = 'Estado: ' + state.stage + ' · ' + (state.message || '')
+    $('external-update-summary').textContent = projectUpdateStageLabel(state.stage) + (state.message ? ' · ' + state.message : '')
+    $('external-update-summary').className = 'small project-update-state ' + (state.stage === 'failed' ? 'bad' : state.stage === 'complete' ? 'good' : 'muted')
     $('external-progress-step').textContent = state.stage === 'failed' ? 'A atualização falhou. Consulte Histórico e relatórios.' : state.stage === 'complete' ? 'Atualização concluída.' : 'Etapa atual: ' + state.stage
     const bar = $('external-progress')
     if (typeof state.percent === 'number' && Number.isFinite(state.percent)) {
@@ -598,7 +605,8 @@ async function externalFileUpdate() {
 }
 $('external-inspect').addEventListener('click', reloadExternalInspection)
 $('external-allow').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
-$('external-restore-permissions').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
+$('external-backups').addEventListener('change', () => { $('external-restore-code').disabled = !$('external-backups').value })
+$('external-restore-code').disabled = true
 $('external-restore-code').addEventListener('click', () => externalCritical('restore_code'))
 $('external-backup-code').addEventListener('click', () => externalCritical('backup_code'))
 $('external-github').addEventListener('click', externalGithubUpdate)
@@ -606,7 +614,6 @@ $('external-upload').addEventListener('click', externalFileUpdate)
 $('external-reload').addEventListener('click', () => window.location.reload())
 $('external-check-progress').addEventListener('click', () => void checkExternalStatus())
 $('external-refresh-version').addEventListener('click', () => void reloadExternalInspection())
-$('external-preview-permissions').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
 $('external-refresh-logs').addEventListener('click', () => void loadExternalReport())
 $('external-copy-report').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('external-report-text').textContent); notice('Relatório copiado.') }
@@ -619,18 +626,65 @@ $('external-download-report').addEventListener('click', () => {
   link.href = url; link.download = 'IguatamaOnline-relatorio-' + new Date().toISOString().slice(0,10) + '.txt'
   document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 })
+// O histórico visível usa elementos de texto, sem injetar JSON como HTML.
+function renderProjectAuditEvent(event) {
+  const failed = /failed|rejected/.test(event.event || '')
+  const done = /success|complete/.test(event.event || '')
+  const requested = /requested/.test(event.event || '')
+  const names = {
+    task_requested: 'Operação solicitada', task_success: 'Operação concluída', task_failed: 'Operação falhou',
+    project_permissions: 'Permissões solicitadas', project_permissions_failed: 'Falha nas permissões',
+    update_requested: 'Atualização solicitada', update_failed: 'Falha na atualização'
+  }
+  const title = names[event.event] || (failed ? 'Falha administrativa' : requested ? 'Operação iniciada' : done ? 'Operação concluída' : 'Evento administrativo')
+  const item = node('article', '', 'project-log-event ' + (failed ? 'event-failed' : done ? 'event-success' : 'event-neutral'))
+  const glyph = node('span', '', 'project-feature-icon ' + (failed ? 'tone-alert' : done ? 'tone-good' : ''))
+  glyph.append(iconGraphic(failed ? 'alert' : done ? 'success' : 'clock'))
+  const body = node('div', '', 'project-log-event-body')
+  const heading = node('div', '', 'project-log-event-heading')
+  heading.append(node('strong', title))
+  const timestamp = new Date(event.time)
+  const when = Number.isNaN(timestamp.getTime()) ? 'Horário indisponível' : timestamp.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  heading.append(node('span', when, 'small muted'))
+  body.append(heading)
+  const actionNames = { project_permissions: 'Permissões', other_project_permissions: 'Permissões', backup_external_code: 'Backup', restore_project_code: 'Restauração', start_project_update: 'Atualização' }
+  const name = actionNames[event.action] || ((typeof event.action === 'string' && event.action) ? event.action.replaceAll('_', ' ') : '')
+  const detail = typeof event.reason === 'string' && event.reason ? event.reason :
+    event.mode === 'allow' ? 'Liberação temporária' : event.mode === 'restore' ? 'Restauração das permissões' : name
+  if (detail) body.append(node('p', detail, 'small muted'))
+  item.append(glyph, body)
+  return item
+}
 async function loadExternalReport() {
-  const out = $('external-report-text')
-  out.textContent = 'Consultando…'
+  const raw = $('external-report-text')
+  const current = $('external-log-current')
+  const eventsArea = $('external-log-events')
+  raw.textContent = 'Consultando…'
+  current.replaceChildren(node('p', 'Consultando última atualização…', 'small muted'))
+  eventsArea.replaceChildren(node('p', 'Carregando eventos…', 'small muted'))
   try {
     const [status, auditData] = await Promise.all([api(externalRoot + '/update/status'), api('/api/audit')])
     const s = status.status
-    const events = (auditData.events || []).filter(ev => ev.name === 'iguatamaonline' || (typeof ev.action === 'string' && /project_update|project_permissions|restore_project_code|backup_external_code/.test(ev.action)))
+    const events = (auditData.events || []).filter(ev => ev.name === 'iguatamaonline' || (typeof ev.action === 'string' && /project_update|project_permissions|restore_project_code|backup_external_code|start_project_update/.test(ev.action)))
+    current.replaceChildren()
+    const statusGlyph = node('span', '', 'project-feature-icon ' + (s?.stage === 'failed' ? 'tone-alert' : s?.stage === 'complete' ? 'tone-good' : ''))
+    statusGlyph.append(iconGraphic(s?.stage === 'failed' ? 'alert' : s?.stage === 'complete' ? 'success' : 'activity'))
+    const statusText = node('div', '', 'project-log-current-text')
+    statusText.append(node('span', 'Última atualização', 'small muted'), node('strong', s ? projectUpdateStageLabel(s.stage) : 'Nenhuma atualização registrada'))
+    if (s?.message) statusText.append(node('span', s.message, 'small muted'))
+    current.append(statusGlyph, statusText)
+    eventsArea.replaceChildren()
+    if (!events.length) eventsArea.append(node('p', 'Nenhum evento administrativo encontrado no histórico disponível.', 'small muted'))
+    for (const ev of events.slice(0, 30)) eventsArea.append(renderProjectAuditEvent(ev))
     const lines = ['AL Sistemas · IguatamaOnline', 'Relatório consultado: ' + new Date().toLocaleString('pt-BR'), '', 'Última atualização:', s ? JSON.stringify(s, null, 2) : 'Nenhuma atualização registrada.', '', ...(externalLastError ? ['Último erro observado na interface:', externalLastError, ''] : []), 'Eventos administrativos recentes:']
     if (!events.length) lines.push('Nenhum evento relacionado ao projeto encontrado no histórico disponível.')
     for (const ev of events.slice(0, 30)) lines.push(JSON.stringify(ev))
-    out.textContent = lines.join('\n')
-  } catch (error) { out.textContent = 'Falha ao consultar o relatório: ' + error.message }
+    raw.textContent = lines.join('\n')
+  } catch (error) {
+    current.replaceChildren()
+    eventsArea.replaceChildren(diagnosticCard('alert', 'Consulta indisponível', error.message, 'diagnostic-warning'))
+    raw.textContent = 'Falha ao consultar o relatório: ' + error.message
+  }
 }
 
 async function refresh() {
@@ -757,6 +811,10 @@ for (const button of document.querySelectorAll('[data-theme-choice]')) {
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close())
 }
+for (const button of document.querySelectorAll('[data-project-help]')) {
+  button.addEventListener('click', () => $(button.dataset.projectHelp).showModal())
+}
+$('external-open-technical-report').addEventListener('click', () => $('external-technical-report-dialog').showModal())
 // Nomes de arquivo não são caminhos: são dados visuais fornecidos pelo navegador.
 function formatBytes(size) {
   if (!Number.isFinite(size) || size < 0) return 'tamanho desconhecido'

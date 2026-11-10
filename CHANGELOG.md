@@ -1,3 +1,11 @@
+## 2.0.30 — Redesign de manutenção AWS: permissões, atualizações, backups e histórico (09/11/2026)
+
+- **Permissões:** tela reduzida a um único acesso ao gerenciador de arquivos, sem três atalhos repetidos para a mesma tela. Orientações técnicas deslocadas para modal de informações. As operações de seleção, liberação e restauração existentes em 2.0.29 continuam disponíveis.
+- **Atualizações:** versão com ícone, escolha ZIP e GitHub em cartões consistentes, andamento com etapas traduzidas e acesso preservado à tela detalhada. Ajuda contextual em pop-up; limites de pacote, backup e exclusões ficam no pop-up.
+- **Backups:** criação e restauração diferenciadas por ícones/cores, opção de restauração desabilitada sem seleção válida; escolha mantida ao atualizar diagnóstico quando ainda existe. Explicações sobre cobertura e snapshots passam ao pop-up de ajuda.
+- **Histórico:** eventos antes mostrados em JSON bruto passam a uma linha do tempo com horário, operação, sucesso/falha e motivo quando disponível; exportação e cópia do relatório bruto permanecem no diálogo técnico. Sem inventar atualizações não registradas.
+- Mantidos backend de segurança, validações de caminho, sessões, CSRF, fluxo de backup, de ZIP, GitHub, permissões do painel, e proteção da instalação de testes. A VPS não foi alterada; testes locais não substituem validação real no Android/EC2.
+
 ## 2.0.29 — Gerenciamento de arquivos e permissões pelo próprio painel (09/11/2026)
 
 - Permissões do projeto: o painel agora descobre arquivos elegíveis, mostra dono/modo e usuário PHP, permite selecionar até 12 arquivos e salvar configuração por sessão autenticada/CSRF, sem cadastro JSON por SSH.

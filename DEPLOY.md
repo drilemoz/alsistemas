@@ -1,3 +1,7 @@
+## Atualização 2.0.30
+
+Aplicar somente depois de verificar o ZIP, ter backup e confirmar acesso de recuperação. Usa o atualizador normal do AL Sistemas. As mudanças desta versão são no frontend da manutenção AWS; não alteram serviços ou permissões da EC2 até a instalação. O gerenciador de permissões da 2.0.29 permanece no backend. Para validar, entre em Projetos → IguatamaOnline → Manutenção na AWS e verifique os quatro pop-ups ⓘ e o histórico legível.
+
 > **Núcleo VPS 2.0.29:** use o instalador da nova versão. O cadastro de arquivos e permissões agora é feito diretamente pelo painel. Consulte `vps/docs/ATUALIZACAO-2.0.29.md`.
 
 > **Núcleo VPS 2.0.28:** leia `tutorial-instalacao.html` e `vps/docs/ATUALIZACAO-2.0.28.md`. Este DEPLOY contém orientações do legado; não use como substituto do instalador VPS.
