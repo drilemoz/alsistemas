@@ -1,3 +1,5 @@
+> **Núcleo VPS 2.0.29:** use o instalador da nova versão. O cadastro de arquivos e permissões agora é feito diretamente pelo painel. Consulte `vps/docs/ATUALIZACAO-2.0.29.md`.
+
 > **Núcleo VPS 2.0.28:** leia `tutorial-instalacao.html` e `vps/docs/ATUALIZACAO-2.0.28.md`. Este DEPLOY contém orientações do legado; não use como substituto do instalador VPS.
 
 # 🚀 Deploy legado — Render (Backend) + Vercel (Frontend)

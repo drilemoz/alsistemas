@@ -1,11 +1,12 @@
-"""Permissões temporárias por projeto, com allowlist root-owned.
+"""Permissões por projeto com perfis criados pelo painel via helper root.
 
-A requisição HTTP fornece apenas nome/mode. Nunca recebe caminhos, UID, GID,
-usuário PHP nem arquivos do navegador. Perfis são cadastrados fora do processo web.
+O navegador seleciona apenas arquivos previamente descobertos, dentro do projeto.
+O helper confere proprietários, inodes, grupo PHP e segurança das pastas.
 """
 import json
 import os
 import pwd
+import tempfile
 import re
 import stat
 from pathlib import Path, PurePosixPath
@@ -14,7 +15,7 @@ POLICY_FILE = Path('/etc/alsistemas-vps/project-permissions.json')
 PROJECTS_ROOT = Path('/var/www/projetos')
 BACKUP_ROOT = Path('/var/backups/alsistemas-vps')
 NAME_RE = re.compile(r'^[a-z][a-z0-9-]{1,39}$')
-RESERVED = {'iguatamaonline', 'iguatama-teste', 'alsistemas'}
+RESERVED = {'iguatama-teste', 'alsistemas'}
 DENY_SEGMENTS = {'storage', 'node_modules', 'vendor', 'cache', 'backups', 'private', 'secrets', 'database'}
 DENY_NAME = re.compile(r'(?i)(?:^\.|\.env|\.(?:pem|key|p12|pfx|db|sqlite|sql|bak|zip|tar|gz|crt)$|(?:secret|credential|password|private[-_]?key))')
 
@@ -132,14 +133,166 @@ def _apply_permissions(target, expected_inode, uid, gid, mode):
         os.close(fd)
 
 
+
+# Descoberta de arquivos usa somente caminhos relativos dentro da árvore canônica.
+# Não exibe segredos, links simbólicos, diretórios de upload ou arquivos globais.
+ALLOWED_EXTENSIONS = {'.php', '.html', '.htm', '.css', '.js', '.json', '.txt'}
+
+
+def _checked_directory(name, root_base=PROJECTS_ROOT, *, require_root=True):
+    project_name(name)
+    project = root_base / name
+    try:
+        parent_st, st = root_base.lstat(), project.lstat()
+        owner = pwd.getpwuid(st.st_uid)
+    except (OSError, KeyError):
+        raise ProfileError('Projeto ou proprietário não encontrado.')
+    if (not stat.S_ISDIR(parent_st.st_mode) or not stat.S_ISDIR(st.st_mode)
+            or parent_st.st_mode & 0o022 or st.st_mode & 0o022
+            or project.resolve(strict=True) != project or root_base.resolve(strict=True) != root_base
+            or (require_root and parent_st.st_uid != 0)):
+        raise ProfileError('Pasta insegura, simbólica ou fora da raiz autorizada.')
+    # O dono do projeto pode ser usuário de implantação, como iguanews-deploy.
+    # Nunca confiar em um projeto controlado por um processo PHP ativo.
+    if st.st_uid in set(_php_user_ids(require_root=require_root)):
+        raise ProfileError('O dono do projeto é usuário PHP; alteração privilegiada recusada.')
+    return project, st.st_uid, owner.pw_name
+
+
+def _php_user_ids(*, require_root=True):
+    return [pwd.getpwnam(item).pw_uid for item in _php_accounts(require_root=require_root)]
+
+
+def _php_accounts(*, require_root=True):
+    found = set()
+    pools = Path('/etc/php')
+    # Não executa arquivos de configuração PHP. Apenas lê nomes de usuário em pools locais.
+    for cfg in sorted(pools.glob('*/fpm/pool.d/*.conf'))[:80]:
+        try:
+            st = cfg.lstat()
+            if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o022 or (require_root and st.st_uid != 0):
+                continue
+            value = cfg.read_text(encoding='utf-8')[:131072]
+            match = re.search(r'(?m)^\s*user\s*=\s*([a-z_][a-z0-9_-]{0,31})\s*(?:[;#].*)?$', value)
+            if match:
+                account = pwd.getpwnam(match.group(1))
+                if account.pw_uid != 0: found.add(account.pw_name)
+        except (OSError, KeyError, UnicodeError):
+            continue
+    # Conta padrão presente no sistema, mas a identidade do pool real depende do Nginx.
+    try:
+        account = pwd.getpwnam('www-data')
+        if account.pw_uid: found.add(account.pw_name)
+    except KeyError:
+        pass
+    return sorted(found)
+
+
+def _valid_relative_path(rel):
+    if not isinstance(rel, str) or not rel or len(rel) > 180 or rel.startswith('/') or '\\' in rel or '\x00' in rel or '//' in rel:
+        return False
+    parts = rel.split('/')
+    return (all(part and part not in ('.', '..') and part.lower() not in DENY_SEGMENTS
+                and not DENY_NAME.search(part) for part in parts)
+            and (rel == 'VERSION' or Path(rel).suffix.lower() in ALLOWED_EXTENSIONS))
+
+
+def discover_files(name, *, root_base=PROJECTS_ROOT, require_root=True):
+    project, owner_id, owner = _checked_directory(name, root_base, require_root=require_root)
+    items, dirs = [], [(project, '', 0)]
+    examined = 0
+    while dirs and len(items) < 120 and examined < 1000:
+        folder, prefix, depth = dirs.pop(0)
+        with os.scandir(folder) as scanner:
+            entries = sorted(scanner, key=lambda e: e.name)
+        for entry in entries:
+            examined += 1
+            if examined > 1000: break
+            rel = prefix + entry.name
+            if not _valid_relative_path(rel) and (entry.name.startswith('.') or entry.name.lower() in DENY_SEGMENTS or DENY_NAME.search(entry.name)):
+                continue
+            try:
+                st = entry.stat(follow_symlinks=False)
+                if stat.S_ISDIR(st.st_mode) and depth < 4:
+                    if st.st_uid in (0, owner_id) and not st.st_mode & 0o022 and entry.name not in ('.', '..'):
+                        dirs.append((Path(entry.path), rel + '/', depth + 1))
+                elif (stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and st.st_uid in (0, owner_id)
+                      and not st.st_mode & 0o002 and _valid_relative_path(rel)):
+                    items.append({'path': rel, 'owner': pwd.getpwuid(st.st_uid).pw_name,
+                                  'mode': format(stat.S_IMODE(st.st_mode), '03o')})
+            except (OSError, KeyError):
+                continue
+            if len(items) >= 120: break
+    return {'ok': True, 'name': name, 'owner': owner, 'phpUsers': _php_accounts(require_root=require_root),
+            'files': items, 'limited': examined >= 1000 or len(items) >= 120,
+            'warning': 'Usuário PHP é uma seleção baseada nos pools detectados. Confirme o pool do domínio antes da liberação.'}
+
+
+def configure_profile(name, php_user, files, *, policy_file=POLICY_FILE,
+                      root_base=PROJECTS_ROOT, backup_base=BACKUP_ROOT, require_root=True):
+    project, owner_id, owner = _checked_directory(name, root_base, require_root=require_root)
+    if not isinstance(php_user, str) or php_user not in _php_accounts(require_root=require_root):
+        raise ProfileError('Escolha um usuário PHP-FPM listado pelo servidor.')
+    if not isinstance(files, list) or not 1 <= len(files) <= 12 or any(not _valid_relative_path(rel) for rel in files) or len(set(files)) != len(files):
+        raise ProfileError('Selecione entre 1 e 12 arquivos elegíveis, sem duplicatas.')
+    php = pwd.getpwnam(php_user)
+    if php.pw_uid == owner_id or php.pw_uid == 0:
+        raise ProfileError('O usuário PHP não pode ser o proprietário da pasta nem root.')
+    # Catalogar novamente, nunca confiar em caminhos apresentados pelo navegador.
+    catalog = discover_files(name, root_base=root_base, require_root=require_root)
+    eligible = {x['path'] for x in catalog['files']}
+    if not set(files).issubset(eligible):
+        raise ProfileError('Um ou mais arquivos não pertencem à lista segura da vistoria atual.')
+    profile = {'owner': owner, 'phpUser': php_user, 'files': sorted(files)}
+    _files(project, profile, owner_id, php)
+    # Não permitir redefinição enquanto houver permissão temporária ativa.
+    # Consultar sem criar pastas de backup em uma ação de configuração.
+    saved = backup_base / name / 'permissions-original.json'
+    if saved.exists() or saved.is_symlink():
+        raise ProfileError('Restaure as permissões temporárias antes de alterar a configuração.')
+    if policy_file.exists():
+        load_profile(name, policy_file, require_root=require_root)  # valida ACLs do arquivo existente
+        try: data = json.loads(policy_file.read_text(encoding='utf-8'))
+        except (OSError, ValueError): raise ProfileError('Política existente inválida.')
+    else:
+        data = {'projects': {}}
+        parent = policy_file.parent
+        st = parent.lstat()
+        if (not stat.S_ISDIR(st.st_mode) or st.st_mode & 0o022
+                or (require_root and st.st_uid != 0)):
+            raise ProfileError('A pasta da política não é confiável.')
+    if not isinstance(data, dict) or set(data) != {'projects'} or not isinstance(data['projects'], dict) or len(data['projects']) > 100:
+        raise ProfileError('Política inválida ou excessivamente grande.')
+    data['projects'][name] = profile
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(prefix='.permission-policy-', dir=policy_file.parent)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            os.fchmod(f.fileno(), 0o600)
+            payload = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+            if len(payload.encode('utf-8')) > 65536: raise ProfileError('Política excede 64 KiB.')
+            f.write(payload)
+            f.flush(); os.fsync(f.fileno())
+        os.replace(temp_path, policy_file)
+        temp_path = None
+        directory_fd = os.open(policy_file.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try: os.fsync(directory_fd)
+        finally: os.close(directory_fd)
+    finally:
+        if temp_path: os.unlink(temp_path)
+    return {'ok': True, 'configured': True, 'name': name, 'owner': owner,
+            'phpUser': php_user, 'files': profile['files'], 'active': False}
+
 def handle_permissions(name, mode, *, policy_file=POLICY_FILE, root_base=PROJECTS_ROOT,
                        backup_base=BACKUP_ROOT, require_root=True):
     project_name(name)
+    if mode == 'discover':
+        return discover_files(name, root_base=root_base, require_root=require_root)
     if mode not in ('inspect', 'allow', 'restore'):
         raise ProfileError('Operação de permissão inválida.')
     profile = load_profile(name, policy_file, require_root=require_root)
     if profile is None:
-        if mode != 'inspect': raise ProfileError('Cadastre um perfil root-owned para este projeto antes de liberar escrita.')
+        if mode != 'inspect': raise ProfileError('Selecione e salve os arquivos no painel antes de liberar escrita.')
         return {'ok': True, 'name': name, 'configured': False, 'files': [], 'active': False}
     project, owner_id, php = _checked_project(name, profile, root_base, require_root=require_root)
     files = _files(project, profile, owner_id, php)

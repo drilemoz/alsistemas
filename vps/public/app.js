@@ -112,7 +112,7 @@ function appRouteFromUrl() {
 }
 function validAppRoute(route) {
   if (mainTabs.has(route)) return true
-  if (/^project\/(?!iguatamaonline(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/permissions$/.test(route)) return true
+  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[a-z][a-z0-9-]{1,39}\/permissions$/.test(route)) return true
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
@@ -257,37 +257,92 @@ function renderProjectPage(name) {
 }
 function openProjectDetails(item) { navigateApp(`project/${item.name}`) }
 let generalPermissionsName = ''
+let generalCatalog = []
+let generalActive = false
+function updatePermissionSelection() {
+  const selected = [...document.querySelectorAll('#general-permissions-files input[type="checkbox"]:checked')]
+  const count = selected.length
+  $('general-permissions-count').textContent = `${count} arquivo(s) selecionado(s) · máximo 12.`
+  $('general-permissions-save').disabled = generalActive || count < 1 || count > 12 || !$('general-permissions-php').value
+  for (const checkbox of document.querySelectorAll('#general-permissions-files input[type="checkbox"]')) {
+    checkbox.disabled = generalActive || (count >= 12 && !checkbox.checked)
+  }
+}
+function renderPermissionCatalog(catalog, config) {
+  generalCatalog = catalog.files || []
+  generalActive = !!config.active
+  $('general-permissions-config').hidden = generalActive
+  $('general-permissions-owner').textContent = `Proprietário detectado: ${catalog.owner} · ${generalCatalog.length} arquivo(s) elegível(is).`
+  const select = $('general-permissions-php')
+  select.replaceChildren(new Option('Escolha o usuário PHP', ''))
+  for (const user of catalog.phpUsers || []) select.append(new Option(user, user))
+  select.value = config.phpUser || ''
+  const container = $('general-permissions-files')
+  container.replaceChildren()
+  const configured = new Set((config.files || []).map(x => x.path))
+  for (const file of generalCatalog) {
+    const label = node('label', '', 'permission-file-row')
+    const checkbox = node('input', '')
+    checkbox.type = 'checkbox'; checkbox.value = file.path; checkbox.checked = configured.has(file.path)
+    checkbox.addEventListener('change', updatePermissionSelection)
+    const info = node('span', '')
+    info.append(node('strong', file.path), node('small', `Dono: ${file.owner} · modo ${file.mode}`))
+    label.append(checkbox, info); container.append(label)
+  }
+  if (!generalCatalog.length) container.append(node('p', 'Nenhum arquivo elegível encontrado. Confira a propriedade do projeto.', 'small muted'))
+  updatePermissionSelection()
+}
 async function loadGeneralPermissions(name) {
   generalPermissionsName = name
   $('general-project-permissions-title').textContent = 'Permissões · ' + name
-  $('general-permissions-back').textContent = '‹ ' + name
-  $('general-permissions-status').replaceChildren(node('p', 'Verificando perfil de permissões…', 'small muted'))
+  $('general-permissions-back').textContent = '‹ ' + (name === 'iguatamaonline' ? 'Manutenção AWS' : name)
+  $('general-permissions-result').textContent = ''
+  $('general-permissions-result').classList.remove('error')
+  $('general-permissions-status').replaceChildren(node('p', 'Verificando arquivos e permissões…', 'small muted'))
+  $('general-permissions-files').replaceChildren(node('p', 'Buscando arquivos…', 'small muted'))
+  $('general-permissions-save').disabled = true
   $('general-permissions-allow').disabled = true
   $('general-permissions-restore').disabled = true
   try {
-    const data = await api(`/api/projects/${encodeURIComponent(name)}/permissions`)
+    const [data, catalog] = await Promise.all([
+      api(`/api/projects/${encodeURIComponent(name)}/permissions`),
+      api(`/api/projects/${encodeURIComponent(name)}/permissions/catalog`)
+    ])
     if (generalPermissionsName !== name || currentAppRoute !== `project/${name}/permissions`) return
     const area = $('general-permissions-status')
     area.replaceChildren()
-    if (!data.configured) {
-      area.append(diagnosticCard('lock', 'Configuração necessária',
-        'Este projeto ainda não tem uma lista de arquivos autorizados. Cadastre o perfil no servidor e consulte o botão de informações.', 'diagnostic-warning'))
-      return
-    }
-    area.append(diagnosticCard(data.active ? 'alert' : 'success',
-      data.active ? 'Escrita temporária ativa' : 'Perfil autorizado',
-      data.active ? 'Quando terminar, use Restaurar permissões.' : 'A liberação afetará somente os arquivos listados abaixo.',
+    if (!data.configured) area.append(diagnosticCard('file', 'Escolha os arquivos para começar',
+      'O servidor identifica o proprietário e oferece apenas arquivos elegíveis.', ''))
+    else area.append(diagnosticCard(data.active ? 'alert' : 'success',
+      data.active ? 'Escrita temporária liberada' : 'Seleção salva',
+      data.active ? 'Restaure as permissões assim que terminar.' : `${data.files.length} arquivo(s) preparado(s).`,
       data.active ? 'diagnostic-warning' : 'diagnostic-good'))
-    const meta = node('p', `Dono autorizado: ${data.owner} · Usuário PHP: ${data.phpUser}`, 'small muted')
-    area.append(meta)
-    for (const file of data.files || []) {
-      area.append(diagnosticCard('file', file.path, file.phpWritable
-        ? 'Escrita pelo PHP: permitida atualmente.' : 'Escrita pelo PHP: não permitida atualmente.'))
-    }
-    $('general-permissions-allow').disabled = !!data.active
+    if (data.configured) for (const file of data.files || []) area.append(diagnosticCard('file', file.path,
+      file.phpWritable ? 'PHP tem escrita neste arquivo (estimativa).' : 'PHP sem escrita neste arquivo (estimativa).'))
+    renderPermissionCatalog(catalog, data)
+    $('general-permissions-allow').disabled = !data.configured || !!data.active
     $('general-permissions-restore').disabled = !data.active
   } catch (error) {
-    $('general-permissions-status').replaceChildren(diagnosticCard('alert', 'Inspeção indisponível', error.message, 'diagnostic-warning'))
+    $('general-permissions-status').replaceChildren(diagnosticCard('alert', 'Não foi possível consultar', error.message, 'diagnostic-warning'))
+    $('general-permissions-config').hidden = true
+  }
+}
+async function saveGeneralPermissions() {
+  const name = generalPermissionsName
+  const files = [...document.querySelectorAll('#general-permissions-files input[type="checkbox"]:checked')].map(x => x.value)
+  const phpUser = $('general-permissions-php').value
+  if (generalActive || files.length < 1 || files.length > 12 || !phpUser) return
+  if (!await confirmAction(`Salvar ${files.length} arquivo(s) do projeto ${name} para escrita pelo usuário ${phpUser}? Nenhuma permissão será alterada nesta etapa.`, 'Salvar seleção')) return
+  $('general-permissions-save').disabled = true
+  $('general-permissions-result').classList.remove('error')
+  try {
+    await api(`/api/projects/${encodeURIComponent(name)}/permissions/profile`, 'POST', { files, phpUser })
+    await loadGeneralPermissions(name)
+    $('general-permissions-result').textContent = 'Seleção salva. Agora você pode liberar escrita temporária.'
+  } catch (error) {
+    $('general-permissions-result').textContent = error.message
+    $('general-permissions-result').classList.add('error')
+    updatePermissionSelection()
   }
 }
 async function changeGeneralPermissions(mode) {
@@ -295,21 +350,31 @@ async function changeGeneralPermissions(mode) {
   if (!name || currentAppRoute !== `project/${name}/permissions`) return
   const phrase = mode === 'allow' ? 'Liberar escrita temporária' : 'Restaurar permissões originais'
   const detail = mode === 'allow'
-    ? `Liberar temporariamente escrita PHP apenas nos arquivos aprovados do projeto ${name}?`
-    : `Restaurar as permissões que foram registradas para o projeto ${name}?`
+    ? `Liberar temporariamente a escrita nos arquivos salvos do projeto ${name}? Um PHP comprometido poderá alterar esses arquivos até a restauração.`
+    : `Restaurar as permissões anteriores dos arquivos do projeto ${name}?`
   if (!await confirmAction(detail, phrase)) return
   for (const id of ['general-permissions-allow', 'general-permissions-restore']) $(id).disabled = true
   $('general-permissions-result').classList.remove('error')
   $('general-permissions-result').textContent = 'Executando…'
   try {
     const result = await api(`/api/projects/${encodeURIComponent(name)}/permissions`, 'POST', { mode })
+    await loadGeneralPermissions(name)
     $('general-permissions-result').textContent = result.warning || 'Operação concluída.'
   } catch (error) {
     $('general-permissions-result').textContent = error.message
     $('general-permissions-result').classList.add('error')
-  } finally { await loadGeneralPermissions(name) }
+    await loadGeneralPermissions(name)
+    $('general-permissions-result').textContent = error.message
+    $('general-permissions-result').classList.add('error')
+  }
 }
-$('general-permissions-back').addEventListener('click', () => navigateApp(`project/${generalPermissionsName}`))
+$('general-permissions-back').addEventListener('click', () => navigateApp(generalPermissionsName === 'iguatamaonline' ? 'project/iguatamaonline/aws' : `project/${generalPermissionsName}`))
+$('general-permissions-save').addEventListener('click', saveGeneralPermissions)
+$('general-permissions-search').addEventListener('input', () => {
+  const q = $('general-permissions-search').value.trim().toLowerCase()
+  for (const label of document.querySelectorAll('.permission-file-row')) label.hidden = !label.querySelector('input').value.toLowerCase().includes(q)
+})
+$('general-permissions-php').addEventListener('change', updatePermissionSelection)
 $('general-permissions-allow').addEventListener('click', () => changeGeneralPermissions('allow'))
 $('general-permissions-restore').addEventListener('click', () => changeGeneralPermissions('restore'))
 let externalPoll = null
@@ -341,11 +406,13 @@ async function reloadExternalInspection() {
     const files = data.files || []
     const valid = files.filter(f => f.safePath).length
     const danger = data.permissionsGrantActive
-    const blocked = data.mutationAllowed === false
+    const blocked = data.mutationAllowed === false && !data.panelPermissionsAvailable
     area.append(diagnosticCard(danger ? 'alert' : blocked ? 'lock' : 'success',
       danger ? 'Escrita temporária ativa' : blocked ? 'Alterações bloqueadas' : 'Verificação concluída',
       danger ? 'Restaure as permissões assim que terminar.' : blocked ? 'A propriedade do projeto precisa ser revisada antes de liberar escrita.' : 'O painel conseguiu inspecionar o projeto.',
       danger || blocked ? 'diagnostic-warning' : 'diagnostic-good'))
+    if (data.panelPermissionsAvailable) area.append(diagnosticCard('file', 'Permissões pelo painel',
+      `Proprietário: ${data.rootOwner || 'não identificado'}. Use Manutenção na AWS → Permissões para escolher arquivos e liberar escrita.`, 'diagnostic-good'))
     const counters = node('div', '', 'diagnostic-overview')
     const ver = node('div'); ver.append(node('span', 'Versão', 'small muted'), node('strong', data.version || 'Desconhecida'))
     const found = node('div'); found.append(node('span', 'Arquivos verificados', 'small muted'), node('strong', `${valid} de ${files.length}`))
@@ -530,8 +597,8 @@ async function externalFileUpdate() {
   }
 }
 $('external-inspect').addEventListener('click', reloadExternalInspection)
-$('external-allow').addEventListener('click', () => externalCritical('allow'))
-$('external-restore-permissions').addEventListener('click', () => externalCritical('restore'))
+$('external-allow').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
+$('external-restore-permissions').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
 $('external-restore-code').addEventListener('click', () => externalCritical('restore_code'))
 $('external-backup-code').addEventListener('click', () => externalCritical('backup_code'))
 $('external-github').addEventListener('click', externalGithubUpdate)
@@ -539,18 +606,7 @@ $('external-upload').addEventListener('click', externalFileUpdate)
 $('external-reload').addEventListener('click', () => window.location.reload())
 $('external-check-progress').addEventListener('click', () => void checkExternalStatus())
 $('external-refresh-version').addEventListener('click', () => void reloadExternalInspection())
-$('external-preview-permissions').addEventListener('click', async () => {
-  const preview = $('external-permission-preview')
-  preview.textContent = 'Consultando permissões atuais…'
-  try {
-    const data = await api(externalRoot + '/maintenance')
-    const files = (data.files || []).map(f => `${f.path}: ${f.safePath ? 'caminho validado' : 'caminho inseguro'}; escrita PHP estimada: ${f.phpWritableEstimate === true ? 'sim' : f.phpWritableEstimate === false ? 'não' : 'indeterminada'}`).join('\n')
-    const ownership = data.mutationAllowed === false
-      ? `\nBLOQUEADO: ${data.mutationBlocker || 'proprietário exige revisão manual'}`
-      : '\nPropriedade apta à verificação de escrita.'
-    preview.textContent = `Prévia apenas, nenhuma alteração aplicada.\n${files}${ownership}\nA conta do pool PHP real precisa ser confirmada antes de liberar escrita.`
-  } catch (error) { preview.textContent = error.message }
-})
+$('external-preview-permissions').addEventListener('click', () => navigateApp('project/iguatamaonline/permissions'))
 $('external-refresh-logs').addEventListener('click', () => void loadExternalReport())
 $('external-copy-report').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('external-report-text').textContent); notice('Relatório copiado.') }

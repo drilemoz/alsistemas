@@ -135,10 +135,15 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
         version = checked_target(root, 'VERSION').read_text(encoding='utf-8').strip()[:60]
     except (OSError, ProjectError, UnicodeError):
         pass
+    # O gerenciador de perfis da 2.0.29 aceita donos de implantação distintos
+    # de root/ubuntu, se o helper validar cada arquivo separadamente.
+    panel_permissions_available = (root.parent.stat().st_uid == 0 and root.stat().st_uid != uid
+        and not (root.stat().st_mode & 0o022))
     return {'ok': True, 'name': name, 'path': str(root), 'version': version,
             'phpDefaultPool': user, 'phpPoolVerifiedForSite': False,
             'rootOwner': root_owner, 'parentOwner': parent_owner,
             'mutationAllowed': mutation_allowed, 'mutationBlocker': mutation_blocker,
+            'panelPermissionsAvailable': panel_permissions_available,
             'files': fields, 'writablePaths': [f['path'] for f in fields if f.get('phpWritableEstimate')],
             'note': 'Estimativa do pool padrão. Se o Nginx usar outro pool, confirmar o usuário antes de liberar escrita.',
             'webUpdaterSafe': False}

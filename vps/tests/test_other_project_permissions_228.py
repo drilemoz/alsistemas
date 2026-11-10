@@ -65,5 +65,5 @@ class OtherProjects(unittest.TestCase):
         self.policy.chmod(0o666)
         with self.assertRaises(p.ProfileError):self.inspect()
     def test_rejects_other_names(self):
-        for name in ['iguatamaonline','iguatama-teste','../site-a','alsistemas','site--a']:
+        for name in ['iguatama-teste','../site-a','alsistemas','site--a']:
             with self.subTest(name=name),self.assertRaises(p.ProfileError):p.project_name(name)

@@ -32,6 +32,6 @@ test('rotas de permissão externa não se confundem com AWS IguatamaOnline', () 
   const code = js.match(/^function validAppRoute\(route\) \{[\s\S]*?^\}/m)?.[0]
   assert.ok(code)
   const valid = vm.runInNewContext(`const mainTabs=new Set(['projects']); const projectSections=new Set(['permissions','diagnostics']); ${code}; validAppRoute`)
-  for (const route of ['project/site-um/permissions', 'project/iguatamaonline/aws/permissions', 'project/site-um']) assert.equal(valid(route), true)
-  for (const route of ['project/iguatamaonline/permissions', 'project/iguatama-teste/aws', 'project/../../permissions', 'project/site-um/permissions/../../etc']) assert.equal(valid(route), false)
+  for (const route of ['project/site-um/permissions', 'project/iguatamaonline/permissions', 'project/iguatamaonline/aws/permissions', 'project/site-um']) assert.equal(valid(route), true)
+  for (const route of ['project/iguatama-teste/permissions', 'project/iguatama-teste/aws', 'project/../../permissions', 'project/site-um/permissions/../../etc']) assert.equal(valid(route), false)
 })

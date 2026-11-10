@@ -14,7 +14,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.28'
+const VERSION = '2.0.29'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -167,7 +167,7 @@ function runTask(task) {
     let output = ''; let error = ''
     const deadline = task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
     const timer = setTimeout(() => { killSubprocessGroup(); reject(new Error('Tarefa excedeu limite de execução')) }, deadline)
-    proc.stdout.on('data', c => { output += c; if (output.length > 8192) killSubprocessGroup() })
+    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
     proc.stderr.on('data', c => { error += c; if (error.length > 8192) killSubprocessGroup() })
     proc.on('error', err => { clearTimeout(timer); reject(err) })
     proc.on('close', code => {
@@ -391,27 +391,38 @@ export function createServer({ taskRunner = runTask } = {}) {
         try { return json(res, 200, await taskRunner({ action: 'list_backups' })) }
         catch (err) { return fail(res, 503, 'Inventário de backups indisponível: ' + err.message) }
       }
-      // Outros projetos: apenas perfis de arquivos cadastrados em política root-owned.
-      const generalPermission = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/permissions$/.exec(path)
+      // Gerenciador de arquivos do projeto: leitura e configuração por helper privilegiado.
+      // Nunca aceita caminhos absolutos ou operações fora de /var/www/projetos.
+      const generalPermission = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/permissions(?:\/(catalog|profile))?$/.exec(path)
       if (generalPermission && ['GET', 'POST'].includes(req.method)) {
-        const name = generalPermission[1]
-        if (['iguatamaonline', 'iguatama-teste', 'alsistemas'].includes(name) || name.includes('--'))
+        const [, name, section] = generalPermission
+        if (['iguatama-teste', 'alsistemas'].includes(name) || name.includes('--'))
           return fail(res, 404, 'Projeto não disponível para esta operação')
-        if (!limit(ip, 'other-project-permissions', req.method === 'POST' ? 8 : 24)) return fail(res, 429, 'Muitas consultas')
-        let mode = 'inspect'
-        if (req.method === 'POST') {
+        if (!limit(ip, 'other-project-permissions', req.method === 'POST' ? 16 : 40)) return fail(res, 429, 'Muitas consultas')
+        let task
+        if (req.method === 'GET') {
+          if (section === 'profile') return fail(res, 405, 'Método não permitido')
+          task = { action: 'other_project_permissions', name, mode: section === 'catalog' ? 'discover' : 'inspect' }
+        } else if (section === 'profile') {
+          const input = await body(req)
+          if (Object.keys(input).sort().join(',') !== 'files,phpUser' || !Array.isArray(input.files) ||
+              !input.files.length || input.files.length > 12 ||
+              !input.files.every(p => typeof p === 'string' && p.length <= 180) ||
+              typeof input.phpUser !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(input.phpUser))
+            return fail(res, 400, 'Escolha arquivos válidos e um usuário PHP.')
+          task = { action: 'other_project_permissions', name, mode: 'configure', files: input.files, phpUser: input.phpUser }
+        } else if (!section) {
           const input = await body(req)
           if (Object.keys(input).sort().join(',') !== 'mode' || !['allow', 'restore'].includes(input.mode))
             return fail(res, 400, 'Parâmetros não permitidos')
-          mode = input.mode
-        }
-        const task = { action: 'other_project_permissions', name, mode }
+          task = { action: 'other_project_permissions', name, mode: input.mode }
+        } else return fail(res, 405, 'Método não permitido')
         try {
           const result = await taskRunner(task)
-          if (req.method === 'POST') audit('project_permissions', { ip, name, mode })
+          if (req.method === 'POST') audit('project_permissions', { ip, name, mode: task.mode, fileCount: task.files?.length })
           return json(res, 200, result)
         } catch (error) {
-          if (req.method === 'POST') audit('project_permissions_failed', { ip, name, mode })
+          if (req.method === 'POST') audit('project_permissions_failed', { ip, name, mode: task.mode })
           return fail(res, 422, error.message)
         }
       }

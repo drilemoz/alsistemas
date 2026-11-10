@@ -1,3 +1,11 @@
+## 2.0.29 — Gerenciamento de arquivos e permissões pelo próprio painel (09/11/2026)
+
+- Permissões do projeto: o painel agora descobre arquivos elegíveis, mostra dono/modo e usuário PHP, permite selecionar até 12 arquivos e salvar configuração por sessão autenticada/CSRF, sem cadastro JSON por SSH.
+- IgutatamaOnline (produção): caminho de permissões no menu AWS abre o novo gerenciador. Usuário de implantação `iguanews-deploy` não é mais motivo automático para impedir o cadastro; proprietário real é detectado e validado a cada operação.
+- Backend: helper root confere caminhos canônicos, proprietários, symlinks, modo, limites e grupos; política salva por troca atômica com arquivo privado 0600. A liberação modifica apenas arquivos listados, e a restauração usa snapshots originais.
+- Não autoriza diretórios inteiros, symlinks, arquivos sensíveis nem `/var/www/iguatama-teste` ou `iguatama-teste`. PHP-FPM verdadeiro deve ser confirmado antes de ativar escrita.
+- Sem senha/TOTP adicional após login. Nenhum projeto da EC2 foi alterado neste pacote; restauração precisa ser validada no servidor real.
+
 ## 2.0.28 — Organização do projeto, diagnóstico claro e permissões por perfil (09/11/2026)
 
 - Projeto: Ficha técnica ao lado do nome, três cartões compactos (Tecnologia, Acesso e Nginx). Removidos Diretório e Domínio principal da visão geral, incluindo o atalho redundante Domínios e estrutura.
