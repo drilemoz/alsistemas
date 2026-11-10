@@ -17,7 +17,7 @@ const MAX_DEPTH = 6
 function isAllowedName(name) {
   return typeof name === 'string' && validName.test(name) && !name.startsWith('.') && !['iguatama-teste', 'alsistemas'].includes(name)
 }
-function safeProjectDirectory(name, root) {
+export function safeProjectDirectory(name, root) {
   if (!isAllowedName(name)) throw Object.assign(new Error('Projeto não autorizado'), { status: 404 })
   const rootReal = fs.realpathSync(root)
   const candidate = path.join(rootReal, name)

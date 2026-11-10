@@ -11,11 +11,12 @@ import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
 import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, strongPassword, verifyPassword, verifyTotp } from './security.js'
 import { monitor, projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
+import { projectLogs } from './project_logs.js'
 import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.33'
+const VERSION = '2.0.34'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -394,13 +395,14 @@ export function createServer({ taskRunner = runTask } = {}) {
       }
       // Diagnóstico e histórico por projeto: consulta autenticada e somente leitura.
       // Não fornece terminal, não lê .env e não confunde configuração HTTPS com teste público.
-      const projectInfoRoute = /^\/api\/projects\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(overview|activity|probe)$/.exec(path)
+      const projectInfoRoute = /^\/api\/projects\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(overview|activity|probe|logs)$/.exec(path)
       if (projectInfoRoute) {
         if (req.method !== 'GET') return fail(res, 405, 'Método não permitido')
         const [, name, section] = projectInfoRoute
         if (!limit(ip, section === 'probe' ? 'project-probe' : 'project-insights', section === 'probe' ? 12 : 90)) return fail(res, 429, 'Muitas consultas')
         try {
           if (section === 'overview') return json(res, 200, projectOverview(name))
+          if (section === 'logs') return json(res, 200, projectLogs(name))
           if (section === 'probe') return json(res, 200, await probeProjectWebsite(name))
           // Não expor IPs, motivos de erro ou eventos de outros projetos.
           const result = projectActivities(name, lastAudit(250), readJson('project-update-status.json'))

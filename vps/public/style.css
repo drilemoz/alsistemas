@@ -555,3 +555,14 @@ label{font-size:.82rem;margin-bottom:11px}
 .project-activity-event strong{font-size:.87rem}
 .project-activity-event .small{white-space:nowrap}
 @media(max-width:520px){.project-management-panel .project-actions-stack{grid-template-columns:1fr}.project-insights-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.project-activity-event{flex-direction:column;gap:3px}.project-activity-event .small{white-space:normal}}
+
+/* v2.0.34 — registros isolados por projeto, interface compacta para celular */
+.project-runtime-logs-panel{display:grid;gap:13px}
+.project-runtime-logs-panel>p{margin:0}
+.project-log-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.project-log-filters label{min-width:0}
+.project-runtime-logs-content{display:grid;gap:10px;max-height:55vh;overflow:auto;overscroll-behavior:contain}
+.project-log-group{display:grid;gap:6px;padding:12px;border:1px solid var(--border);border-radius:13px;background:var(--bg);min-width:0}
+.project-log-group>strong{overflow-wrap:anywhere;font-size:.91rem}
+.project-log-line{font: .78rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px 9px;border:1px solid var(--border);background:var(--surface);border-radius:8px}
+@media(max-width:410px){.project-log-filters{grid-template-columns:1fr}.project-runtime-logs-content{max-height:48vh}}

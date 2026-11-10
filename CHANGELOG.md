@@ -1,3 +1,11 @@
+## 2.0.34 — Logs e erros por projeto (10/11/2026)
+
+- Novo módulo **Projetos → Logs e erros**, disponível para projetos identificados. A API GET `/api/projects/:name/logs` exige sessão autenticada e limite de requisições, com retorno apenas de trechos recentes de logs locais permitidos.
+- Lê somente arquivos regulares de nomes restritos em `storage/logs/` e `logs/` do projeto; logs Nginx são considerados apenas quando declarados no bloco `server` cujo `root` corresponde ao projeto. Não lê logs globais de outros sites nem segue links simbólicos.
+- Consulta limitada a até oito fontes, 48 KiB e 70 linhas por arquivo, com indicação de resultado parcial e ausência de permissão. Nenhum comando shell ou alteração de permissão no servidor.
+- Interface compacta com filtros por origem, nível de mensagem e pesquisa, atualização manual, copiar TXT e baixar TXT. Oculta padrões comuns de segredo, tokens, IP e parâmetros de URL, com aviso explícito de que a filtragem não garante sigilo total.
+- Mantidas as funções anteriores de Diagnóstico, Histórico administrativo, Arquivos, atualização e backup. Testes de isolamento, caminhos protegidos, symlinks, cauda limitada e seleção de vhost adicionados. Sem instalação na EC2 durante o desenvolvimento.
+
 ## 2.0.33 — Central de administração por projeto (10/11/2026)
 
 - **Projeto → Visão geral:** mantém as três informações compactas (Tecnologia, Acesso, Nginx), acrescenta versão e tamanho observado, com aviso de coleta parcial, e organiza os atalhos de administração de forma responsiva.

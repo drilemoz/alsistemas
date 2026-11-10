@@ -42,6 +42,16 @@
   <section class="panel"><h2>Domínios e informações</h2><div id="project-insights-sites" class="stack"></div><p class="small muted" id="project-insights-footer"></p></section>
   <section class="panel"><div class="heading"><h2>Teste HTTP</h2><button type="button" class="outline button-small" id="project-probe-run">Testar</button></div><p id="project-probe-output" class="small muted" role="status">Teste opcional do Nginx pela rede local do servidor. Não verifica a Internet.</p></section>
 </section>
+<section class="tab-page hidden project-page" id="page-project-runtime-logs" aria-labelledby="project-runtime-logs-title">
+  <nav class="project-crumb"><button type="button" class="project-back" id="project-runtime-logs-back">‹ Projeto</button></nav>
+  <header class="project-page-heading project-heading-with-action"><div><p class="eyebrow">PROJETOS · DIAGNÓSTICO</p><h1 id="project-runtime-logs-title">Logs e erros</h1><p class="small muted">Trechos recentes de registros associados exclusivamente a este projeto.</p></div><button type="button" class="outline button-small" id="project-runtime-logs-reload">Atualizar</button></header>
+  <section class="panel project-runtime-logs-panel"><p id="project-runtime-logs-status" class="small muted" role="status">Consultando logs…</p>
+    <div class="project-log-filters"><label>Origem<select id="project-runtime-logs-source"><option value="all">Todas as origens</option></select></label><label>Tipo<select id="project-runtime-logs-level"><option value="all">Todos</option><option value="error">Erros</option><option value="warning">Avisos</option><option value="info">Informativos</option></select></label><label>Filtrar<input type="search" id="project-runtime-logs-search" maxlength="100" placeholder="Buscar trecho" autocomplete="off"/></label></div>
+    <div id="project-runtime-logs-content" class="project-runtime-logs-content" aria-live="polite"></div>
+    <div class="project-action-grid"><button type="button" class="outline" id="project-runtime-logs-copy">Copiar TXT</button><button type="button" class="outline" id="project-runtime-logs-download">Baixar TXT</button></div>
+    <p class="small muted">Acesso somente leitura. Logs globais são ignorados para não misturar sites. Confira o conteúdo antes de compartilhar: a ocultação automática não garante remover todos os dados sensíveis.</p>
+  </section>
+</section>
 <section class="tab-page hidden project-page" id="page-project-activity" aria-labelledby="project-activity-title">
   <nav class="project-crumb"><button type="button" class="project-back" id="project-activity-back">‹ Projeto</button></nav>
   <header class="project-page-heading project-heading-with-action"><div><p class="eyebrow">PROJETOS · AUDITORIA</p><h1 id="project-activity-title">Histórico</h1><p class="small muted">Eventos administrativos registrados pelo AL Sistemas.</p></div><button type="button" class="outline button-small" id="project-activity-reload">Atualizar</button></header>

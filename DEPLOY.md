@@ -1,3 +1,7 @@
+## Atualização 2.0.34 — Logs e erros de projetos
+
+Novo leitor restrito de logs de projeto, somente leitura. Após instalar, abra Projetos → seu projeto → Logs e erros. Se aparecer “nenhum log” ou “sem permissão”, não altere permissões globais de `/var/log` nem do PHP; configure um log dedicado por vhost de maneira independente e consciente. O recurso não lê logs globais, não garante ocultar todos os dados sensíveis e não verifica disponibilidade pública. Veja `vps/docs/ATUALIZACAO-2.0.34.md`.
+
 ## Atualização 2.0.33 — Centro de Projetos
 
 Atualização do núcleo e interface do AL Sistemas, sem necessidade de mudanças nos diretórios de hospedagem. Confirme backup/snapshot recuperável e acesso SSH antes da instalação. Depois de atualizar, abra Projetos → projeto e teste as páginas Diagnóstico e Histórico. Um teste HTTP não garante que o site esteja disponível pela Internet. Os novos recursos são de leitura; operações de escrita e backup seguem fluxos anteriores. Veja `vps/docs/ATUALIZACAO-2.0.33.md`.

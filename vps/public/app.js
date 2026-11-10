@@ -113,7 +113,7 @@ function appRouteFromUrl() {
 function validAppRoute(route) {
   if (mainTabs.has(route)) return true
   if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[a-z][a-z0-9-]{1,39}\/permissions$/.test(route)) return true
-  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/(?:insights|activity)$/.test(route)) return true
+  if (/^project\/(?!iguatama-teste(?:\/|$)|alsistemas(?:\/|$))[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/(?:insights|activity|runtime-logs)$/.test(route)) return true
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
@@ -121,7 +121,7 @@ function showAppRoute(route) {
   if (!validAppRoute(route)) route = 'projects'
   currentAppRoute = route
   const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
-  const genericInformation = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(insights|activity)$/.exec(route)
+  const genericInformation = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(insights|activity|runtime-logs)$/.exec(route)
   const matched = genericPermissions || genericInformation || /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   const page = genericPermissions ? 'project-permissions-general' : genericInformation ? 'project-' + genericInformation[2] : matched ? (!matched[2] ? 'project-detail' : matched[3] ? 'project-' + matched[3] : 'project-aws') : route
   for (const section of document.querySelectorAll('.tab-page')) section.classList.toggle('hidden', section.id !== `page-${page}`)
@@ -132,6 +132,7 @@ function showAppRoute(route) {
   if (genericPermissions) void loadGeneralPermissions(genericPermissions[1])
   if (genericInformation && genericInformation[2] === 'insights') void loadProjectInsights(genericInformation[1])
   if (genericInformation && genericInformation[2] === 'activity') void loadProjectActivity(genericInformation[1])
+  if (genericInformation && genericInformation[2] === 'runtime-logs') void loadProjectRuntimeLogs(genericInformation[1])
   if (matched && matched[1] === 'iguatamaonline') {
     if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus()
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
@@ -237,6 +238,14 @@ function renderProjectPage(name) {
   insightsTool.append(insightsIcon, insightsLabels, node('span', '›'))
   insightsTool.addEventListener('click', () => navigateApp(`project/${item.name}/insights`))
   actions.append(insightsTool)
+  const logsTool = node('button', '', 'project-tool')
+  logsTool.type = 'button'
+  const logsIcon = node('span', '', 'project-tool-icon'); logsIcon.append(iconGraphic('list'))
+  const logsLabels = node('span')
+  logsLabels.append(node('strong', 'Logs e erros'), node('small', 'Registros locais isolados do projeto, com busca e relatório'))
+  logsTool.append(logsIcon, logsLabels, node('span', '›'))
+  logsTool.addEventListener('click', () => navigateApp(`project/${item.name}/runtime-logs`))
+  actions.append(logsTool)
   const activityTool = node('button', '', 'project-tool')
   activityTool.type = 'button'
   const activityIcon = node('span', '', 'project-tool-icon'); activityIcon.append(iconGraphic('file'))
@@ -371,7 +380,7 @@ async function loadProjectActivity(name) {
 }
 for (const id of ['project-insights-back', 'project-activity-back']) {
   $(id).addEventListener('click', () => {
-    const path = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(?:insights|activity)$/.exec(currentAppRoute)
+    const path = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/(?:insights|activity|runtime-logs)$/.exec(currentAppRoute)
     if (path) navigateApp(`project/${path[1]}`)
   })
 }
@@ -414,6 +423,87 @@ $('project-activity-download').addEventListener('click', () => {
   document.body.append(link)
   link.click()
   link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+
+// v2.0.34 — logs de escopo local. Filtragem apenas de dados recebidos da API autenticada.
+let projectRuntimeLogData = null
+let projectRuntimeReport = ''
+function projectRuntimeLineLevel(line) {
+  return /\b(?:error|fatal|critical|exception|panic)\b/i.test(line) ? 'error' : /\b(?:warn|warning|notice)\b/i.test(line) ? 'warning' : 'info'
+}
+function projectRuntimeEntries(data) {
+  return (data?.sources || []).flatMap(source => (source.lines || []).map(line => ({ origin:source.label, line })))
+}
+function renderProjectRuntimeLogs() {
+  const content = $('project-runtime-logs-content')
+  const query = $('project-runtime-logs-search').value.trim().toLocaleLowerCase('pt-BR')
+  const chosen = $('project-runtime-logs-source').value
+  const level = $('project-runtime-logs-level').value
+  const accepts = line => (level === 'all' || projectRuntimeLineLevel(line) === level) && (!query || line.toLocaleLowerCase('pt-BR').includes(query))
+  content.replaceChildren()
+  if (!projectRuntimeLogData) return
+  for (const source of projectRuntimeLogData.sources || []) {
+    if (chosen !== 'all' && source.label !== chosen) continue
+    const lines = (source.lines || []).filter(accepts)
+    if (!lines.length && source.available) continue
+    const group = node('section', '', 'project-log-group')
+    group.append(node('strong', source.label), node('span', source.available ? `${lines.length} linha(s) exibida(s)${source.truncated ? ' · trecho final' : ''}` : source.reason || 'Indisponível', 'small muted'))
+    for (const line of lines) group.append(node('div', line, 'project-log-line'))
+    content.append(group)
+  }
+  if (!content.childElementCount) content.append(node('p', query ? 'Nenhum registro corresponde à pesquisa.' : 'Nenhum log isolado legível foi encontrado.', 'small muted'))
+  const entries = projectRuntimeEntries(projectRuntimeLogData).filter(entry => (chosen === 'all' || entry.origin === chosen) && accepts(entry.line))
+  projectRuntimeReport = [
+    'AL Sistemas · Logs locais do projeto ' + projectRuntimeLogData.name,
+    'Consulta: ' + projectRuntimeLogData.checkedAt,
+    'Atenção: revise possíveis dados sensíveis antes de compartilhar.',
+    '', ...entries.map(entry => `[${entry.origin}] ${entry.line}`),
+  ].join('\n')
+  $('project-runtime-logs-status').textContent = `${entries.length} linha(s) · ${(projectRuntimeLogData.sources || []).length} arquivo(s) identificado(s) · ${projectRuntimeLogData.note}`
+}
+async function loadProjectRuntimeLogs(name) {
+  const route = `project/${name}/runtime-logs`
+  $('project-runtime-logs-title').textContent = 'Logs e erros · ' + name
+  $('project-runtime-logs-status').textContent = 'Consultando registros locais…'
+  $('project-runtime-logs-content').replaceChildren()
+  $('project-runtime-logs-source').replaceChildren(new Option('Todas as origens', 'all'))
+  projectRuntimeLogData = null
+  projectRuntimeReport = ''
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(name)}/logs`)
+    if (currentAppRoute !== route) return
+    projectRuntimeLogData = data
+    for (const source of data.sources || []) $('project-runtime-logs-source').append(new Option(source.label, source.label))
+    renderProjectRuntimeLogs()
+  } catch (error) {
+    if (currentAppRoute === route) $('project-runtime-logs-status').textContent = 'Falha ao consultar logs: ' + error.message
+  }
+}
+$('project-runtime-logs-back').addEventListener('click', () => {
+  const found = /^project\/([^/]+)\/runtime-logs$/.exec(currentAppRoute)
+  if (found) navigateApp(`project/${found[1]}`)
+})
+$('project-runtime-logs-reload').addEventListener('click', () => {
+  const found = /^project\/([^/]+)\/runtime-logs$/.exec(currentAppRoute)
+  if (found) void loadProjectRuntimeLogs(found[1])
+})
+for (const id of ['project-runtime-logs-source', 'project-runtime-logs-level', 'project-runtime-logs-search']) {
+  $(id).addEventListener(id.endsWith('search') ? 'input' : 'change', renderProjectRuntimeLogs)
+}
+$('project-runtime-logs-copy').addEventListener('click', async () => {
+  if (!projectRuntimeReport) return notice('Relatório ainda indisponível.', true)
+  try { await navigator.clipboard.writeText(projectRuntimeReport); notice('Trechos copiados. Revise antes de compartilhar.') }
+  catch { notice('Não foi possível copiar os registros.', true) }
+})
+$('project-runtime-logs-download').addEventListener('click', () => {
+  if (!projectRuntimeReport) return notice('Relatório ainda indisponível.', true)
+  const name = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/runtime-logs$/.exec(currentAppRoute)?.[1] || 'projeto'
+  const url = URL.createObjectURL(new Blob([projectRuntimeReport + '\n'], { type:'text/plain;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `AL-Sistemas-${name}-logs.txt`
+  document.body.append(link); link.click(); link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 })
 
