@@ -15,66 +15,108 @@ function readSafe(pathname, max = 512 * 1024) {
   if (!s.isFile() || s.isSymbolicLink() || s.size > max) return null
   return fs.readFileSync(pathname, 'utf8')
 }
-function stripComments(text) {
-  return text.split(/\r?\n/).map(line => line.replace(/\s+#.*$/, '').replace(/^\s*#.*/, '')).join('\n')
-}
-function serverBlocks(text) {
-  const cleaned = stripComments(text)
+// Só considera diretivas literais do próprio bloco server. Não segue includes.
+function serverDirectives(text) {
+  const tokens = text.match(/#[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\$\{[^}]*\}|[{};]|[^\s{};#"']+/g) || []
   const blocks = []
-  const re = /\bserver\s*\{/g
-  let m
-  while ((m = re.exec(cleaned)) && blocks.length < 80) {
-    let depth = 1, i = re.lastIndex
-    for (; i < cleaned.length && depth; i++) {
-      if (cleaned[i] === '{') depth++
-      if (cleaned[i] === '}') depth--
-    }
-    if (depth === 0) blocks.push(cleaned.slice(re.lastIndex, i - 1))
-    re.lastIndex = i
+  let depth = 0, serverDepth = -1, directives, words = []
+  for (const token of tokens) {
+    if (token.startsWith('#')) continue
+    if (token === '{') {
+      if (serverDepth === -1 && words.length === 1 && words[0] === 'server') {
+        if (blocks.length >= 80) break
+        serverDepth = depth + 1
+        directives = new Map()
+      }
+      depth++
+      words = []
+    } else if (token === '}') {
+      if (depth === serverDepth) {
+        blocks.push(directives)
+        serverDepth = -1
+      }
+      depth--
+      words = []
+    } else if (token === ';') {
+      if (depth === serverDepth && words.length > 1) {
+        const [key, ...args] = words
+        directives.set(key, [...(directives.get(key) || []), args])
+      }
+      words = []
+    } else words.push(token)
   }
   return blocks
 }
-function safeRoot(root, projectPath) {
-  if (!root || /[$*{}]/.test(root)) return false
-  const resolved = path.resolve(root)
-  return resolved === projectPath || resolved === path.join(projectPath, 'public')
-}
+const unquote = value => value.replace(/^(["'])(.*)\1$/, '$2')
+const siteFile = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/
 
-// Detecta apenas domínios que apontam explicitamente para a pasta do projeto.
-// Não considera domínio publicado sem correspondência de 'root' e server_name.
-export function detectSiteDomains(projectPath, { available = '/etc/nginx/sites-available', enabled = '/etc/nginx/sites-enabled' } = {}) {
-  const found = new Map()
-  let files
-  try { files = fs.readdirSync(available, { withFileTypes: true }) } catch { return [] }
-  for (const f of files.slice(0, 200)) {
-    if (!f.isFile() || !/^[A-Za-z0-9_.-]+\.conf$/.test(f.name)) continue
-    const config = path.join(available, f.name)
-    let content
-    try { content = readSafe(config) } catch { continue }
-    if (!content) continue
-    let active = false
+export function indexSiteDomains({ available = '/etc/nginx/sites-available', enabled = '/etc/nginx/sites-enabled' } = {}) {
+  const configs = new Map()
+  function entries(folder) {
+    try { return fs.readdirSync(folder, { withFileTypes: true }).slice(0, 200) } catch { return [] }
+  }
+  for (const entry of entries(available)) {
+    if (!entry.isFile() || !siteFile.test(entry.name)) continue
+    const filename = path.resolve(available, entry.name)
+    configs.set(filename, { name: entry.name, enabled: false })
+  }
+  for (const entry of entries(enabled)) {
+    if (!siteFile.test(entry.name)) continue
+    const filename = path.resolve(enabled, entry.name)
     try {
-      const link = path.join(enabled, f.name)
-      if (fs.lstatSync(link).isSymbolicLink()) active = path.resolve(enabled, fs.readlinkSync(link)) === config
-      else if (fs.lstatSync(link).isFile()) active = fs.realpathSync(link) === fs.realpathSync(config)
-    } catch { /* desativado ou desconhecido */ }
-    for (const block of serverBlocks(content)) {
-      const roots = [...block.matchAll(/(?:^|[;{}\n])\s*root\s+([^;\s]+)\s*;/gm)].map(m => m[1])
-      if (!roots.some(root => safeRoot(root, projectPath))) continue
-      const names = [...block.matchAll(/\bserver_name\s+([^;]+);/g)]
-        .flatMap(m => m[1].trim().split(/\s+/)).filter(isSafeHost)
-      const secure = /\blisten\s+[^;]*\b443\b[^;]*;/m.test(block) || /\bssl_certificate\s+/m.test(block)
-      for (const domain of names) {
-        const key = domain.toLowerCase()
-        const old = found.get(key)
-        // Preferir bloco HTTPS e configuração habilitada.
-        if (!old || (active && !old.enabled) || (secure && !old.https && active === old.enabled)) {
-          found.set(key, { name: domain, url: `${secure ? 'https' : 'http'}://${domain}`, enabled: active, https: secure, config: f.name })
+      if (entry.isSymbolicLink()) {
+        const destination = path.resolve(enabled, fs.readlinkSync(filename))
+        if (configs.has(destination)) configs.get(destination).enabled = true
+      } else if (entry.isFile()) configs.set(filename, { name: entry.name, enabled: true })
+    } catch { /* configuração indisponível */ }
+  }
+  const byRoot = new Map()
+  for (const [filename, config] of configs) {
+    let raw
+    try { raw = readSafe(filename, 128 * 1024) } catch { continue }
+    if (!raw) continue
+    for (const block of serverDirectives(raw)) {
+      const value = block.get('root')?.[0]?.[0]
+      if (!value) continue
+      const root = unquote(value)
+      if (!path.isAbsolute(root) || /[$*{}\\]/.test(root)) continue
+      const resolved = path.resolve(root)
+      const names = (block.get('server_name') || []).flat().map(unquote).filter(isSafeHost)
+      if (!names.length) continue
+      const listens = block.get('listen') || []
+      let http = !listens.length, https = false
+      for (const [address, ...options] of listens) {
+        const match = /(?:^|:)(80|443)$/.exec(unquote(address))
+        if (match?.[1] === '80' && !options.includes('ssl')) http = true
+        if (match?.[1] === '443' && (options.includes('ssl') || block.has('ssl_certificate'))) https = true
+      }
+      const sites = byRoot.get(resolved) || []
+      for (const name of names) sites.push({ name, http, https, enabled: config.enabled, config: config.name })
+      byRoot.set(resolved, sites)
+    }
+  }
+  return projectPath => {
+    const canonical = path.resolve(projectPath)
+    const found = new Map()
+    for (const site of [...(byRoot.get(canonical) || []), ...(byRoot.get(path.join(canonical, 'public')) || [])]) {
+      const key = site.name.toLowerCase()
+      const old = found.get(key)
+      if (!old || (site.enabled && !old.enabled)) found.set(key, { ...site })
+      else if (site.enabled === old.enabled) {
+        old.http ||= site.http
+        if (site.https && !old.https) {
+          old.https = true
+          old.config = site.config
         }
       }
     }
+    return [...found.values()].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name))
+      .slice(0, 12).map(site => ({ ...site, url: site.https ? 'https://' + site.name : site.http ? 'http://' + site.name : null }))
   }
-  return [...found.values()].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)).slice(0, 12)
+}
+
+export function detectSiteDomains(projectPath, options) {
+  return indexSiteDomains(options)(projectPath)
 }
 
 function safeProject(root, name) {

@@ -12,7 +12,7 @@ test('central de backups é por projeto e não promete banco de dados', () => {
   for (const id of ['page-project-backup-center','project-backup-center-title','project-backup-center-list','project-backup-center-scopes']) {
     assert.ok(html.includes(`id="${id}"`), id)
   }
-  assert.match(ui, /project\/\$\{item\.name\}\/backup-center/)
+  assert.match(ui, /route \+ '\/backup-center'/)
   assert.match(ui, /function loadProjectBackupCenter\(name\)/)
   assert.match(ui, /Backup e restauração SQL ainda não estão implementados/)
   assert.match(ui, /b\.name === name && b\.scope === 'public-only'/)

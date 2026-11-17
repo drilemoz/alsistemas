@@ -1,3 +1,11 @@
+## 2.0.36 — Projetos e Ficha técnica (17/11/2026)
+
+- A Ficha técnica concentra tecnologia, acesso, versão, Nginx, domínios, caminho copiável e medição de arquivos. A visão do projeto fica dedicada aos atalhos.
+- Catálogo compacto e independente do monitor, com busca a partir de cinco projetos, mensagens locais e atualização própria. Projetos protegidos não exibem ferramentas incompatíveis.
+- Atualização e backups de código do IguatamaOnline abrem diretamente. Arquivos retorna à origem e as rotas legadas da Manutenção AWS continuam disponíveis.
+- Detecção de domínio compartilhada pela lista e pelo diagnóstico, sem misturar blocos Nginx nem forçar HTTPS. O diagnóstico completo roda sob demanda e a consulta recente é reutilizada.
+- Fechar confirmações genéricas cancela a ação. Backups criptografados do projeto exibem a capacidade de cópias, sem alterar a política de retenção ou ampliar o escopo.
+
 ## 2.0.35 — Backups por projeto e verificação de integridade (10/11/2026)
 
 - Nova página **Backups e recuperação** em cada projeto: inventário restrito ao projeto atual, tipo de cópia e limites explícitos.

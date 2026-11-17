@@ -1,3 +1,7 @@
+## Atualização 2.0.36 — Projetos e Ficha técnica
+
+Após atualizar o painel, abra **Projetos → projeto → Ficha técnica**. A versão e o tamanho vêm da leitura da VPS, sem confundir configuração Nginx com disponibilidade pública. Atualização e backups de código do IguatamaOnline continuam isolados da atualização do painel. Consulte [o guia da 2.0.36](vps/docs/ATUALIZACAO-2.0.36.md).
+
 ## Atualização 2.0.35 — Inventário de backups por projeto
 
 Após atualizar o painel, abra Projetos → projeto → Backups e recuperação. Para projetos criados pelo AL Sistemas, a cópia criptografada cobre apenas `public/`, e a verificação SHA-256 confere o arquivo criptografado frente ao manifesto local. A confirmação não testa recuperação nem substitui cópia externa. O IguatamaOnline mantém seu backup privado de código na Manutenção AWS. Banco de dados e uploads exigem backups independentes. Não habilite permissões globais para fazer a verificação funcionar. Consulte `vps/docs/ATUALIZACAO-2.0.35.md`.

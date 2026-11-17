@@ -6,7 +6,7 @@ import os from 'node:os'
 import http from 'node:http'
 import { projectOverview, projectActivities, estimateProjectStorage, probeProjectWebsite } from '../src/project_overview.js'
 
-function fixture(run) {
+async function fixture(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'als-project-overview-'))
   try {
     fs.mkdirSync(path.join(dir, 'site-um'))
@@ -16,12 +16,12 @@ function fixture(run) {
     fs.mkdirSync(path.join(dir, 'site-um', 'public'))
     fs.writeFileSync(path.join(dir, 'site-um', 'public', 'index.php'), 'B'.repeat(75))
     fs.symlinkSync('/etc', path.join(dir, 'site-um', 'etc-link'))
-    return run(dir)
+    return await run(dir)
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
-test('diagnóstico usa diretório autorizado, informa versão e não segue links ou .env', () => fixture(root => {
-  const info = projectOverview('site-um', {
+test('diagnóstico usa diretório autorizado, informa versão e não segue links ou .env', () => fixture(async root => {
+  const info = await projectOverview('site-um', {
     root,
     projectList: () => [{ name: 'site-um', type: 'php', managed: false, enabled: null }],
     domains: () => [{ name:'site.example.com', url:'https://site.example.com', enabled: true, https: true }],
@@ -36,18 +36,18 @@ test('diagnóstico usa diretório autorizado, informa versão e não segue links
   assert.deepEqual(Object.keys(info).includes('password'), false)
 }))
 
-test('amostragem de espaço registra resultado parcial ao alcançar limite', () => fixture(root => {
-  const result = estimateProjectStorage(path.join(root, 'site-um'), { maxEntries: 2, maxDirectories: 2, maxDepth: 1 })
+test('amostragem de espaço registra resultado parcial ao alcançar limite', () => fixture(async root => {
+  const result = await estimateProjectStorage(path.join(root, 'site-um'), { maxEntries: 2, maxDirectories: 2, maxDepth: 1 })
   assert.equal(result.incomplete, true)
   assert.ok(result.files + result.directories <= 2)
 }))
 
-test('projetos protegidos, travessia de diretórios e symlink são recusados', () => fixture(root => {
+test('projetos protegidos, travessia de diretórios e symlink são recusados', () => fixture(async root => {
   for (const name of ['../etc', '.hidden', 'iguatama-teste', 'alsistemas', 'not-found']) {
-    assert.throws(() => projectOverview(name, { root }), /não autorizado|indisponível/)
+    await assert.rejects(() => projectOverview(name, { root }), /não autorizado|indisponível/)
   }
   fs.symlinkSync(path.join(root, 'site-um'), path.join(root, 'outra-pasta'))
-  assert.throws(() => projectOverview('outra-pasta', { root }), /indisponível/)
+  await assert.rejects(() => projectOverview('outra-pasta', { root }), /indisponível/)
 }))
 
 test('histórico isola os eventos por projeto e omite IP e motivos potencialmente sensíveis', () => {
@@ -69,8 +69,8 @@ test('interface expõe os módulos reais e não duplica os IDs', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1])
   assert.equal(ids.length, new Set(ids).size)
   for (const id of ['page-project-insights','page-project-activity','project-insights-grid','project-activity-events','project-detail-actions']) assert.ok(ids.includes(id), id)
-  assert.match(app, /Diagnóstico e armazenamento/)
-  assert.match(app, /Histórico administrativo/)
+  assert.match(app, /projectTool\('Diagnóstico',/)
+  assert.match(app, /projectTool\('Histórico',/)
   assert.match(app, /api\/projects\/\$\{encodeURIComponent\(name\)\}\/overview/)
 })
 

@@ -114,7 +114,7 @@ function phpPaths(directory) {
 
 export function projectLogs(name, { root = '/var/www/projetos', available = '/etc/nginx/sites-available', projectList = projects, domains = detectSiteDomains } = {}) {
   const directory = safeProjectDirectory(name, root)
-  if (!projectList(root).some(project => project.name === name)) throw Object.assign(new Error('Projeto não encontrado'), { status:404 })
+  if (!projectList(root, { withDomains: false }).some(project => project.name === name)) throw Object.assign(new Error('Projeto não encontrado'), { status:404 })
   const sources = []
   const files = [
     ...phpPaths(directory).map(file => ({ ...file, type:'php' })),

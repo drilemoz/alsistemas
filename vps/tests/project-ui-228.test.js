@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), '
 const js = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')
 const css = fs.readFileSync(new URL('../public/style.css', import.meta.url), 'utf8')
 
-test('visão geral mantém somente tecnologia, acesso e nginx; ficha ao lado do nome', () => {
-  assert.match(html, /class="project-hero-title-row"/)
-  assert.match(html, /id="project-tech-open"/)
+test('ficha técnica ao lado do nome concentra a visão geral sem repetir os cartões', () => {
+  const detail = html.slice(html.indexOf('id="page-project-detail"'), html.indexOf('id="page-project-insights"'))
+  assert.match(detail, /class="project-hero-title-row"/)
+  assert.match(detail, /id="project-tech-open"/)
+  assert.doesNotMatch(detail, /project-summary|project-live-overview|Visão geral/)
   assert.doesNotMatch(html, /id="project-tech-shortcut"/)
-  assert.doesNotMatch(html, /Domínios e estrutura<\/button>/)
-  const summary = js.match(/const summaryItems = \[[\s\S]*?\n  \]/)?.[0]
-  assert.ok(summary)
-  for (const key of ["'Tecnologia'", "'Acesso'", "'Nginx'"]) assert.ok(summary.includes(key))
-  for (const key of ["'Diretório'", "'Domínio principal'"]) assert.ok(!summary.includes(key))
-  assert.match(css, /\.project-summary-grid\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+  const sheet = js.match(/function renderProjectSheet\(item, info\) \{[\s\S]*?^\}/m)?.[0]
+  assert.ok(sheet)
+  for (const key of ['Tecnologia', 'Acesso', 'Nginx', 'Versão instalada', 'Domínios', 'Arquivos observados', 'Tamanho observado']) assert.ok(sheet.includes(key), key)
+  assert.match(css, /\.project-tech-facts\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
 })
 test('caminho produção aparece apenas em diálogo Diretório e diagnóstico fica compacto com ajuda', () => {
   assert.match(html, /id="project-directory-open"/)

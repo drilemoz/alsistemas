@@ -23,7 +23,7 @@ test('login, seletor de arquivos e ficha técnica receberam a nova interface', (
   assert.match(js, /function syncFilePicker\(/)
   assert.match(js, /project-tech-open/)
   assert.doesNotMatch(js, /project-tech-shortcut/)
-  assert.match(js, /project-tech-dialog'\)\.showModal\(\)/)
+  assert.match(js, /async function openProjectSheet\(\)[\s\S]*?dialog\.showModal\(\)/)
 })
 
 test('relatórios de falha agora tentam reunir mais contexto do atualizador', () => {

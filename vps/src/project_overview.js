@@ -3,7 +3,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import http from 'node:http'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { projects } from './monitor.js'
 import { detectSiteDomains } from './project_inspector.js'
 
@@ -13,6 +14,7 @@ const sensitiveName = /(?:\.(?:pem|key|p12|pfx|sqlite3?|db|sql|bak|backup|secret
 const MAX_ENTRIES = 2500
 const MAX_DIRS = 350
 const MAX_DEPTH = 6
+const execCommand = async (...args) => (await promisify(execFile)(...args)).stdout
 
 function isAllowedName(name) {
   return typeof name === 'string' && validName.test(name) && !name.startsWith('.') && !['iguatama-teste', 'alsistemas'].includes(name)
@@ -30,31 +32,37 @@ export function safeProjectDirectory(name, root) {
   return candidate
 }
 
-export function estimateProjectStorage(directory, { maxEntries = MAX_ENTRIES, maxDirectories = MAX_DIRS, maxDepth = MAX_DEPTH } = {}) {
-  // Não segue links simbólicos nem lê conteúdo. Valores limitados e sinalizados como parciais.
-  let files = 0, directories = 0, bytes = 0, skipped = 0, incomplete = false
+export async function estimateProjectStorage(directory, { maxEntries = MAX_ENTRIES, maxDirectories = MAX_DIRS, maxDepth = MAX_DEPTH } = {}) {
+  // Conta metadados, sem ler conteúdo. O limite também inclui entradas descartadas.
+  let files = 0, directories = 0, bytes = 0, skipped = 0, incomplete = false, visited = 0
   const stack = [{ directory, depth: 0 }]
-  while (stack.length && files + directories < maxEntries && directories < maxDirectories) {
+  while (stack.length && visited < maxEntries && files + directories < maxEntries && directories < maxDirectories) {
     const item = stack.pop()
-    if (item.depth > maxDepth) { incomplete = true; continue }
-    directories++
-    let entries
-    try { entries = fs.readdirSync(item.directory, { withFileTypes: true }) }
-    catch { incomplete = true; continue }
-    for (const entry of entries) {
-      if (files + directories >= maxEntries || directories >= maxDirectories) { incomplete = true; break }
-      if (privateName.test(entry.name) || sensitiveName.test(entry.name) || entry.isSymbolicLink()) { skipped++; continue }
-      const target = path.join(item.directory, entry.name)
-      if (entry.isDirectory()) {
-        if (item.depth >= maxDepth) { incomplete = true; continue }
-        stack.push({ directory: target, depth: item.depth + 1 })
-      } else if (entry.isFile()) {
-        try {
-          const st = fs.lstatSync(target)
-          if (st.isFile() && !st.isSymbolicLink()) { bytes += st.size; files++ }
-        } catch { incomplete = true }
+    try {
+      const st = await fs.promises.lstat(item.directory)
+      if (!st.isDirectory() || st.isSymbolicLink() || await fs.promises.realpath(item.directory) !== item.directory) {
+        incomplete = true
+        continue
       }
-    }
+      const dir = await fs.promises.opendir(item.directory)
+      directories++
+      for await (const entry of dir) {
+        if (visited >= maxEntries || files + directories >= maxEntries) { incomplete = true; break }
+        visited++
+        if (privateName.test(entry.name) || sensitiveName.test(entry.name) || entry.isSymbolicLink()) { skipped++; continue }
+        const target = path.join(item.directory, entry.name)
+        if (entry.isDirectory()) {
+          if (item.depth >= maxDepth || directories + stack.length >= maxDirectories) { incomplete = true; continue }
+          stack.push({ directory: target, depth: item.depth + 1 })
+        } else if (entry.isFile()) {
+          try {
+            const st = await fs.promises.lstat(target)
+            if (st.isFile() && !st.isSymbolicLink()) { bytes += st.size; files++ }
+            else incomplete = true
+          } catch { incomplete = true }
+        }
+      }
+    } catch { incomplete = true }
   }
   if (stack.length) incomplete = true
   return { bytes, files, directories, skipped, incomplete, limits: { maxEntries, maxDirectories, maxDepth } }
@@ -70,9 +78,9 @@ function safeVersion(directory) {
   } catch { return null }
 }
 
-function phpInfo(exec = execFileSync) {
+async function phpInfo(exec) {
   try {
-    const text = exec('/usr/bin/php', ['-v'], { timeout: 1800, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 65536 })
+    const text = await exec('/usr/bin/php', ['-v'], { timeout: 1800, encoding: 'utf8', maxBuffer: 65536 })
     return { version: /PHP\s+(\d+\.\d+\.\d+)/i.exec(text)?.[1] || null, source: 'PHP CLI, não necessariamente o pool PHP-FPM do site' }
   } catch { return { version: null, source: 'PHP CLI indisponível; PHP-FPM não verificado' } }
 }
@@ -95,32 +103,37 @@ function composerInfo(directory) {
     lockedPackages:Array.isArray(lock?.packages) ? lock.packages.length : null,
     note:'Contagem declarada no Composer; segurança das dependências não verificada' }
 }
-function mariaDbState(exec = execFileSync) {
-  try {
-    const value = exec('/bin/systemctl', ['is-active', 'mariadb'], { timeout:1800, encoding:'utf8', stdio:['ignore','pipe','ignore'], maxBuffer:2048 }).trim()
-    return value === 'active' ? 'ativo' : value === 'inactive' ? 'inativo' : 'não identificado'
-  } catch { return 'não identificado' }
+async function mariaDbState(exec) {
+  let value
+  try { value = await exec('/bin/systemctl', ['is-active', 'mariadb'], { timeout:1800, encoding:'utf8', maxBuffer:2048 }) }
+  catch (error) { value = error.stdout }
+  return { active: 'ativo', inactive: 'inativo', failed: 'falhou', activating: 'iniciando', deactivating: 'parando' }[String(value || '').trim()] || 'não identificado'
 }
 
 // O root é parametrizável apenas em testes; a API usa sempre /var/www/projetos.
-export function projectOverview(name, { root = '/var/www/projetos', projectList = projects, domains = detectSiteDomains, exec = execFileSync } = {}) {
+export async function projectOverview(name, { root = '/var/www/projetos', projectList = projects, domains = detectSiteDomains, exec = execCommand } = {}) {
   const directory = safeProjectDirectory(name, root)
-  const project = projectList(root).find(p => p.name === name)
+  const project = projectList(root, { withDomains: false }).find(p => p.name === name)
   if (!project) throw Object.assign(new Error('Projeto não encontrado'), { status: 404 })
   const detected = domains(directory)
-  const storage = estimateProjectStorage(directory)
-  let freeBytes = null
-  try { const disk = fs.statfsSync(directory); freeBytes = disk.bavail * disk.bsize } catch { /* desconhecido */ }
+  const [storage, php, mariadbService, diskFreeBytes] = await Promise.all([
+    estimateProjectStorage(directory), project.type === 'php' ? phpInfo(exec) : null, mariaDbState(exec),
+    fs.promises.statfs(directory).then(disk => disk.bavail * disk.bsize, () => null),
+  ])
   return {
     name: project.name, type: project.type, managed: project.managed, directory,
     version: safeVersion(directory), checkedAt: new Date().toISOString(),
-    sites: detected.map(({ name, url, enabled, https }) => ({ name, url, configured: true, nginxEnabled: enabled, httpsConfigured: https })).slice(0, 12),
-    nginx: { managed: project.managed, enabled: project.enabled, note: 'Configuração detectada; disponibilidade pública ainda não verificada' },
-    php: project.type === 'php' ? phpInfo(exec) : null,
+    sites: detected.map(({ name, url, enabled, https, http }) => ({ name, url, configured: true, nginxEnabled: enabled, httpsConfigured: https, httpConfigured: http })).slice(0, 12),
+    nginx: {
+      managed: project.managed, enabled: project.enabled,
+      configured: detected.length > 0,
+      note: 'Configuração detectada; disponibilidade pública ainda não verificada',
+    },
+    php,
     composer: project.type === 'php' ? composerInfo(directory) : null,
     storage,
-    diskFreeBytes: freeBytes,
-    database: { state: 'não associado', mariadbService: mariaDbState(exec), note: 'O estado do MariaDB é global da VPS. Nenhum banco é associado automaticamente e nenhuma credencial é lida.' },
+    diskFreeBytes,
+    database: { state: 'não associado', mariadbService, note: 'O estado do MariaDB é global da VPS. Nenhum banco é associado automaticamente e nenhuma credencial é lida.' },
     httpsNote: 'HTTPS configurado no Nginx não confirma certificado válido ou site acessível.',
   }
 }
@@ -141,8 +154,8 @@ export function projectActivities(name, events = [], updateStatus = null) {
 // Nunca afirma disponibilidade pela Internet; consulta o vhost Nginx via 127.0.0.1:80.
 export async function probeProjectWebsite(name, { root = '/var/www/projetos', domains = detectSiteDomains, port = 80 } = {}) {
   const directory = safeProjectDirectory(name, root)
-  const site = domains(directory).find(item => item.enabled && item.name)
-  if (!site) return { checked: false, note: 'Não há vhost Nginx habilitado identificado para este projeto.' }
+  const site = domains(directory).find(item => item.enabled && item.name && item.http !== false)
+  if (!site) return { checked: false, note: 'Não há vhost HTTP na porta 80 habilitado identificado para este projeto.' }
   const started = process.hrtime.bigint()
   return new Promise(resolve => {
     const request = http.request({ hostname:'127.0.0.1', port, method:'HEAD', path:'/', headers: { Host:site.name }, timeout:2500, agent:false }, response => {

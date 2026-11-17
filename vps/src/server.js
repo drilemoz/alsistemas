@@ -16,7 +16,7 @@ import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.35'
+const VERSION = '2.0.36'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -397,7 +397,7 @@ export function createServer({ taskRunner = runTask } = {}) {
       if (projectBackupRoute) {
         const [, name, operation] = projectBackupRoute
         if (name.includes('--') || ['iguatama-teste', 'alsistemas', 'iguatamaonline'].includes(name) ||
-            !projects().some(item => item.name === name && item.backupEligible))
+            !projects(undefined, { withDomains: false }).some(item => item.name === name && item.backupEligible))
           return fail(res, 404, 'Backup de projeto não autorizado')
         if (!operation && req.method === 'GET') {
           if (!limit(ip, 'backup-list-project', 30)) return fail(res, 429, 'Muitas consultas de backup')
@@ -424,7 +424,7 @@ export function createServer({ taskRunner = runTask } = {}) {
         const [, name, section] = projectInfoRoute
         if (!limit(ip, section === 'probe' ? 'project-probe' : 'project-insights', section === 'probe' ? 12 : 90)) return fail(res, 429, 'Muitas consultas')
         try {
-          if (section === 'overview') return json(res, 200, projectOverview(name))
+          if (section === 'overview') return json(res, 200, await projectOverview(name))
           if (section === 'logs') return json(res, 200, projectLogs(name))
           if (section === 'probe') return json(res, 200, await probeProjectWebsite(name))
           // Não expor IPs, motivos de erro ou eventos de outros projetos.

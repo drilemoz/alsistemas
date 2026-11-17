@@ -571,3 +571,58 @@ label{font-size:.82rem;margin-bottom:11px}
 .project-backup-entry,.project-backup-scope{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px;border:1px solid var(--border);background:var(--surface);border-radius:13px;min-width:0;overflow-wrap:anywhere}
 .project-backup-entry button{margin:4px 0}
 #project-backup-center-list>button{width:100%;max-width:340px}
+
+/* v2.0.36 — catálogo compacto, ações diretas e ficha técnica responsiva */
+#page-projects .projects-heading{flex-wrap:nowrap;gap:8px}
+#page-projects .projects-heading>div{min-width:0;flex:1 1 auto}
+.projects-heading h1{margin:0}
+.projects-heading #new-project{white-space:nowrap}
+.projects-heading #project-count{vertical-align:middle;white-space:nowrap}
+.projects-list-panel{padding-block:9px}
+.project-list-toolbar{display:flex;align-items:center;gap:10px;margin:0 0 5px}
+.project-list-toolbar #projects-refresh{flex:0 0 auto;margin-left:auto;order:1}
+.project-list-search{flex:1;min-width:0;margin:0;display:flex;align-items:center;gap:8px}
+.project-list-search input{margin:0;min-width:0}
+.project-list-search[hidden],.project-tech-actions [hidden],.project-management-panel[hidden]{display:none}
+#projects{gap:0}
+.project-catalog-entry{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;min-height:63px;padding:8px 2px}
+.project-catalog-entry:last-child{border-bottom:0}
+.project-catalog-entry .project-emblem{width:34px;height:34px}
+.project-catalog-info{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
+.project-catalog-top{display:flex;flex-wrap:wrap;align-items:center;gap:4px 7px}
+.project-catalog-top strong{font-size:.89rem}
+.project-catalog-info small{font-size:.77rem;font-weight:500}
+.project-catalog-access{font-size:.69rem;line-height:1.2;padding:3px 6px}
+#project-detail-status{margin-block:12px}
+.project-management-panel .project-actions-stack{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:8px}
+.project-management-panel .project-tool{min-height:56px;gap:8px;padding:9px;border-radius:10px;box-shadow:none}
+.project-management-panel .project-tool-icon{flex:0 0 31px;width:31px;height:31px;border-radius:8px}
+.project-management-panel .project-tool small{font-size:.71rem}
+.project-management-panel .project-tool>span:last-child{font-size:1.1rem}
+.project-management-panel .project-site-toggle{grid-column:1/-1;justify-content:center;box-shadow:none}
+.project-tech-dialog{width:min(620px,calc(100vw - 22px));max-width:none;max-height:min(90dvh,760px);overflow:hidden}
+.project-tech-body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;max-height:min(calc(90dvh - 2px),758px);padding:0 15px}
+.project-tech-header{margin:0;padding:14px 0 9px;min-width:0}
+.project-tech-header>div{min-width:0;overflow-wrap:anywhere}
+.project-tech-scroll{overflow:auto;min-height:0;overscroll-behavior:contain}.project-tech-stack{gap:12px}
+.project-tech-section{padding:10px;border:1px solid var(--border);border-radius:11px;min-width:0}
+.project-tech-section h3{margin:0 0 8px;font-size:.9rem}
+.project-tech-section p{margin:8px 0 0}
+.project-tech-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.project-tech-facts .project-insight-card{min-width:0;padding:7px 8px}
+.project-tech-facts .project-insight-card strong{font-size:.83rem}
+.project-tech-site,.project-tech-directory{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0}
+.project-tech-site{border-top:1px solid var(--border);padding:5px 0}
+.project-tech-site>div{display:grid;gap:2px;overflow-wrap:anywhere}
+.project-tech-site strong,.project-tech-directory code{font-size:.81rem}
+.project-tech-site .button-link,.project-tech-directory .button-small{min-height:41px}
+.project-tech-directory:has(+.project-tech-facts){margin-bottom:7px}
+.project-tech-status{margin:8px 0}
+.project-tech-actions{padding:9px 0 max(9px,env(safe-area-inset-bottom));border-top:1px solid var(--border)}
+@media(max-width:520px){
+  .project-list-search{display:block;font-size:.77rem}
+  #page-projects .projects-heading h1{font-size:1.13rem}
+  .project-management-panel .project-actions-stack{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .project-management-panel .project-tool strong{font-size:.81rem;overflow-wrap:anywhere}
+}
+@media(max-width:339px){.project-management-panel .project-actions-stack{grid-template-columns:1fr}}

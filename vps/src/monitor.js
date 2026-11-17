@@ -2,6 +2,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { indexSiteDomains } from './project_inspector.js'
 const root = '/var/www/projetos'
 const allowed = ['nginx', 'php8.3-fpm', 'mariadb', 'alsistemas-vps']
 const managedPrefix = '# AL-SISTEMAS-MANAGED-SITE'
@@ -35,38 +36,13 @@ export function monitor() {
     disk: { total, free, used: total - free }, services,
   }
 }
-// Descoberta estritamente informativa: não transforma vhosts externos em gerenciados.
+// Catálogo estritamente informativo. As autorizações continuam nas rotas e no helper.
 export function discoverProjectDomain(folder, configDir = '/etc/nginx/sites-enabled') {
-  try {
-    const canonical = fs.realpathSync(folder)
-    const matches = []
-    for (const entry of fs.readdirSync(configDir).slice(0, 200)) {
-      if (!/^[a-zA-Z0-9._-]{1,120}$/.test(entry)) continue
-      const configPath = path.join(configDir, entry)
-      let raw
-      try {
-        if (!fs.statSync(configPath).isFile() || fs.statSync(configPath).size > 131072) continue
-        raw = fs.readFileSync(configPath, 'utf8')
-      } catch { continue }
-      // Só associa server_name quando o root explícito aponta ao diretório do projeto
-      // ou ao subdiretório public. Ignora variáveis, curingas e includes dinâmicos.
-      const roots = [...raw.matchAll(/^\s*root\s+([^;\s]+)\s*;/gm)].map(m => m[1])
-      const belongs = roots.some(candidate => {
-        if (!candidate.startsWith('/') || candidate.includes('$')) return false
-        try { const real = fs.realpathSync(candidate); return real === canonical || real === path.join(canonical, 'public') } catch { return false }
-      })
-      if (!belongs) continue
-      for (const m of raw.matchAll(/^\s*server_name\s+([^;]+);/gm)) {
-        for (const host of m[1].trim().split(/\s+/)) {
-          if (/^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])$/.test(host) && host.includes('.') && !matches.includes(host)) matches.push(host)
-        }
-      }
-    }
-    return matches.slice(0, 12)
-  } catch { return [] }
+  return indexSiteDomains({ available: configDir, enabled: configDir })(folder).map(site => site.name)
 }
 
-export function projects(dir = root) {
+export function projects(dir = root, { nginx, withDomains = true } = {}) {
+  const findSites = withDomains ? indexSiteDomains(nginx) : () => []
   try {
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isDirectory() && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(entry.name) && !entry.name.startsWith('.'))
@@ -80,7 +56,7 @@ export function projects(dir = root) {
           else if (fs.existsSync(path.join(folder, 'package.json'))) type = 'node'
           else if (fs.existsSync(path.join(folder, 'public', 'index.html')) || fs.existsSync(path.join(folder, 'index.html'))) type = 'static'
         } catch { /* sem acesso ao conteúdo: exibir como desconhecido */ }
-        let managed = false, domain = null, enabled = null, backupEligible = false
+        let managed = false, managedDomain = null, enabled = null, backupEligible = false
         // Metadados opcionais para projetos criados sem domínio; não autorizam operações.
         try {
           const metadata = path.join(folder, '.alsistemas.json')
@@ -101,22 +77,36 @@ export function projects(dir = root) {
         // Só o helper privilegiado confirma se uma mudança é permitida.
         try {
           const config = `/etc/nginx/sites-available/als-${entry.name}.conf`
-          if (!fs.lstatSync(config).isSymbolicLink()) {
+          if (fs.lstatSync(config).isFile() && fs.statSync(config).size <= 128 * 1024) {
             const raw = fs.readFileSync(config, 'utf8')
             if (raw.startsWith(managedPrefix) || raw.startsWith(legacyPrefix)) {
               const match = /^\s*server_name\s+([^;]+);/m.exec(raw)
               if (match) {
-                domain = match[1].trim()
+                const configuredDomain = match[1].trim()
+                managedDomain = /^[a-z0-9.-]+$/i.test(configuredDomain) ? configuredDomain : null
                 const link = `/etc/nginx/sites-enabled/als-${entry.name}.conf`
                 let linkTarget = null
                 try { linkTarget = fs.readlinkSync(link) } catch { /* desativado */ }
-                enabled = linkTarget === config
+                enabled = linkTarget !== null && path.resolve(path.dirname(link), linkTarget) === config
                 managed = true
               }
             }
           }
         } catch { /* não há configuração gerenciada */ }
-        return { name: entry.name, type, path: folder, managed, backupEligible, domain: domain || discoverProjectDomain(folder)[0] || null, domains: discoverProjectDomain(folder), enabled }
+        const sites = findSites(folder)
+        const protectedProject = ['iguatama-teste', 'alsistemas'].includes(entry.name)
+        const supportsFiles = !protectedProject && /^[a-z][a-z0-9-]{1,39}$/.test(entry.name) && !entry.name.includes('--')
+        const capabilities = {
+          files: supportsFiles, diagnostics: !protectedProject,
+          backups: !protectedProject && (entry.name === 'iguatamaonline' || (supportsFiles && backupEligible)),
+          updates: entry.name === 'iguatamaonline',
+          siteState: supportsFiles && managed && !!managedDomain && typeof enabled === 'boolean',
+        }
+        return {
+          name: entry.name, type, path: folder, managed, backupEligible, protected: protectedProject,
+          capabilities, domain: sites[0]?.name || null, domains: sites.map(site => site.name),
+          sites, enabled,
+        }
       }).filter(Boolean)
   } catch (e) { if (e.code === 'ENOENT') return []; throw e }
 }

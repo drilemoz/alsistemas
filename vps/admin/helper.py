@@ -523,7 +523,7 @@ def list_backups(task, backup_root=BACKUPS):
             entries.append(meta)
         except (OSError, KeyError, TypeError, ValueError):
             continue
-    return {'ok': True, 'backups': entries[:50]}
+    return {'ok': True, 'capacity': MAX_SNAPSHOTS_PER_PROJECT, 'backups': entries[:50]}
 
 
 
