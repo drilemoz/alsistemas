@@ -1,3 +1,10 @@
+## 2.0.38 — Navegação e espaço no celular (17/11/2026)
+
+- Domínios substitui Atualizar na barra inferior. Atualizar foi para Mais → Outros módulos.
+- Outros módulos é uma lista vertical com ícones e rolagem em telas baixas.
+- A página Ver DNS mostra um ícone por tipo de registro.
+- Uma única reserva mantém o rodapé acima da barra fixa, sem o espaço anterior entre conteúdo e versão.
+
 ## 2.0.37 — Domínios e redirecionamentos (17/11/2026)
 
 - Novo módulo Domínios com lista paginada da Spaceship, vencimento, renovação automática, zona DNS e servidores DNS.

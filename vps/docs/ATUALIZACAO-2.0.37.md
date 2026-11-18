@@ -1,6 +1,6 @@
 # AL Sistemas VPS 2.0.37 — Domínios, DNS e redirecionamentos
 
-Na navegação do computador, abra **Domínios**. No celular, escolha **Mais → Domínios**. Configure a chave em **APIs e Integrações → Spaceship**. Se a chave atual ainda não tiver os escopos necessários, gere ou configure outra pelo API Manager da Spaceship.
+Na navegação do computador, abra **Domínios**. No celular, escolha **Mais → Domínios** na 2.0.37 ou toque em **Domínios** na barra inferior a partir da 2.0.38. Configure a chave em **APIs e Integrações → Spaceship**. Se a chave atual ainda não tiver os escopos necessários, gere ou configure outra pelo API Manager da Spaceship.
 
 | Função | Permissões da chave |
 | --- | --- |

@@ -1,6 +1,10 @@
+## Atualização 2.0.38 — Navegação no celular
+
+Na 2.0.37, instale o ZIP em **Atualizar → Arquivo ZIP**. Na 2.0.38, as próximas atualizações ficam em **Mais → Atualizar** e Domínios ganha acesso direto na barra inferior.
+
 ## Atualização 2.0.37 — Domínios
 
-Use **Mais → Domínios** no celular. Para abrir o catálogo, a chave Spaceship precisa de `domains:read`. Os redirecionamentos usam um novo módulo isolado do helper Nginx, instalado automaticamente pelo pacote. Consulte [escopos, diagnóstico e HTTPS no guia](vps/docs/ATUALIZACAO-2.0.37.md).
+Na 2.0.37, use **Mais → Domínios** no celular. A partir da 2.0.38, use **Domínios** na barra inferior. Para abrir o catálogo, a chave Spaceship precisa de `domains:read`. Os redirecionamentos usam um novo módulo isolado do helper Nginx, instalado automaticamente pelo pacote. Consulte [escopos, diagnóstico e HTTPS no guia](vps/docs/ATUALIZACAO-2.0.37.md).
 
 ## Atualização 2.0.36 — Projetos e Ficha técnica
 

@@ -161,7 +161,13 @@ function showAppRoute(route) {
   if (page === 'backups') void updateBackups()
   if (page === 'audit') void loadAuditPage()
   if (page === 'projects' || page === 'project-detail') void loadProjectCatalog()
-  for (const button of document.querySelectorAll('[data-tab]')) button.classList.toggle('active', button.dataset.tab === navTab)
+  for (const button of document.querySelectorAll('.side-nav [data-tab], .bottom-nav [data-tab], .more-links [data-tab]')) {
+    const active = button.dataset.tab === navTab
+    button.classList.toggle('active', active)
+    if (active) button.setAttribute('aria-current', 'page')
+    else button.removeAttribute('aria-current')
+  }
+  $('more-nav').classList.toggle('active', !!document.querySelector('.more-links [aria-current="page"]'))
   if ($('more-dialog').open) $('more-dialog').close()
   if (matched && page === 'project-detail') renderProjectPage(matched[1])
   if (genericPermissions) void loadGeneralPermissions(genericPermissions[1])
@@ -1741,7 +1747,13 @@ function activateTab(tab, { record = true } = {}) {
   else showAppRoute(tab)
 }
 for (const nav of document.querySelectorAll('[data-tab]')) nav.addEventListener('click', () => activateTab(nav.dataset.tab))
-$('more-nav').addEventListener('click', () => $('more-dialog').showModal())
+$('more-nav').addEventListener('click', () => {
+  const dialog = $('more-dialog')
+  if (dialog.open) return
+  dialog.showModal()
+  $('more-nav').setAttribute('aria-expanded', 'true')
+})
+$('more-dialog').addEventListener('close', () => $('more-nav').setAttribute('aria-expanded', 'false'))
 $('more-close').addEventListener('click', () => $('more-dialog').close())
 $('new-project').addEventListener('click', () => {
   $('create').reset()

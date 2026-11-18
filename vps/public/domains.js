@@ -118,11 +118,14 @@ function dnRenderDns() {
   const panel = $('dn-records')
   const rows = dnRecords.slice(0,dnVisible).map(record => {
     const row = node('div','','domain-record')
+    const type = String(record.type || '?').toUpperCase()
+    const emblem = node('span','','dns-record-emblem domain-record-emblem')
+    emblem.append(dnsSvg(dnsIconForType(type)))
     const content = node('div')
-    content.append(node('strong', String(record.type || '?') + ' · ' + String(record.name || '?'), 'break-text'),
+    content.append(node('strong', type + ' · ' + String(record.name || '?'), 'break-text'),
       node('span', dnDnsValue(record), 'small muted break-text'),
       node('span', 'TTL ' + (record.ttl ?? '—') + ' s', 'small muted'))
-    row.append(content)
+    row.append(emblem, content)
     const name = String(record.name || '').toLowerCase()
     if (dnDnsComplete && ['A','CNAME'].includes(record.type) && record.group?.type === 'custom' && dnZone.nameservers?.provider === 'basic' &&
       name !== '@' && !name.split('.').some(part => dnLocalNames.has(part)) && dnFqdn.test(name + '.' + dnZone.name)) {

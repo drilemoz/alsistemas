@@ -18,7 +18,7 @@ import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } fro
 
 import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePointer, domainHost, redirectSource, redirectDiagnostics } from './domains.js'
 
-const VERSION = '2.0.37'
+const VERSION = '2.0.38'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
