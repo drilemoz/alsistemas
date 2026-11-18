@@ -27,6 +27,7 @@ from project_explorer import browse_project, update_mode
 from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
 from package_policy import ALLOWED as APPROVED_PACKAGES, package_status, package_gate, read_job, write_job
+from host_reboot import RebootError, schedule as schedule_host_reboot
 from admin_services import ServiceError, control_service
 
 DATA = Path('/var/lib/alsistemas')
@@ -948,7 +949,9 @@ def main():
         task = json.loads(raw)
     except ValueError:
         raise TaskError('JSON inválido.')
-    if isinstance(task,dict) and task.get('action') == 'enable_project_tls':
+    if isinstance(task,dict) and task.get('action') == 'schedule_host_reboot':
+        result = schedule_host_reboot(task)
+    elif isinstance(task,dict) and task.get('action') == 'enable_project_tls':
         result = enable_project_tls(task,task_lock)
     else:
         with task_lock():
@@ -959,6 +962,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, ServiceError, ProjectError, ProfileError, RedirectError, HostingError, OSError, ValueError, subprocess.TimeoutExpired) as err:
+    except (TaskError, RebootError, ServiceError, ProjectError, ProfileError, RedirectError, HostingError, OSError, ValueError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)

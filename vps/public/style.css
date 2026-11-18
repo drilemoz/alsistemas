@@ -890,3 +890,42 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .apt-progress-steps .past{color:var(--success)}
 #apt-progress-time{margin:.22rem 0}
 @media(max-width:335px){.depend-toolbar input,.depend-toolbar select{padding-inline:.35rem}.depend-meta{column-gap:.3rem}}
+
+/* Visão geral da VPS: leitura rápida em telas pequenas */
+.host-overview [hidden]{display:none!important}
+.host-overview .heading{align-items:center}
+.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin-bottom:.7rem}
+.host-overview .host-metric{padding:.66rem .7rem;display:grid;align-content:start;gap:.29rem;min-width:0}
+.host-overview .host-metric strong{font-size:clamp(.83rem,3.6vw,1.03rem);line-height:1.35}
+.host-overview .host-metric small{font-size:.69rem}
+.host-meter,.host-meter-placeholder{display:block;width:100%;height:.34rem}
+.host-meter{accent-color:var(--accent)}
+.host-meter.high{accent-color:var(--danger)}
+.host-panel{padding:.75rem .8rem;margin-bottom:.64rem}
+.host-section-heading{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+.host-section-heading h2,.host-panel h2{margin:0 0 .26rem}
+.host-panel p{margin:.26rem 0}
+.host-site-list{display:grid;gap:.36rem}
+.host-site{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.42rem;padding:.45rem 0;border-top:1px solid var(--border);min-width:0}
+.host-site:first-child{border-top:0}
+.host-site-main{display:grid;gap:.24rem;min-width:0}
+.host-site-main strong{font-size:.88rem}
+.host-site-main small{font-size:.73rem}
+.host-site-badges,.host-quick-actions{display:flex;flex-wrap:wrap;gap:.36rem}
+.host-site-badges .pill{font-size:.67rem;padding:.16rem .44rem}
+.host-banner{margin:0 0 .6rem;display:grid;gap:.14rem;padding:.5rem .65rem;border:1px solid var(--border);border-radius:.6rem;background:var(--surface);font-size:.84rem}
+.host-banner.needs-attention{border-color:color-mix(in srgb,var(--danger) 42%,var(--border))}
+.host-banner ul{margin:.16rem 0;padding-left:1.1rem;font-size:.76rem}
+.host-quick-actions{margin:.46rem 0}
+.host-reboot-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.52rem;margin-top:.52rem;padding-top:.52rem;border-top:1px solid var(--border);min-width:0}
+.host-reboot-row strong{font-size:.83rem}
+.host-reboot-row p{font-size:.72rem}
+.host-details{padding:.55rem}
+.host-detail-toggle{border:0;width:100%;justify-content:space-between;text-align:left;min-height:42px;gap:.42rem}
+.host-detail-toggle .icon{width:15px;height:15px}
+.host-detail-toggle[aria-expanded=true] .icon{transform:rotate(90deg)}
+.host-system-info{padding:.25rem .45rem}
+.host-system-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.24rem .72rem;padding:.29rem 0}
+.host-system-row strong{min-width:0}
+.host-log-button{justify-content:flex-start;text-align:left}
+#host-reboot-confirm{font-size:16px}

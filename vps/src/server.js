@@ -9,8 +9,9 @@ import { findTrusted, rememberDevice, revokeDevice, revokeAllDevices, trustedDev
 import { updateInfo, checkRelease, validateRepo, configureRepo } from './updates.js'
 import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
 import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, strongPassword, verifyPassword, verifyTotp } from './security.js'
-import { monitor, projects, serviceDiagnostics } from './monitor.js'
+import { projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
+import { hostOverview, hostRebootStatus, rebootPending, hostSites } from './host_dashboard.js'
 import { serviceInventory, validServiceAction } from './service_inventory.js'
 import { projectLogs } from './project_logs.js'
 import { dependencyInfo, packageProgress, packageHistory, validPackageId } from './dependencies.js'
@@ -22,7 +23,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.44'
+const VERSION = '2.0.45'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -192,7 +193,17 @@ function runTask(task) {
 }
 
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
-  hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay } = {}) {
+  hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
+  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites } = {}) {
+  let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
+  const executeTask = taskRunner
+  taskRunner = async task => {
+    if (task.action !== 'schedule_host_reboot' && (rebootRequesting || rebootPending(hostStatus())))
+      throw new Error('Há um reinício solicitado. Aguarde a VPS voltar.')
+    if (task.action !== 'schedule_host_reboot') activeTasks++
+    try { return await executeTask(task) }
+    finally { if (task.action !== 'schedule_host_reboot') activeTasks-- }
+  }
   const hostingProvider = { ...spaceshipOptions, panelHost }
   const hosting = hostingWorkflow({runner:taskRunner, provider:hostingProvider, diagnosticOptions, catalog:hostingCatalog, note:audit, retryDelay})
   return http.createServer(async (req, res) => {
@@ -266,6 +277,35 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       if (path === '/api/logout' && req.method === 'POST') {
         invalidateSession(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
         audit('logout', { ip }); return json(res, 200, { ok: true })
+      }
+      if (path === '/api/host/reboot' && req.method === 'GET') return json(res,200,hostStatus())
+      if (path === '/api/host/reboot' && req.method === 'POST') {
+        if (!limit(ip,'host-reboot',5)) return fail(res,429,'Muitas tentativas de reinício.')
+        const input=await body(req)
+        if (Object.keys(input).length!==1 || input.confirm!=='REINICIAR') return fail(res,400,'Digite REINICIAR para confirmar.')
+        const baseline = hostStatus()
+        if (!baseline.canCheckBoot) return fail(res,503,'Identificador de boot indisponível.')
+        if (rebootRequesting || rebootPending(baseline)) return fail(res,409,'Já existe um reinício solicitado.')
+        if (activeTransfers || activeTasks) return fail(res,409,'Aguarde os envios e tarefas administrativas em andamento.')
+        rebootRequesting=true
+        try {
+          await taskRunner({action:'schedule_host_reboot'})
+          audit('host_reboot_requested',{ip,success:true})
+          const state=hostStatus()
+          return json(res,202,rebootPending(state)?state:{state:'scheduled',canCheckBoot:true})
+        } catch(error) {
+          audit('host_reboot_rejected',{ip,reason:error.message,success:false})
+          return fail(res,409,error.message)
+        } finally {rebootRequesting=false}
+      }
+      if (!csrfSafe.has(req.method) && (rebootRequesting || rebootPending(hostStatus())))
+        return fail(res,409,'Há um reinício solicitado. Aguarde a VPS voltar antes de fazer alterações.')
+      if (req.method==='POST' && (path==='/api/updates/upload' || path==='/api/projects/iguatamaonline/update/upload' ||
+          /^\/api\/projects\/[a-z][a-z0-9-]{1,39}\/hosting\/upload$/.test(path))) {
+        activeTransfers++
+        let released=false
+        const release=()=>{ if (!released) {released=true;activeTransfers--} }
+        res.once('finish',release);res.once('close',release)
       }
       if (path === '/api/security/devices' && req.method === 'GET') return json(res, 200, { devices: trustedDevices(), currentId: findTrusted(cookies(req).als_trusted)?.id || null })
       if (path === '/api/security/forget-device' && req.method === 'POST') {
@@ -485,7 +525,15 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
           return fail(res, 422, error.message)
         }
       }
-      if (path === '/api/monitor' && req.method === 'GET') return json(res, 200, monitor())
+      if (path === '/api/monitor' && req.method === 'GET') {
+        const sample = await hostMonitor({transfers:activeTransfers})
+        if (activeTasks>0 && sample.maintenance) sample.maintenance.busy.push('Tarefa administrativa em andamento')
+        return json(res,200,sample)
+      }
+      if (path === '/api/host/sites' && req.method === 'GET') {
+        if (!limit(ip,'host-sites',45)) return fail(res,429,'Muitas consultas de sites.')
+        return json(res,200,await siteHealth())
+      }
       if (path === '/api/services' && req.method === 'GET') return json(res, 200, serviceDiagnostics())
       if (path === '/api/services/inventory' && req.method === 'GET') {
         if (!limit(ip,'services-inventory',120)) return fail(res,429,'Muitas consultas')

@@ -96,25 +96,168 @@ function iconGraphic(name) {
   svg.append(use)
   return svg
 }
-function metric(title, value, icon) {
-  const card = node('div', '', 'stat')
+function metric(title, value, icon, usage=null, foot='') {
+  const card = node('div', '', 'stat host-metric')
   const label = node('div', '', 'stat-label')
   label.append(iconGraphic(icon), node('span', title))
   card.append(label, node('strong', value))
+  if (Number.isFinite(usage)) {
+    const bar=node('progress','','host-meter')
+    bar.max=100;bar.value=Math.max(0,Math.min(100,usage))
+    bar.setAttribute('aria-label',title+' utilizado')
+    if (usage>=90) bar.classList.add('high')
+    card.append(bar)
+  } else card.append(node('span','','host-meter-placeholder'))
+  if (foot) card.append(node('small',foot,'muted break-text'))
   $('metrics').append(card)
 }
+const hostPercent = (available,total) => Number.isFinite(available) && total>0 ? Math.round(100*(total-available)/total) : null
+const hostShortDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : 'Indisponível'
+const hostTimeOnly = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Não informado'
+let hostSample=null, hostSiteSample=null, hostReboot=null, hostRequest=0, hostPoll, hostPollStarted=0, hostPollId=0, hostSending=false
 function renderMetrics(m) {
+  hostSample=m
   $('metrics').replaceChildren()
-  metric('Host', m.hostname, 'server')
-  metric('CPU', `${m.cpuCount} vCPU | carga ${m.loadAverage[0].toFixed(2)}`, 'cpu')
-  metric('RAM disponível', `${bytes(m.ram.available)} / ${bytes(m.ram.total)}`, 'memory')
-  metric('Swap livre', `${bytes(m.swap.free)} / ${bytes(m.swap.total)}`, 'updates')
-  metric('Disco livre', `${bytes(m.disk.free)} / ${bytes(m.disk.total)}`, 'disk')
-  metric('Uptime', `${Math.floor(m.uptimeSeconds/86400)}d ${Math.floor(m.uptimeSeconds%86400/3600)}h`, 'clock')
-  $('overview-services').replaceChildren()
-  for (const [name, status] of Object.entries(m.services)) {
-    serviceCard($('overview-services'), name, status)
+  $('overview-sample-time').textContent='Leitura local · '+hostTimeOnly(m.timestamp)
+  metric('Uso de CPU',Number.isFinite(m.cpuPercent)?m.cpuPercent+'%':'Sem amostra','cpu',m.cpuPercent,m.cpuCount+' vCPU')
+  metric('RAM disponível',bytes(m.ram.available)+' / '+bytes(m.ram.total),'memory',hostPercent(m.ram.available,m.ram.total),'Barra de uso estimado')
+  metric('Disco livre',bytes(m.disk.free)+' / '+bytes(m.disk.total),'disk',hostPercent(m.disk.free,m.disk.total),'Barra de espaço ocupado ou reservado')
+  metric('Swap livre',m.swap.total>0?bytes(m.swap.free)+' / '+bytes(m.swap.total):'Sem swap','updates',hostPercent(m.swap.free,m.swap.total),m.swap.total>0?'Barra de uso':'')
+  const details=[]
+  const put=(key,value)=>{
+    const item=node('div','','host-system-row')
+    item.append(node('span',key,'small muted'),node('strong',String(value),'small break-text'))
+    details.push(item)
   }
+  put('Host',m.hostname)
+  if(m.system?.kernel) put('Kernel Linux',m.system.kernel)
+  if(m.bootedAt) put('Último boot',hostShortDate(m.bootedAt))
+  put('Em execução',Math.floor(m.uptimeSeconds/86400)+'d '+Math.floor(m.uptimeSeconds%86400/3600)+'h '+Math.floor(m.uptimeSeconds%3600/60)+'min')
+  if(Array.isArray(m.loadAverage)) put('Carga média · 1 / 5 / 15 min',m.loadAverage.map(value=>Number(value).toFixed(2)).join(' / '))
+  for(const item of m.system?.interfaces||[]) put(item.name+' · '+item.family,item.address)
+  $('overview-system-info').replaceChildren(...details)
+  $('overview-services').replaceChildren()
+  for (const [name,status] of Object.entries(m.services||{})) serviceCard($('overview-services'),name,status)
+  renderHostAlerts()
+}
+function renderHostAlerts() {
+  if(!hostSample) return
+  const m=hostSample, alerts=[]
+  if(m.ram.total>0 && m.ram.available/m.ram.total<.12) alerts.push('Pouca RAM disponível')
+  if(m.disk.total>0 && m.disk.free/m.disk.total<.1) alerts.push('Pouco espaço disponível no disco')
+  if(m.system?.rebootRequired) alerts.push('O Linux sinalizou reinício pendente')
+  const inactive=Object.entries(m.services||{}).filter(([name,state])=>state!=='active' &&
+    (name==='nginx' || name==='alsistemas-vps' || !['inactive/unknown','unknown'].includes(state)))
+  if(inactive.length) alerts.push('Verificar '+inactive.map(([name])=>serviceVisuals[name]?.label||name).join(', '))
+  for(const task of m.maintenance?.busy||[]) alerts.push(task+' em andamento')
+  for(const site of hostSiteSample?.sites||[]) {
+    if((site.https && !site.https.certificate?.valid) || (site.https?.status>=500 || !site.https && site.http && (!site.http.status || site.http.status>=500)))
+      alerts.push('Verificar '+site.name)
+    else if(site.https?.certificate?.expiresAt && Date.parse(site.https.certificate.expiresAt)-Date.now()<14*86400000)
+      alerts.push('Certificado perto do vencimento em '+site.name)
+  }
+  const banner=$('overview-alerts')
+  banner.hidden=false
+  banner.classList.toggle('needs-attention',!!alerts.length)
+  if (!alerts.length) {
+    banner.replaceChildren(node('strong',hostSiteSample?'Sem alertas nas verificações locais':'Sem alertas do servidor'))
+    return
+  }
+  const list=node('ul')
+  for (const message of alerts.slice(0,7)) list.append(node('li',message,'break-text'))
+  banner.replaceChildren(node('strong','Pontos de atenção'),list)
+}
+function hostProbeLabel(probe) {
+  if (!probe?.status) return 'Sem resposta'
+  if(probe.status===405) return '405 · HEAD recusado'
+  if(probe.status>=300 && probe.status<400) return probe.status+' · Redireciona'
+  return String(probe.status)
+}
+function renderHostSites(data) {
+  hostSiteSample=data
+  const out=$('overview-sites')
+  $('overview-sites-meta').textContent=data.total ? 'Da própria VPS, sem testar a internet pública · '+hostTimeOnly(data.checkedAt)
+    +(data.total>data.sites.length?' · '+data.sites.length+' de '+data.total+' endereços':'') : 'Nenhum site com configuração local identificada.'
+  out.replaceChildren(...data.sites.map(site=>{
+    const row=node('article','','host-site')
+    const main=node('div','','host-site-main')
+    main.append(node('strong',site.name,'break-text'))
+    const badges=node('div','','host-site-badges')
+    for(const [label,value] of [['HTTP',site.http],['HTTPS',site.https]]) if(value) {
+      const secure=label==='HTTPS'
+      const good=value.status>=200 && value.status<400 && (!secure || value.certificate?.valid)
+      const warning=!!value.status && secure && !value.certificate?.valid
+      badges.append(node('span',label+' · '+hostProbeLabel(value)+(warning?' · TLS inválido':''),'pill '+(good?'good':warning||!value.status||value.status>=500?'bad':'muted')))
+    }
+    main.append(badges)
+    const certificate=site.https?.certificate
+    if(certificate?.expiresAt) main.append(node('small','Certificado vence em '+hostShortDate(certificate.expiresAt),'muted break-text'))
+    else if(site.https) main.append(node('small','Certificado não verificado.','muted'))
+    row.append(main)
+    const route='project/'+site.project+'/runtime-logs'
+    if(validAppRoute(route)) {
+      const logs=node('button','Logs','outline button-small')
+      logs.type='button';logs.setAttribute('aria-label','Logs de '+site.name)
+      logs.addEventListener('click',()=>navigateApp(route));row.append(logs)
+    }
+    return row
+  }))
+  renderHostAlerts()
+}
+function paintHostReboot(state,connection='') {
+  hostReboot=state
+  const pending=['scheduled','dispatching'].includes(state?.state)
+  const busy=hostSample?.maintenance?.busy||[]
+  const banner=$('overview-reboot-status'), button=$('host-reboot-open'), note=$('host-reboot-note')
+  const visible=state?.state && state.state!=='idle'
+  banner.hidden=!visible
+  banner.classList.toggle('needs-attention',state?.state==='blocked'||state?.state==='unconfirmed')
+  if (visible) {
+    const title={scheduled:'Reinício solicitado',dispatching:'Aguardando a VPS voltar',rebooted:'Novo boot confirmado',
+      blocked:'Reinício não executado',unconfirmed:'Reinício sem confirmação'}[state.state]
+    const copy=connection || state.message || ({scheduled:'O Linux vai receber o pedido em alguns segundos.',
+      dispatching:'A conexão pode cair por alguns instantes. O painel continuará tentando.',
+      rebooted:'O Linux voltou com outro identificador de inicialização.',
+      unconfirmed:'Ainda não foi possível confirmar um novo boot. Consulte a VPS antes de pedir outro.'})[state.state] || ''
+    banner.replaceChildren(node('strong',title||'Status do reinício'),node('small',copy,'muted break-text'))
+  }
+  button.disabled=hostSending||pending||!state?.canCheckBoot||busy.length>0
+  note.textContent=pending?'Há um reinício pendente.':busy.length?'Aguarde as tarefas em andamento.':
+    !state?.canCheckBoot?'Não foi possível verificar o boot do Linux.':'O painel e os sites ficam indisponíveis durante o reinício.'
+}
+function followHostReboot() {
+  if (!hostPollStarted) hostPollStarted=Date.now()
+  clearTimeout(hostPoll)
+  const session=csrf, id=++hostPollId
+  async function check() {
+    if(!session||csrf!==session||id!==hostPollId)return
+    try {
+      const next=await api('/api/host/reboot','GET',undefined,{timeoutMs:4500})
+      if(csrf!==session||id!==hostPollId)return
+      if(next.state==='idle' && ['scheduled','dispatching'].includes(hostReboot?.state)) {
+        paintHostReboot({...hostReboot,state:'unconfirmed',canCheckBoot:next.canCheckBoot,message:'O registro do pedido não foi encontrado quando a VPS respondeu.'})
+        hostPollStarted=0
+        return
+      }
+      paintHostReboot(next)
+      if (!['scheduled','dispatching'].includes(next.state)) {
+        hostPollStarted=0
+        if(currentAppRoute==='overview')void loadDashboardOverview()
+        return
+      }
+    } catch(error) {
+      if(csrf!==session||id!==hostPollId)return
+      if (error.httpStatus===401 || Date.now()-hostPollStarted>270000) {
+        const message=error.httpStatus===401?'Entre novamente para verificar se houve um novo boot.':'Ainda sem resposta da VPS. Atualize para conferir assim que ela voltar.'
+        paintHostReboot({state:'unconfirmed',canCheckBoot:false,message})
+        hostPollStarted=0
+        return
+      }
+      paintHostReboot({...hostReboot,state:'dispatching'},'Sem conexão no momento. Tentando confirmar o novo boot…')
+    }
+    hostPoll=setTimeout(check,3200)
+  }
+  hostPoll=setTimeout(check,2600)
 }
 // v2.0.20: projetos são páginas navegáveis. Nenhum dado sensível é colocado no endereço.
 let knownProjects = new Map()
@@ -1373,13 +1516,29 @@ function loadProjectCatalog({ force = false } = {}) {
   return projectCatalogRequest
 }
 async function loadDashboardOverview() {
-  const status = $('overview-load-status')
-  status.hidden = true
-  try { renderMetrics(await api('/api/monitor', 'GET', undefined, { timeoutMs: 10_000 })) }
-  catch (error) {
-    status.textContent = 'Métricas do servidor indisponíveis. ' + error.message
-    status.hidden = false
-  }
+  const id=++hostRequest, status=$('overview-load-status'), refresh=$('refresh')
+  const current=()=>id===hostRequest&&currentAppRoute==='overview'&&!!csrf
+  refresh.disabled=true
+  status.hidden=true
+  $('overview-sites-meta').textContent=hostSiteSample?'Atualizando teste local…':'Testando os sites pelo Nginx local…'
+  const metrics=api('/api/monitor','GET',undefined,{timeoutMs:12000}).then(data=>{
+    if(!current())return
+    renderMetrics(data)
+    paintHostReboot(data.reboot)
+    if(['scheduled','dispatching'].includes(data.reboot?.state))followHostReboot()
+  }).catch(error=>{
+    if(!current())return
+    status.textContent='Métricas não atualizadas. '+error.message
+    status.hidden=false
+  })
+  const sites=api('/api/host/sites','GET',undefined,{timeoutMs:12000}).then(data=>{
+    if(current())renderHostSites(data)
+  }).catch(error=>{
+    if(!current())return
+    $('overview-sites-meta').textContent='Teste local não atualizado. '+error.message
+  })
+  try {await Promise.all([metrics,sites])}
+  finally {if(id===hostRequest)refresh.disabled=false}
 }
 async function loadAuditPage() {
   const status = $('audit-load-status')
@@ -1612,12 +1771,85 @@ $('login-form').addEventListener('submit', e => {
     enterDashboard(sess)
   })
 })
+$('overview-details-toggle').addEventListener('click',()=>{
+  const content=$('overview-details')
+  content.hidden=!content.hidden
+  $('overview-details-toggle').setAttribute('aria-expanded',String(!content.hidden))
+})
+$('host-logs-open').addEventListener('click',async()=>{
+  const dialog=$('host-logs-dialog'), list=$('host-log-list')
+  $('host-log-note').textContent='Consultando projetos…'
+  list.replaceChildren()
+  dialog.showModal()
+  await loadProjectCatalog()
+  if(!dialog.open)return
+  const catalog=[...knownProjects.values()].filter(item=>!item.protected && item.capabilities?.diagnostics)
+  $('host-log-note').textContent=catalog.length?'Escolha o projeto para ver os logs locais.':projectCatalogError||'Nenhum projeto com diagnóstico disponível.'
+  list.replaceChildren(...catalog.map(item=>{
+    const button=node('button',item.displayName||item.name,'outline host-log-button')
+    button.type='button';button.addEventListener('click',()=>navigateApp('project/'+item.name+'/runtime-logs'))
+    return button
+  }))
+})
+$('host-nginx-test').addEventListener('click',async()=>{
+  const button=$('host-nginx-test'), feedback=$('host-nginx-feedback')
+  button.disabled=true
+  feedback.className='small muted';feedback.textContent='Validando configuração…'
+  try {
+    const result=await api('/api/tasks','POST',{action:'validate_nginx'},{timeoutMs:25000})
+    feedback.textContent=result.diagnostic
+    feedback.className=result.valid?'small good':'small bad'
+  } catch(error) {feedback.textContent=error.message;feedback.className='small bad'}
+  finally {button.disabled=false}
+})
+$('host-reboot-open').addEventListener('click',()=>{
+  $('host-reboot-form').reset()
+  $('host-reboot-send').disabled=true
+  $('host-reboot-error').hidden=true
+  $('host-reboot-dialog').showModal()
+})
+$('host-reboot-confirm').addEventListener('input',e=>{
+  $('host-reboot-send').disabled=hostSending||e.target.value!=='REINICIAR'
+})
+$('host-reboot-form').addEventListener('submit',async e=>{
+  e.preventDefault()
+  const confirmation=$('host-reboot-confirm'), dialog=$('host-reboot-dialog')
+  if(hostSending||confirmation.value!=='REINICIAR')return
+  hostSending=true
+  $('host-reboot-send').disabled=true
+  $('host-reboot-error').hidden=true
+  const session=csrf
+  try {
+    const response=await api('/api/host/reboot','POST',{confirm:confirmation.value},{timeoutMs:16000})
+    if(csrf!==session)return
+    dialog.close()
+    paintHostReboot(response)
+    followHostReboot()
+  } catch(error) {
+    if(csrf!==session)return
+    if (error.httpStatus) {
+      $('host-reboot-error').textContent=error.message
+      $('host-reboot-error').hidden=false
+      void loadDashboardOverview()
+    } else {
+      dialog.close()
+      paintHostReboot({state:'scheduled',canCheckBoot:true},'A resposta não chegou. Consultando se o pedido foi registrado…')
+      followHostReboot()
+    }
+  } finally {
+    hostSending=false
+    $('host-reboot-send').disabled=confirmation.value!=='REINICIAR'
+    $('host-reboot-open').disabled=!hostReboot?.canCheckBoot || ['scheduled','dispatching'].includes(hostReboot?.state) || !!hostSample?.maintenance?.busy?.length
+  }
+})
 $('refresh').addEventListener('click', () => { clearNotice(); void loadDashboardOverview() })
 $('logout').addEventListener('click', async () => {
   try {
     await api('/api/logout', 'POST')
     csrf = ''
     clearTimeout(aptTimer)
+    clearTimeout(hostPoll)
+    hostPollId++; hostPollStarted=0;hostSample=null;hostSiteSample=null;hostReboot=null
     aptView=null
     $('apt-progress-panel').classList.add('hidden')
     projectCatalogSession++

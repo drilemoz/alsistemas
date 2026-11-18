@@ -1,3 +1,10 @@
+## 2.0.45 — Visão geral da VPS e reinício local (18/11/2026)
+
+- CPU percentual por amostra e barras para RAM, disco e swap, com horário da leitura.
+- Saúde dos sites por teste local do Nginx, com resposta HTTP/HTTPS e validade do certificado observado.
+- Alertas, detalhes recolhíveis do Linux/rede e atalhos para serviços, logs dos sites e teste do Nginx.
+- Reinício do Linux pelo systemd com confirmação, verificação de tarefas e conferência de novo boot. Sem API AWS.
+
 ## 2.0.44 — Busca e histórico de Dependências (18/11/2026)
 
 - Busca por nome, descrição, categoria ou pacote APT, combinada com filtros de instalação.

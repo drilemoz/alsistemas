@@ -27,7 +27,32 @@
 <button class="nav-item" data-tab="help" type="button"><svg aria-hidden="true" class="icon" focusable="false"><use href="#i-help"></use></svg>Ajuda</button>
 </nav>
 <div class="workspace">
-<section class="tab-page" id="page-overview"><div class="heading"><div><p class="eyebrow">SERVIDOR</p><h1>Visão geral</h1><p class="muted">Métricas reais, consultadas sob demanda.</p></div><button class="outline" id="refresh" type="button"><svg aria-hidden="true" class="icon" focusable="false"><use href="#i-updates"></use></svg>Atualizar</button></div><p class="small bad" id="overview-load-status" role="status" hidden></p><div class="grid stats" id="metrics"></div><section class="panel"><h2>Resumo de serviços</h2><div class="stack small" id="overview-services"></div></section><p class="small muted overview-footnote">Dados medidos pelo servidor, sem atualização em segundo plano.</p></section>
+<section class="tab-page host-overview" id="page-overview" aria-labelledby="host-overview-title">
+<header class="heading"><div><p class="eyebrow">SERVIDOR</p><h1 id="host-overview-title">Visão geral</h1><p class="small muted" id="overview-sample-time">Leitura sob demanda da VPS.</p></div><button class="outline icon-button" id="refresh" type="button" aria-label="Atualizar Visão geral" title="Atualizar Visão geral"><svg aria-hidden="true" class="icon"><use href="#i-updates"></use></svg></button></header>
+<p class="small bad" id="overview-load-status" role="status" hidden></p>
+<div id="overview-reboot-status" class="host-banner" role="status" hidden></div>
+<div id="overview-alerts" class="host-banner host-alerts" hidden></div>
+<section class="grid stats host-metrics" id="metrics" aria-label="Uso de recursos"></section>
+<section class="panel host-panel" aria-labelledby="overview-sites-title">
+<div class="host-section-heading"><h2 id="overview-sites-title">Saúde dos sites</h2><span class="pill">Teste local</span></div>
+<p class="small muted" id="overview-sites-meta">Aguardando consulta ao Nginx.</p><div class="host-site-list" id="overview-sites"></div>
+</section>
+<section class="panel host-panel" aria-labelledby="overview-actions-title">
+<h2 id="overview-actions-title">Ações da VPS</h2>
+<div class="host-quick-actions"><button type="button" class="outline button-small" data-tab="services">Ver serviços</button><button type="button" class="outline button-small" id="host-logs-open">Ver logs dos sites</button><button type="button" class="outline button-small" id="host-nginx-test">Testar Nginx</button></div><p id="host-nginx-feedback" class="small muted" role="status"></p>
+<div class="host-reboot-row"><div><strong>Reinício do Linux</strong><p class="small muted" id="host-reboot-note">O painel e os sites ficam indisponíveis durante o reinício.</p></div><button type="button" class="outline button-small" id="host-reboot-open" disabled>Reiniciar VPS</button></div>
+</section>
+<section class="panel host-panel host-details"><button type="button" class="host-detail-toggle outline" id="overview-details-toggle" aria-expanded="false" aria-controls="overview-details"><span>Servidor, rede e serviços</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"></use></svg></button><div id="overview-details" hidden><div id="overview-system-info" class="host-system-info"></div><div class="stack small" id="overview-services"></div></div></section>
+</section>
+<dialog id="host-reboot-dialog" class="panel-popup" data-panel-popup aria-labelledby="host-reboot-title"><div class="dialog-body">
+<header class="modal-heading"><div><p class="eyebrow">AÇÃO ADMINISTRATIVA</p><h2 id="host-reboot-title">Reiniciar a VPS?</h2></div><button type="button" class="outline icon-button modal-x" data-close="host-reboot-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
+<div class="popup-scroll"><p>O Linux será reiniciado. Sites e painel podem ficar fora do ar até os serviços voltarem.</p><form id="host-reboot-form"><label for="host-reboot-confirm">Digite REINICIAR para confirmar<input id="host-reboot-confirm" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label></form><p class="small bad" id="host-reboot-error" role="status" hidden></p></div>
+<div class="dialog-actions"><button type="button" class="outline" data-close="host-reboot-dialog">Cancelar</button><button type="submit" form="host-reboot-form" class="destructive" id="host-reboot-send" disabled>Reiniciar VPS</button></div>
+</div></dialog>
+<dialog id="host-logs-dialog" class="panel-popup" data-panel-popup aria-labelledby="host-logs-title"><div class="dialog-body">
+<header class="modal-heading"><div><p class="eyebrow">DIAGNÓSTICO</p><h2 id="host-logs-title">Logs dos sites</h2></div><button type="button" class="outline icon-button modal-x" data-close="host-logs-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
+<div class="popup-scroll"><p class="small muted" id="host-log-note">Selecione um projeto para ver os registros locais.</p><div id="host-log-list" class="host-site-list"></div></div><div class="dialog-actions"><button type="button" class="outline" data-close="host-logs-dialog">Fechar</button></div>
+</div></dialog>
 <section class="tab-page hidden" id="page-projects" aria-labelledby="projects-title">
   <header class="heading projects-heading"><div><h1 id="projects-title">Projetos e sites <span class="pill" id="project-count">—</span></h1></div><button class="button-small" id="new-project" type="button"><svg aria-hidden="true" class="icon"><use href="#i-plus"></use></svg> Novo projeto</button></header>
   <section class="panel projects-list-panel"><div class="project-list-toolbar"><button type="button" class="outline icon-button" id="projects-refresh" aria-label="Atualizar lista de projetos" title="Atualizar lista"><svg aria-hidden="true" class="icon"><use href="#i-updates"></use></svg></button><label class="project-list-search" id="project-search-field" hidden>Buscar projeto<input type="search" id="project-search" placeholder="Nome ou domínio" maxlength="100" autocomplete="off"/></label></div><p id="project-list-status" class="small muted" role="status">Carregando projetos…</p><div class="stack" id="projects"></div></section>

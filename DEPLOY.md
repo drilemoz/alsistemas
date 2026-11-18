@@ -1,3 +1,7 @@
+## Atualização 2.0.45 — Visão geral e reinício
+
+Instale em **Mais → Atualizar → Arquivo ZIP**. O instalador registra um timer de reinício que fica desativado até uma solicitação explícita. Instalar a atualização não reinicia o Linux. Consulte [o guia](vps/docs/ATUALIZACAO-2.0.45.md).
+
 ## Atualização 2.0.44 — Busca e histórico do APT
 
 Atualize em **Mais → Atualizar → Arquivo ZIP**. Depois, abra **Dependências** para buscar, filtrar e consultar o histórico. O histórico é salvo no servidor e começa a ser registrado após a atualização. Consulte [o guia](vps/docs/ATUALIZACAO-2.0.44.md).

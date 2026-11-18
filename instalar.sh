@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.44: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.45: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -149,7 +149,7 @@ fi
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
 # Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
-for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py managed_hosting.py package_policy.py mongo_repo.py admin_services.py; do
+for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py managed_hosting.py package_policy.py mongo_repo.py admin_services.py host_reboot.py; do
   [[ ! -L "/usr/local/libexec/$candidate" ]] || fail 'Script de projeto existente é link simbólico.'
   install -o root -g root -m 0700 "$BASE/vps/admin/$candidate" "/usr/local/libexec/$candidate"
 done
@@ -354,6 +354,38 @@ NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true
 NGINX_CHECK
+# O timer é iniciado só pelo helper autenticado. Sem habilitação permanente.
+for host_reboot_unit in alsistemas-host-reboot.timer alsistemas-host-reboot.service; do
+  target="/etc/systemd/system/$host_reboot_unit"
+  [[ ! -L "$target" ]] || fail 'Unidade de reinício é link simbólico.'
+  if [[ -e "$target" ]]; then
+    grep -Fq 'Description=AL Sistemas VPS - reinicio local' "$target" || fail 'Unidade de reinício não pertence ao painel.'
+  fi
+done
+cat > /etc/systemd/system/alsistemas-host-reboot.timer <<'ALS_REBOOT_TIMER'
+[Unit]
+Description=AL Sistemas VPS - reinicio local agendado
+
+[Timer]
+OnActiveSec=8s
+AccuracySec=1s
+Unit=alsistemas-host-reboot.service
+RemainAfterElapse=no
+ALS_REBOOT_TIMER
+cat > /etc/systemd/system/alsistemas-host-reboot.service <<'ALS_REBOOT_SERVICE'
+[Unit]
+Description=AL Sistemas VPS - reinicio local autorizado
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/host_reboot.py
+TimeoutStartSec=30
+UMask=0027
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ALS_REBOOT_SERVICE
 # Retira apenas o ajuste temporário EXATO, caso tenha sido aplicado durante testes da 2.0.3.
 if [[ -f /etc/systemd/system/alsistemas-vps.service.d/lock.conf && ! -L /etc/systemd/system/alsistemas-vps.service.d/lock.conf ]]; then
   legacy="$(cat /etc/systemd/system/alsistemas-vps.service.d/lock.conf)"
