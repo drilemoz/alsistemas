@@ -868,3 +868,25 @@ button.service-manager-row{display:grid;grid-template-columns:minmax(0,1fr) auto
 .dependency-row-actions{display:grid;gap:.3rem;justify-items:end}
 #services-more{margin-top:.48rem}
 @media(max-width:700px){.apt-progress-panel{bottom:calc(69px + env(safe-area-inset-bottom));right:10px;width:calc(100vw - 20px)}}
+
+/* Dependências: busca, detalhes de operações e trilha do APT sem porcentagens estimadas. */
+#page-dependencies [hidden]{display:none!important}
+.depend-toolbar{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:.62rem}
+.depend-toolbar label{margin:0;font-size:.76rem}
+.depend-toolbar input,.depend-toolbar select{font-size:16px;margin-top:.24rem;padding:.5rem .6rem;min-width:0}
+.depend-meta{display:flex;gap:.48rem;align-items:center;justify-content:space-between;margin:.59rem 0 .68rem;flex-wrap:wrap}
+.depend-meta p{margin:0;min-width:0}
+.depend-meta .icon{width:14px;height:14px}
+.depend-results{padding:.75rem;margin-bottom:.7rem}
+.depend-results h2{margin:0}
+.dependency-apt{font-family:ui-monospace,monospace;font-size:.72rem}
+button.depend-history-row{display:grid;text-align:left;grid-template-columns:minmax(0,1fr) auto;gap:.48rem;width:100%;margin:0 0 .38rem;padding:.52rem .62rem}
+.depend-history-copy{display:grid;gap:.13rem;min-width:0}
+.depend-log{max-height:min(42dvh,360px);white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;margin:.44rem 0;background:var(--bg);border:1px solid var(--border);border-radius:.52rem;padding:.55rem;font-size:.76rem}
+#dependency-history-feedback{margin:.38rem 0}
+.apt-progress-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.28rem;margin:.35rem 0}
+.apt-progress-steps small{font-size:.71rem;text-align:center;padding:.22rem .1rem;border:1px solid var(--border);border-radius:.35rem}
+.apt-progress-steps .current{color:var(--accent);border-color:var(--accent)}
+.apt-progress-steps .past{color:var(--success)}
+#apt-progress-time{margin:.22rem 0}
+@media(max-width:335px){.depend-toolbar input,.depend-toolbar select{padding-inline:.35rem}.depend-meta{column-gap:.3rem}}

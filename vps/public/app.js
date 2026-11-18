@@ -181,7 +181,6 @@ function showAppRoute(route, { keepPopup = null } = {}) {
   }
   if (route === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
   if (route === 'dependencies') void refreshDependencies()
-  else clearTimeout(packagePoll)
   if (route === 'domains') void openDomainsPage()
   if (route === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
   if (route === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
@@ -1619,6 +1618,7 @@ $('logout').addEventListener('click', async () => {
     await api('/api/logout', 'POST')
     csrf = ''
     clearTimeout(aptTimer)
+    aptView=null
     $('apt-progress-panel').classList.add('hidden')
     projectCatalogSession++
     closePanelPopups()
@@ -1873,7 +1873,7 @@ const dependencyGroups = [
 ]
 const packageBusy = state => ['queued','checking','installing','removing'].includes(state?.stage)
 let packageToInstall = null, packageOperation = 'install', packageGroup = null, packageInventory = null
-let packagePoll, packageRequest = 0, packageSubmitting = false
+let packageRequest = 0, packageSubmitting = false
 function dependencyPill(text, css = '') {return node('span',text,'status-chip dependency-pill ' + css)}
 function dependencyState(id,state,packages) {
   const el = $(id)
@@ -1883,11 +1883,16 @@ function dependencyState(id,state,packages) {
   const status = {queued:'Na fila',checking:'Verificando',installing:'Instalando',removing:'Removendo',canceled:'Cancelado',completed:'Concluído',failed:'Não concluído'}[state.stage] || 'Andamento'
   el.replaceChildren(dependencyPill(status,state.stage === 'completed' ? 'good' : state.stage === 'failed' ? 'bad' : ''),node('strong',title),node('small',state.message || '','muted break-text'))
 }
-function dependencyRow(pkg, state) {
+function dependencyRow(pkg, state, showGroup = false) {
   const line = node('div','','dependency-row')
   const info = node('div','','dependency-row-copy')
   info.append(node('strong',pkg.label))
+  if (showGroup) {
+    const group = dependencyGroups.find(item=>item.id===pkg.group)
+    if (group) info.append(node('small',group.title,'muted'))
+  }
   if (pkg.detail) info.append(node('small',pkg.detail,'muted'))
+  if (pkg.apt) info.append(node('small',pkg.apt,'muted dependency-apt break-text'))
   if (pkg.version) info.append(node('small','v' + String(pkg.version).replace(/^v/,''),'muted break-text'))
   line.append(info)
   if (pkg.installable && pkg.installed === false) {
@@ -1927,19 +1932,47 @@ function dependencySummary(group, data) {
   const list = data.packages.filter(p=>p.group === group.id)
   return group.summary + (data.inventoryAvailable ? ' · ' + list.filter(p=>p.installed).length + '/' + list.length + ' instalados' : '')
 }
+function dependencyItems(data) {
+  const list = [...data.packages]
+  const npm = data.runtime.npm
+  list.unshift(
+    {id:'system-node',group:'node',label:'Node.js',apt:'nodejs',detail:'Versão do processo que está executando o painel.',version:data.runtime.node.version,installed:true,readOnly:true},
+    {id:'system-npm',group:'node',label:'npm',detail:'Versão do npm detectada na VPS.',version:npm.version,installed:npm.state === 'ready' ? true : npm.state === 'missing' ? false : null,readOnly:true})
+  list.push({id:'system-nginx',group:'tools',label:'Nginx',apt:'nginx',detail:'Servidor web do painel. Somente leitura.',version:data.runtime.nginx.version,installed:data.inventoryAvailable ? !!data.runtime.nginx.version : null,readOnly:true})
+  return list
+}
 function dependencyGroupRows(group, data) {
   if (!group || !$('package-group-dialog').open) return
   $('package-group-title').textContent = group.title
   $('package-group-detail').textContent = group.detail
-  const list = data.packages.filter(p=>p.group === group.id)
-  const npm = data.runtime.npm
-  if (group.id === 'node') list.unshift(
-    {label:'Node.js',detail:'Versão do processo que está executando o painel.',version:data.runtime.node.version,installed:true,readOnly:true},
-    {label:'npm',detail:'Versão detectada na VPS. A instalação de pacotes do sistema não troca o npm.',version:npm.version,installed:npm.state === 'ready' ? true : npm.state === 'missing' ? false : null,readOnly:true})
-  if (group.id === 'tools') list.unshift({label:'Nginx',detail:'Servidor web do painel. Somente leitura.',version:data.runtime.nginx.version,installed:data.inventoryAvailable ? !!data.runtime.nginx.version : null,readOnly:true})
+  const list = dependencyItems(data).filter(p=>p.group===group.id)
   $('package-list').replaceChildren(...list.map(pkg=>dependencyRow(pkg,data.status)))
   dependencyState('package-group-status',data.status,data.packages)
 }
+const dependencyNormalize = value => String(value || '').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
+function filterDependencies(data) {
+  const query = dependencyNormalize($('dependency-search').value).trim().split(/\s+/).filter(Boolean)
+  const state = $('dependency-filter').value
+  const filtered = !!query.length || state!=='all'
+  $('dependency-groups').hidden = filtered
+  $('dependency-results').hidden = !filtered
+  const installed = data.packages.filter(p=>p.installed===true).length
+  const missing = data.packages.filter(p=>p.installed===false).length
+  $('dependency-counts').textContent = data.inventoryAvailable ? installed+' instalados · '+missing+' não instalados' : 'Inventário ainda não verificado'
+  if (!filtered) return
+  const results = dependencyItems(data).filter(pkg=>{
+    if (state==='installed' && pkg.installed!==true || state==='missing' && pkg.installed!==false) return false
+    const group = dependencyGroups.find(item=>item.id===pkg.group)?.title
+    const fields = dependencyNormalize([pkg.apt,pkg.label,pkg.id,pkg.detail,group].filter(Boolean).join(' '))
+    return query.every(term=>fields.includes(term))
+  })
+  $('dependency-results-title').textContent = results.length + (results.length===1 ? ' resultado' : ' resultados')
+  $('dependency-results-list').replaceChildren(...(results.length ? results.map(pkg=>dependencyRow(pkg,data.status,true)) :
+    [node('p','Nenhum pacote corresponde à busca ou ao filtro.','small muted')]))
+}
+for (const id of ['dependency-search','dependency-filter']) $(id).addEventListener(id==='dependency-search'?'input':'change',()=>{
+  if (packageInventory) filterDependencies(packageInventory)
+})
 function renderDependencies(data) {
   const cards = dependencyGroups.map(group => {
     const btn = node('button','','dependency-category outline')
@@ -1962,6 +1995,7 @@ function renderDependencies(data) {
   $('dependency-groups').replaceChildren(...cards)
   dependencyState('package-status',data.status,data.packages)
   dependencyGroupRows(packageGroup,data)
+  filterDependencies(data)
 }
 function dependencyFeedback(message, bad = false) {
   const el = $('dependencies-feedback')
@@ -1970,7 +2004,6 @@ function dependencyFeedback(message, bad = false) {
   el.classList.toggle('bad',bad)
 }
 async function refreshDependencies({ background = false } = {}) {
-  clearTimeout(packagePoll)
   const token = ++packageRequest
   if (!background) {
     $('reload-packages').disabled = true
@@ -1982,11 +2015,9 @@ async function refreshDependencies({ background = false } = {}) {
     packageInventory = data
     dependencyFeedback(data.inventoryAvailable ? '' : 'Não foi possível ler o inventário do APT. Atualize para liberar instalações.',!data.inventoryAvailable)
     renderDependencies(data)
-    if (packageBusy(data.status)) packagePoll = setTimeout(() => void refreshDependencies({background:true}),3500)
   } catch (error) {
     if (token !== packageRequest || currentAppRoute !== 'dependencies') return
     dependencyFeedback(error.message,true)
-    if (packageBusy(packageInventory?.status)) packagePoll = setTimeout(() => void refreshDependencies({background:true}),7000)
   } finally { if (token === packageRequest) $('reload-packages').disabled = false }
 }
 $('reload-packages').addEventListener('click', () => void refreshDependencies())
@@ -2013,6 +2044,79 @@ $('package-form').addEventListener('submit', async event => {
   } finally { packageSubmitting = false; submitButton.disabled = false }
 })
 
+let dependencyHistoryToken=0, dependencyHistoryLog=''
+const dependencyStage = value => ({queued:'Na fila',checking:'Verificando',installing:'Instalando',removing:'Removendo',
+  completed:'Concluído',failed:'Falhou',canceled:'Cancelado'})[value] || 'Operação'
+const formatPackageDate = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : 'Hora não registrada'
+function formatPackageDuration(start,end) {
+  const elapsed = Math.round((Date.parse(end)-Date.parse(start))/1000)
+  if (!Number.isFinite(elapsed) || elapsed<0) return ''
+  const minutes = Math.floor(elapsed/60)
+  return minutes ? minutes+' min '+(elapsed%60)+' s' : elapsed+' s'
+}
+function dependencyHistoryMode(detail) {
+  $('dependency-history-list').hidden=detail
+  $('dependency-history-record').hidden=!detail
+  $('dependency-history-back').hidden=!detail
+  $('dependency-history-copy').hidden=true
+  dependencyHistoryLog=''
+}
+async function readDependencyHistory() {
+  const token=++dependencyHistoryToken, dialog=$('dependency-history-dialog')
+  $('dependency-history-title').textContent='Histórico do APT'
+  $('dependency-history-list').replaceChildren()
+  $('dependency-history-feedback').textContent='Consultando operações recentes…'
+  dependencyHistoryMode(false)
+  if (!dialog.open) dialog.showModal()
+  try {
+    const {history}=await api('/api/dependencies/history')
+    if(token!==dependencyHistoryToken || !dialog.open)return
+    $('dependency-history-feedback').textContent=history.length?'Últimas 20 operações concluídas, falhas ou canceladas.':'Nenhuma operação finalizada registrada.'
+    $('dependency-history-list').replaceChildren(...history.map(entry=>{
+      const label=entry.operation==='remove'?'Remoção':'Instalação'
+      const row=node('button','','depend-history-row outline')
+      row.type='button'
+      const copy=node('span','','depend-history-copy')
+      copy.append(node('strong',entry.label,'break-text'),node('small',label+' · '+formatPackageDate(entry.time),'muted break-text'))
+      row.append(copy,dependencyPill(dependencyStage(entry.stage),entry.stage==='failed'?'bad':entry.stage==='completed'?'good':''))
+      row.addEventListener('click',()=>void openDependencyRecord(entry))
+      return row
+    }))
+  } catch(error) {
+    if(token===dependencyHistoryToken && dialog.open) $('dependency-history-feedback').textContent=error.message
+  }
+}
+async function openDependencyRecord(entry) {
+  const token=++dependencyHistoryToken
+  const dialog=$('dependency-history-dialog'), box=$('dependency-history-log')
+  dependencyHistoryMode(true)
+  $('dependency-history-title').textContent=entry.label
+  $('dependency-history-meta').textContent=(entry.operation==='remove'?'Remoção':'Instalação')+' · '+dependencyStage(entry.stage)+' · '+formatPackageDate(entry.time)
+  box.hidden=true
+  $('dependency-history-feedback').textContent='Lendo o registro…'
+  try {
+    const {record}=await api('/api/dependencies/history?job='+encodeURIComponent(entry.job))
+    if(token!==dependencyHistoryToken || !dialog.open)return
+    dependencyHistoryLog=record.log || ''
+    const duration=formatPackageDuration(record.startedAt,record.time)
+    box.textContent=dependencyHistoryLog
+    box.hidden=!dependencyHistoryLog
+    $('dependency-history-copy').hidden=!dependencyHistoryLog
+    $('dependency-history-feedback').textContent=[record.message, duration?'Duração '+duration:'', dependencyHistoryLog?'':'Nenhuma saída adicional.'].filter(Boolean).join(' · ')
+  } catch(error) {
+    if(token===dependencyHistoryToken && dialog.open) $('dependency-history-feedback').textContent=error.message
+  }
+}
+async function copyPackageLog(content,target) {
+  if (!content) return
+  try {await navigator.clipboard.writeText(content);target.textContent='Registro copiado.'}
+  catch {target.textContent='Não foi possível copiar. Selecione o texto do registro.'}
+  target.hidden=false
+}
+$('dependency-history-open').addEventListener('click',()=>void readDependencyHistory())
+$('dependency-history-back').addEventListener('click',()=>void readDependencyHistory())
+$('dependency-history-copy').addEventListener('click',()=>void copyPackageLog(dependencyHistoryLog,$('dependency-history-feedback')))
+
 let aptTimer, aptView, aptWatchId=0, aptExpanded=true, aptDismissed=null, aptCanceling=false
 function openPackageOperation(pkg,operation) {
   packageToInstall=pkg; packageOperation=operation
@@ -2033,13 +2137,27 @@ function paintApt(state) {
   if(!state || !csrf || (!busy && (!state.job || aptDismissed===state.job))) {frame.classList.add('hidden');return}
   frame.classList.remove('hidden')
   const label=packageInventory?.packages.find(pkg=>pkg.id===state.package)?.label || ({'node-build':'Compiladores e Make','ruby-rails':'Ruby on Rails',mongodb:'MongoDB Community'})[state.package] || state.package
-  const stage={queued:'Na fila',checking:'Verificando',installing:'Instalando',removing:'Removendo',completed:'Concluído',failed:'Falhou',canceled:'Cancelado'}[state.stage] || 'Operação'
+  const stage=dependencyStage(state.stage)
   $('apt-progress-title').textContent=stage+' · '+label
   $('apt-progress-message').textContent=(state.message || '') + (['installing','removing'].includes(state.stage)?' Aguarde esta etapa antes de reiniciar.':'')
   const log=$('apt-progress-log')
   const follow=log.scrollHeight-log.scrollTop-log.clientHeight<35
-  log.textContent=state.log || (busy?'Aguardando saída do APT…':'Sem saída adicional.')
-  if(follow)log.scrollTop=log.scrollHeight
+  const lines=state.log || (busy?'Aguardando saída do APT…':'Sem saída adicional.')
+  if (log.textContent!==lines) {log.textContent=lines;if(follow)log.scrollTop=log.scrollHeight}
+  $('apt-copy').hidden=!state.log
+  const steps=$('apt-progress-steps')
+  steps.hidden=!busy
+  if (busy) {
+    const phase={queued:0,checking:1,installing:2,removing:2}[state.stage]
+    steps.replaceChildren(...['Fila','Plano','Aplicação'].map((label,index)=>{
+      const item=node('small',label,phase===index?'current':phase>index?'past':'muted')
+      if(phase===index)item.setAttribute('aria-current','step')
+      return item
+    }))
+  }
+  const time=$('apt-progress-time'), duration=formatPackageDuration(state.startedAt,state.time)
+  time.textContent=duration?(busy?'Tempo decorrido · ':'Duração · ')+duration:''
+  time.hidden=!duration
   $('apt-progress-body').hidden=!aptExpanded
   $('apt-toggle').textContent=aptExpanded?'Minimizar':'Ver progresso'
   $('apt-toggle').setAttribute('aria-expanded',String(aptExpanded))
@@ -2055,9 +2173,19 @@ async function watchPackages() {
   try {
     const {status}=await api('/api/dependencies/status')
     if(csrf!==session || id!==aptWatchId)return
-    const wasBusy=packageBusy(aptView)
+    const previous=aptView
+    if (!previous && status && !packageBusy(status)) aptDismissed=status.job
     paintApt(status)
-    if(wasBusy && !packageBusy(status) && currentAppRoute==='dependencies') void refreshDependencies({background:true})
+    if (packageInventory && currentAppRoute==='dependencies' &&
+        (previous?.stage!==status?.stage || previous?.job!==status?.job || previous?.message!==status?.message)) {
+      packageInventory={...packageInventory,status}
+      if (packageBusy(previous) && !packageBusy(status)) void refreshDependencies({background:true})
+      else if (packageBusy(previous)!==packageBusy(status)) renderDependencies(packageInventory)
+      else {
+        dependencyState('package-status',status,packageInventory.packages)
+        if ($('package-group-dialog').open) dependencyState('package-group-status',status,packageInventory.packages)
+      }
+    }
   } catch { /* reconecta sem perder a última saída */ }
   finally { if(csrf===session && id===aptWatchId)aptTimer=setTimeout(watchPackages,packageBusy(aptView)?2200:15000) }
 }
@@ -2065,9 +2193,15 @@ async function launchPackageOperation(pkg,op) {
   const result=await api('/api/dependencies/'+op,'POST',{package:pkg.id})
   aptDismissed=null;aptExpanded=true
   $('apt-progress-feedback').hidden=true
-  paintApt({package:pkg.id,job:result.job,operation:op,stage:'queued',message:'Solicitação enviada. Aguardando o APT.'})
+  const status={package:pkg.id,job:result.job,operation:op,stage:'queued',message:'Solicitação enviada. Aguardando o APT.'}
+  paintApt(status)
+  if (packageInventory && currentAppRoute==='dependencies') {
+    packageInventory={...packageInventory,status}
+    renderDependencies(packageInventory)
+  }
   void watchPackages()
 }
+$('apt-copy').addEventListener('click',()=>void copyPackageLog(aptView?.log,$('apt-progress-feedback')))
 $('apt-toggle').addEventListener('click',()=>{aptExpanded=!aptExpanded;paintApt(aptView)})
 $('apt-dismiss').addEventListener('click',()=>{aptDismissed=aptView?.job;paintApt(aptView)})
 $('apt-cancel').addEventListener('click',async()=>{

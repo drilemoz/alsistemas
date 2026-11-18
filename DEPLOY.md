@@ -1,3 +1,7 @@
+## Atualização 2.0.44 — Busca e histórico do APT
+
+Atualize em **Mais → Atualizar → Arquivo ZIP**. Depois, abra **Dependências** para buscar, filtrar e consultar o histórico. O histórico é salvo no servidor e começa a ser registrado após a atualização. Consulte [o guia](vps/docs/ATUALIZACAO-2.0.44.md).
+
 ## Atualização 2.0.43 — Serviços e pacotes
 
 Atualize em **Mais → Atualizar → Arquivo ZIP**. Em **Serviços** consulte ou controle unidades suportadas. Em **Dependências** instale ou remova pacotes do catálogo, com acompanhamento do APT. A atualização não instala novos componentes por conta própria. Consulte o [guia de administração](vps/docs/ATUALIZACAO-2.0.43.md).

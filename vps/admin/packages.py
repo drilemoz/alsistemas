@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import time
 import tempfile
+from datetime import datetime, timezone
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from package_policy import ALLOWED, package_status as status, package_gate, read_job, write_job
 from mongo_repo import ensure_mongo_repo
@@ -126,10 +127,11 @@ def main(runner=subprocess.run):
         if isinstance(task,str): task={'package':task,'job':None,'operation':'install'}
         pkg,job,op = task['package'],task['job'],task['operation']
         tail = ''
+        started_at = datetime.now(timezone.utc).isoformat()
         def emit(stage,msg,log=''):
             nonlocal tail
             if log: tail=log[-18000:]
-            status(stage,pkg,msg,job=job,operation=op,log=tail)
+            status(stage,pkg,msg,job=job,operation=op,log=tail,started_at=started_at)
         def transition(phase):
             with package_gate():
                 control=read_job()

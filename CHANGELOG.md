@@ -1,3 +1,10 @@
+## 2.0.44 — Busca e histórico de Dependências (18/11/2026)
+
+- Busca por nome, descrição, categoria ou pacote APT, combinada com filtros de instalação.
+- Histórico local das últimas 20 operações finalizadas, com resultado, registro e cópia da saída.
+- Janela do APT identifica fila, plano e aplicação e mostra a duração real quando disponível.
+- O progresso consulta o status leve sem refazer continuamente o inventário de pacotes.
+
 ## 2.0.43 — Administração de serviços e progresso do APT (18/11/2026)
 
 - Janela de operação persistente com plano, saída do APT, cancelamento antes da aplicação e nova tentativa.

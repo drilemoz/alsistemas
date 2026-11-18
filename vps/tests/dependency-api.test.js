@@ -30,10 +30,15 @@ test('API de pacotes exige sessão, CSRF e allowlist, sem reautenticação', asy
   }
   try {
     assert.equal((await call('/api/dependencies')).status,401)
+    assert.equal((await call('/api/dependencies/history')).status,401)
     const login = await call('/api/login','POST',{password,otp:totp(secret)})
     assert.equal(login.status,200)
     const cookie=login.headers.getSetCookie().find(v=>v.startsWith('als_session=')).split(';')[0]
     const csrf=login.body.csrf
+    const empty=await call('/api/dependencies/history','GET',undefined,cookie)
+    assert.equal(empty.status,200)
+    assert.deepEqual(empty.body.history,[])
+    assert.equal((await call('/api/dependencies/history?job=../etc','GET',undefined,cookie)).status,400)
     const inv=await call('/api/dependencies','GET',undefined,cookie)
     assert.equal(inv.status,200)
     assert.equal(inv.body.packages.length,33)

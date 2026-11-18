@@ -13,7 +13,7 @@ import { monitor, projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
 import { serviceInventory, validServiceAction } from './service_inventory.js'
 import { projectLogs } from './project_logs.js'
-import { dependencyInfo, packageProgress, validPackageId } from './dependencies.js'
+import { dependencyInfo, packageProgress, packageHistory, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
 
@@ -22,7 +22,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.43'
+const VERSION = '2.0.44'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -455,6 +455,15 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       }
       if (path === '/api/dependencies' && req.method === 'GET') return json(res, 200, dependencyInfo())
       if (path === '/api/dependencies/status' && req.method === 'GET') return json(res,200,{status:packageProgress()})
+      if (path === '/api/dependencies/history' && req.method === 'GET') {
+        const query = new URL(req.url,origin).searchParams
+        if ([...query.keys()].some(name=>name!=='job') || query.getAll('job').length>1 || (query.has('job') && !/^[a-f0-9]{24}$/.test(query.get('job'))))
+          return fail(res,400,'Identificador de histórico inválido.')
+        const job = query.get('job')
+        const result = packageHistory(job)
+        if (job && !result) return fail(res,404,'Operação não encontrada no histórico.')
+        return json(res,200,job?{record:result}:{history:result})
+      }
       if (path === '/api/dependencies/cancel' && req.method === 'POST') {
         const input = await body(req)
         if (Object.keys(input).sort().join(',') !== 'job' || typeof input.job !== 'string' || !/^[a-f0-9]{24}$/.test(input.job)) return fail(res,400,'Operação inválida')

@@ -1,7 +1,7 @@
 {
   "name": "al-sistemas-vps",
   "displayName": "AL Sistemas VPS",
-  "version": "2.0.43",
+  "version": "2.0.44",
   "repository": "drilemoz/alsistemas",
   "framework": "Node.js",
   "projectType": "web"
