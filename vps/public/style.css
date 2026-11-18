@@ -626,3 +626,54 @@ label{font-size:.82rem;margin-bottom:11px}
   .project-management-panel .project-tool strong{font-size:.81rem;overflow-wrap:anywhere}
 }
 @media(max-width:339px){.project-management-panel .project-actions-stack{grid-template-columns:1fr}}
+
+/* v2.0.37 — Domínios, DNS e regras Nginx */
+.domain-page{max-width:790px;margin-inline:auto}
+.domain-page [hidden]{display:none!important}
+.domain-heading{align-items:center}
+.domain-heading h1{margin-bottom:3px}
+.domain-picker label,.domain-form label{margin-bottom:0}
+.domain-picker #dn-list-status{margin:8px 0 0}
+.domain-picker #dn-list-status:empty,.domain-feedback:empty{display:none}
+.domain-pagination{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:8px}
+.domain-active-title{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center}
+.domain-active-title h2,.domain-active-title p{margin:0;overflow-wrap:anywhere}
+.domain-active-title h2{font-size:1.05rem}
+.domain-active-title .pill{white-space:normal;max-width:100px}
+.domain-icon{display:grid;place-items:center;width:37px;height:37px;border-radius:9px;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface))}
+.domain-icon .icon{width:19px;height:19px}
+.domain-facts{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}
+.domain-facts>div{display:grid;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:8px}
+.domain-facts strong{font-size:.83rem}
+.domain-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.domain-tabs button{font-size:.78rem;gap:5px;line-height:1.15;padding:7px;min-width:0}
+.domain-tabs button[aria-pressed=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,var(--surface));color:var(--accent)}
+.domain-tabs .icon{width:15px;height:15px;flex:none}
+.domain-content h2{margin-bottom:4px}
+.domain-content .heading{align-items:center}
+.domain-content .heading p{margin-bottom:0}
+.domain-content .heading button{white-space:nowrap}
+.domain-form{display:grid;gap:10px}
+.domain-form textarea{display:block;width:100%;font:inherit;background:var(--input);color:var(--text);border:1px solid var(--border);border-radius:9px;padding:9px;margin-top:6px;resize:vertical}
+.domain-form p{margin:0}
+.domain-form-pair,.domain-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.domain-form-pair select{font-size:.8rem;padding-inline:7px}
+.domain-subform{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
+.domain-subform>summary{font-weight:700;cursor:pointer}
+.domain-subform>summary+p{margin-top:8px}
+.domain-subform h3{font-size:.91rem;margin:0;overflow-wrap:anywhere}
+.domain-rule,.domain-record{min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--border)}
+.domain-rule-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.domain-rule-title .pill{white-space:nowrap}
+.domain-rule p{margin:4px 0}
+.domain-rule-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.domain-rule-actions .button-small,.domain-record .button-small{min-height:38px}
+.domain-record{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.domain-record>div{display:grid;gap:3px;min-width:0}
+.domain-record button{flex:none}
+.domain-test-row{display:grid;gap:2px;padding:6px 0;border-bottom:1px solid var(--border);font-size:.82rem}
+.domain-test-row:last-child{border-bottom:0}
+#dn-more-dns,#dn-integration{margin-top:8px}
+#confirm-detail{white-space:pre-line;overflow-wrap:anywhere}
+@media(max-width:700px){.domain-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.domain-tabs button{justify-content:flex-start;min-height:43px}}
+@media(max-width:335px){.domain-tabs .icon{display:none}.domain-rule-actions .button-small{padding-inline:8px}}

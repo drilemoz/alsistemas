@@ -1,3 +1,10 @@
+## 2.0.37 — Domínios e redirecionamentos (17/11/2026)
+
+- Novo módulo Domínios com lista paginada da Spaceship, vencimento, renovação automática, zona DNS e servidores DNS.
+- Criação e troca de apontamentos A/CNAME por subdomínio, com revisão do estado anterior e reconciliação em falhas.
+- Regras 301/302 isoladas no Nginx, com opção de preservar caminho e query, editar, desativar, excluir e testar DNS/HTTP/HTTPS.
+- Ajustes avançados de renovação automática e servidores DNS. Nenhuma compra, transferência ou alteração automática de DNS ao criar redirecionamento.
+
 ## 2.0.36 — Projetos e Ficha técnica (17/11/2026)
 
 - A Ficha técnica concentra tecnologia, acesso, versão, Nginx, domínios, caminho copiável e medição de arquivos. A visão do projeto fica dedicada aos atalhos.

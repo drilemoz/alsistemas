@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.36: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.37: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -149,7 +149,7 @@ fi
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
 # Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
-for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py; do
+for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py; do
   [[ ! -L "/usr/local/libexec/$candidate" ]] || fail 'Script de projeto existente é link simbólico.'
   install -o root -g root -m 0700 "$BASE/vps/admin/$candidate" "/usr/local/libexec/$candidate"
 done
@@ -193,7 +193,7 @@ fi
 cat > /etc/systemd/system/alsistemas-vps.service <<'EOF' 
 [Unit]
 Description=AL Sistemas VPS (painel local)
-After=network.target
+After=network.target nginx.service
 [Service]
 Type=simple
 User=alsistemas
@@ -208,7 +208,7 @@ RestartSec=5
 UMask=0077
 ProtectSystem=strict
 ExecStartPre=+/usr/bin/install -d -o root -g root -m 0700 /run/alsistemas-vps
-ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps
+ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps /var/log/nginx -/run/nginx.pid
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
@@ -374,10 +374,10 @@ systemctl enable --now alsistemas-vps
 systemctl restart alsistemas-vps
 systemctl enable --now alsistemas-inbox.path || log 'Aviso: caixa de entrada não ativada; o painel e o atualizar-vps.sh seguem disponíveis.'
 systemctl is-active --quiet alsistemas-vps || fail 'Serviço al-sistemas não iniciou; consulte journalctl -u alsistemas-vps.'
+ACME_DIR='/var/lib/letsencrypt/alsistemas-webroot'
+install -d -o root -g root -m 0755 "$ACME_DIR/.well-known/acme-challenge"
 if [[ -n "$DOMAIN" ]]; then
   apt-get install -y certbot
-  ACME_DIR='/var/lib/letsencrypt/alsistemas-webroot'
-  install -d -m 0755 "$ACME_DIR/.well-known/acme-challenge"
   CONFFILE='/etc/nginx/sites-available/alsistemas-panel.conf'
   if [[ -L "$CONFFILE" ]]; then fail 'Vhost do painel é link simbólico; recusado.'; fi
   if [[ -e "$CONFFILE" && "$(head -n 1 "$CONFFILE")" != '# AL-SISTEMAS-MANAGED' ]]; then

@@ -23,6 +23,7 @@ from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, P
     inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root)
 from other_project_permissions import ProfileError, handle_permissions, configure_profile
 from project_explorer import browse_project, update_mode
+from domain_redirects import RedirectError, execute_redirect
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -587,6 +588,8 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     if not isinstance(task, dict):
         raise TaskError('Formato da tarefa inválido.')
     action = task.get('action')
+    if action in ('list_domain_redirects', 'save_domain_redirect', 'delete_domain_redirect'):
+        return execute_redirect(task, available, enabled, runner)
     if action == 'create_project':
         return create_project(task, root, available, enabled, runner)
     if action == 'set_site_state':
@@ -857,6 +860,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, ProjectError, ProfileError, OSError, subprocess.TimeoutExpired) as err:
+    except (TaskError, ProjectError, ProfileError, RedirectError, OSError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)

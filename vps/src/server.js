@@ -14,12 +14,15 @@ import { projectOverview, projectActivities, probeProjectWebsite } from './proje
 import { projectLogs } from './project_logs.js'
 import { dependencyInfo, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
-import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns, changeSpaceshipDns } from './integrations.js'
+import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
 
-const VERSION = '2.0.36'
+import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePointer, domainHost, redirectSource, redirectDiagnostics } from './domains.js'
+
+const VERSION = '2.0.37'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
+const panelHost = new URL(origin).hostname.toLowerCase()
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url))
 const attempts = new Map()
 const challenges = new Map()
@@ -153,7 +156,7 @@ function acceptedOrigin(req) {
 }
 function serveUi(req, res) {
   const pathname = new URL(req.url, 'http://localhost').pathname
-  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
+  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/domains.js': ['domains.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
   const asset = paths[pathname]
   if (!asset) return fail(res, 404, 'Não encontrado')
   const source = path.join(publicDir, asset[0])
@@ -167,9 +170,9 @@ function runTask(task) {
     const proc = spawn('/usr/bin/sudo', ['-n', '/usr/local/libexec/alsistemas-helper'], { stdio: ['pipe', 'pipe', 'pipe'], shell: false, detached: true })
     const killSubprocessGroup = () => { try { process.kill(-proc.pid, 'SIGKILL') } catch { proc.kill('SIGKILL') } }
     let output = ''; let error = ''
-    const deadline = task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
+    const deadline = task.action.endsWith('_domain_redirect') ? 60000 : task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
     const timer = setTimeout(() => { killSubprocessGroup(); reject(new Error('Tarefa excedeu limite de execução')) }, deadline)
-    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
+    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
     proc.stderr.on('data', c => { error += c; if (error.length > 8192) killSubprocessGroup() })
     proc.on('error', err => { clearTimeout(timer); reject(err) })
     proc.on('close', code => {
@@ -184,7 +187,7 @@ function runTask(task) {
   })
 }
 
-export function createServer({ taskRunner = runTask } = {}) {
+export function createServer({ taskRunner = runTask, spaceshipOptions } = {}) {
   return http.createServer(async (req, res) => {
     res.setHeader('x-content-type-options', 'nosniff')
     res.setHeader('referrer-policy', 'no-referrer')
@@ -309,12 +312,72 @@ export function createServer({ taskRunner = runTask } = {}) {
         if (Object.keys(input).sort().join(',') !== 'command,domain') return fail(res, 400, 'Parâmetros inválidos')
         // Edição de DNS requer sessão válida, mesma origem e CSRF, sem senha repetida.
         try {
-          const result = await changeSpaceshipDns(input.domain, input.command)
+          const result = await changeDnsLocked(input.domain, input.command)
           audit('dns_write_accepted', { ip, provider: 'spaceship', action: result.action, domain: result.domain, type: result.type, name: result.name, success: true })
           return json(res, 200, result)
         } catch (error) {
           audit('dns_write_failed', { ip, provider: 'spaceship', success: false })
           return fail(res, error.status || 400, error.message)
+        }
+      }
+      if (path === '/api/domains' && req.method === 'GET') {
+        if (!limit(ip, 'domains_list', 25)) return fail(res, 429, 'Muitas consultas de domínios.')
+        const query = new URL(req.url, 'http://localhost').searchParams
+        if ([...query.keys()].some(key => key !== 'skip') || query.getAll('skip').length > 1 ||
+            (query.has('skip') && !/^\d{1,5}$/.test(query.get('skip')))) return fail(res, 400, 'Página inválida.')
+        return json(res, 200, await listDomains(Number(query.get('skip') ?? 0), spaceshipOptions))
+      }
+      const domainRoute = /^\/api\/domains\/([a-z0-9.-]{4,253})\/(dns|settings|pointer|redirects|redirect-check)$/.exec(path)
+      if (domainRoute) {
+        const zone = domainHost(domainRoute[1])
+        const resource = domainRoute[2]
+        const allowed = { dns:['GET'], settings:['POST'], pointer:['POST'], redirects:['GET','POST','DELETE'], 'redirect-check':['POST'] }
+        if (!allowed[resource].includes(req.method)) return fail(res, 405, 'Método não permitido.')
+        if (!limit(ip, 'domains_' + resource + '_' + req.method, req.method === 'GET' ? 30 : 8))
+          return fail(res, 429, 'Muitas operações de domínio.')
+        const provider = { ...spaceshipOptions, panelHost }
+        const listed = { action:'list_domain_redirects', zone }
+        if (req.method === 'GET') {
+          if (resource === 'dns') return json(res, 200, { records:await listSpaceshipDns(zone, provider) })
+          try { return json(res, 200, await taskRunner(listed)) } catch (error) { return fail(res, 422, error.message) }
+        }
+        const input = await body(req)
+        if (resource === 'pointer' || resource === 'settings') {
+          const result = resource === 'pointer' ? await changePointer(zone, input, provider) : await changeDomainSettings(zone, input, provider)
+          audit('domain_change', { ip, name:zone, action:resource === 'pointer' ? 'apontamento' : input.action, success:true })
+          return json(res, 200, result)
+        }
+        if (resource === 'redirect-check') {
+          if (Object.keys(input).sort().join(',') !== 'host,ip') return fail(res, 400, 'Parâmetros do diagnóstico inválidos.')
+          const {host} = redirectSource(zone, input.host, panelHost)
+          let rules
+          try { rules = await taskRunner(listed) } catch (error) { return fail(res, 422, error.message) }
+          const rule = rules.items.find(item => item.host === host)
+          if (!rule) return fail(res, 404, 'Redirecionamento não encontrado no painel.')
+          return json(res, 200, await redirectDiagnostics(rule, input.ip))
+        }
+        const saving = req.method === 'POST'
+        if (Object.keys(input).sort().join(',') !== (saving ? 'host,revision,rule' : 'host,revision') ||
+            (input.revision !== null && (typeof input.revision !== 'string' || !/^[a-f0-9]{64}$/.test(input.revision))))
+          return fail(res, 400, 'Campos do redirecionamento inválidos.')
+        const {host} = redirectSource(zone, input.host, panelHost)
+        const task = { action:saving ? 'save_domain_redirect' : 'delete_domain_redirect', zone, host, revision:input.revision }
+        if (saving) {
+          const rule = input.rule
+          if (!rule || typeof rule !== 'object' || Object.keys(rule).sort().join(',') !== 'code,destination,enabled,https,preserve' ||
+              typeof rule.destination !== 'string' || rule.destination.length > 1100 || ![301,302].includes(rule.code) ||
+              ['enabled','https','preserve'].some(key => typeof rule[key] !== 'boolean'))
+            return fail(res, 400, 'Configuração de redirecionamento inválida.')
+          if (input.revision === null || rule.enabled) await getDomain(zone, provider)
+          task.rule = rule
+        }
+        try {
+          const result = await taskRunner(task)
+          audit('domain_redirect_change', { ip, name:host, action:saving ? 'salvar' : 'excluir', success:true })
+          return json(res, 200, result)
+        } catch (error) {
+          audit('domain_redirect_change', { ip, name:host, action:saving ? 'salvar' : 'excluir', success:false })
+          return fail(res, 422, error.message)
         }
       }
       if (path === '/api/updates' && req.method === 'GET') return json(res, 200, updateInfo(VERSION))

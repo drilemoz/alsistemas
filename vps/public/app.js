@@ -129,7 +129,7 @@ const projectOverviewCache = new Map()
 const projectOverviewTtlMs = 30_000
 const projectNumber = new Intl.NumberFormat('pt-BR')
 let currentAppRoute = 'overview'
-const mainTabs = new Set(['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'security', 'audit', 'help'])
+const mainTabs = new Set(['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'domains', 'security', 'audit', 'help'])
 const projectSections = new Set(['diagnostics', 'permissions', 'updates', 'backups', 'logs', 'progress'])
 function appRouteFromUrl() {
   try { return decodeURIComponent(location.hash.replace(/^#/, '')) || 'overview' }
@@ -176,6 +176,7 @@ function showAppRoute(route) {
   }
   if (route === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
   if (route === 'dependencies') refreshDependencies().catch(e => notice(e.message, true))
+  if (route === 'domains') void openDomainsPage()
   if (route === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
   if (route === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
   window.scrollTo({ top: 0, behavior: 'instant' })
@@ -1311,6 +1312,8 @@ const auditLabels = {
   package_install_requested: ['Instalação solicitada', 'package', 'system', 'neutral'],
   package_install_rejected: ['Instalação recusada', 'alert', 'system', 'issue'],
   integration_saved: ['Integração salva', 'key', 'system', 'ok'],
+  domain_change: ['Domínio atualizado', 'globe', 'system', 'ok'],
+  domain_redirect_change: ['Alteração de redirecionamento', 'globe', 'system', 'neutral'],
   integration_removed: ['Integração removida', 'key', 'system', 'neutral'],
   logout: ['Saída da conta', 'logout', 'access', 'neutral']
 }
@@ -1517,6 +1520,7 @@ $('logout').addEventListener('click', async () => {
     await api('/api/logout', 'POST')
     csrf = ''
     projectCatalogSession++
+    resetDomainsPage()
     projectCatalogRequest = null
     projectCatalogLoaded = false
     projectCatalogError = ''

@@ -7,10 +7,10 @@ import { createServer } from '../src/server.js'
 
 const dir = fileURLToPath(new URL('../public/', import.meta.url))
 
-test('HTTP entrega todos os scripts reais do HTML (inclusive integrações)', async () => {
+test('HTTP entrega os scripts do painel, integrações e domínios', async () => {
   const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8')
   const scripts = [...html.matchAll(/<script[^>]*\bsrc="(\/[^"]+)"/g)].map(match => match[1])
-  assert.deepEqual(scripts.sort(), ['/app.js', '/integrations.js'])
+  assert.deepEqual(scripts.sort(), ['/app.js', '/domains.js', '/integrations.js'])
   const server = createServer()
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve))
   try {

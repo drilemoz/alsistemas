@@ -32,7 +32,7 @@ function decrypt(payload) {
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(payload.data, 'base64')), decipher.final()]).toString('utf8'))
 }
 export function spaceshipStatus() {
-  return { provider: 'spaceship', configured: !!readJson(FILE), capabilities: ['dns:read', 'dns:write'], documentation: 'https://docs.spaceship.dev/' }
+  return { provider: 'spaceship', configured: !!readJson(FILE), capabilities: ['dns:read', 'dns:write', 'domains:read', 'domains:write'], documentation: 'https://docs.spaceship.dev/' }
 }
 export function saveSpaceship({ apiKey, apiSecret }) {
   if (typeof apiKey !== 'string' || typeof apiSecret !== 'string' || !apiKey.trim() || !apiSecret.trim() || apiKey.length > 512 || apiSecret.length > 512 || /[\r\n]/.test(apiKey + apiSecret)) throw new Error('API Key e API Secret inválidas')
@@ -43,9 +43,9 @@ export function removeSpaceship() {
   try { fs.unlinkSync(dataPath(FILE)) } catch (e) { if (e.code !== 'ENOENT') throw e }
   return spaceshipStatus()
 }
-export async function spaceshipRequest(endpoint, { fetchImpl = fetch, method = 'GET', payload } = {}) {
+export async function spaceshipRequest(endpoint, { fetchImpl = fetch, method = 'GET', payload, permission = `dnsrecords:${method === 'GET' ? 'read' : 'write'}` } = {}) {
   const saved = readJson(FILE)
-  if (!saved) throw new Error('Configure a Spaceship primeiro')
+  if (!saved) throw Object.assign(new Error('Configure a Spaceship primeiro'), { status: 409 })
   const credentials = decrypt(saved)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10000)
@@ -53,16 +53,17 @@ export async function spaceshipRequest(endpoint, { fetchImpl = fetch, method = '
     const response = await fetchImpl(`${API}${endpoint}`, { method, headers: { 'X-API-Key': credentials.apiKey, 'X-API-Secret': credentials.apiSecret, Accept: 'application/json', ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }), signal: controller.signal, redirect: 'error' })
     if (!response.ok) {
       const explanations = {
-        400: 'pedido DNS rejeitado; confira os parâmetros',
+        400: 'pedido rejeitado; confira os parâmetros',
         401: 'API Key ou API Secret não autorizadas',
-        403: `a chave não possui permissão dnsrecords:${method === 'GET' ? 'read' : 'write'}`,
-        404: 'domínio ou zona DNS não encontrados nesta conta',
-        422: 'registro DNS recusado; verifique valor, conflitos e TTL',
+        403: `a chave não possui acesso a esta operação (confira ${permission})`,
+        404: 'domínio, zona ou recurso não encontrado nesta conta',
+        422: 'operação recusada; verifique os valores e conflitos',
         429: 'limite de consultas da API atingido; tente novamente mais tarde'
       }
-      const detail = explanations[response.status] || (response.status >= 500 ? 'serviço temporariamente indisponível' : 'falha na operação DNS')
+      const detail = explanations[response.status] || (response.status >= 500 ? 'serviço temporariamente indisponível' : 'falha na operação')
       const error = new Error(`Spaceship HTTP ${response.status}: ${detail}`)
       error.status = response.status === 429 ? 429 : 502
+      error.providerStatus = response.status
       throw error
     }
     if (response.status === 204) return { ok: true }

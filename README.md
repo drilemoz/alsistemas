@@ -1,3 +1,5 @@
+**Novo na 2.0.37:** **Domínios** lista a conta Spaceship, gerencia apontamentos, renovação automática, servidores DNS e redirecionamentos no Nginx. Consulte o [guia da 2.0.37](vps/docs/ATUALIZACAO-2.0.37.md).
+
 **Novo na 2.0.36:** a aba Projetos tem catálogo independente das métricas, ferramentas diretas e **Ficha técnica** com versão instalada, domínios, estado de configuração do Nginx, caminho copiável e tamanho observado. O diagnóstico é sob demanda e o pop-up sinaliza leitura parcial. Veja [o guia da 2.0.36](vps/docs/ATUALIZACAO-2.0.36.md).
 
 **Novo na 2.0.35:** nova central **Projetos → projeto → Backups e recuperação** com inventário por projeto, escopo explícito das cópias, criação do backup criptografado `public/` para projetos gerenciados, acesso aos backups privados de código do IguatamaOnline e verificação SHA-256 sob demanda dos arquivos criptografados. A verificação não descriptografa o backup, não garante restauração e não toca banco de dados nem uploads. Backups SQL e restauração de projetos gerenciados continuam indisponíveis. Confira `vps/docs/ATUALIZACAO-2.0.35.md`.
@@ -28,7 +30,7 @@
 
 **Novo na 2.0.19:** na aba **Atualizações**, o botão `?` abre as novidades em pop-up, com outro pop-up para o README. Os botões **GitHub**, **Arquivo ZIP** e **Andamento** aparecem lado a lado em dispositivos móveis. Quando uma atualização falha, o acompanhamento oferece relatório de erro em janela própria, com copiar e baixar TXT. Corrigido o Nginx para aceitar ZIPs de até 32 MiB apenas nas duas rotas autenticadas, mantendo 64 KiB nas demais; upgrades do núcleo também migrarão o vhost já gerenciado. Falhas de saúde passam a registrar um diagnóstico resumido da versão, serviço e endpoint. Nenhuma alteração foi executada na EC2; veja `vps/docs/ATUALIZACAO-2.0.19.md`.
 
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.36 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.37 + legado preservado
 
 A versão **2.0.16** adicionou gerenciamento DNS controlado à Spaceship: criar registros A, CNAME e TXT; editar apenas o TTL de registros personalizados; e excluir registros personalizados não protegidos. Antes de escrever, o servidor consulta a zona novamente e valida os registros; requer login, token CSRF e confirmação; a senha adicional foi removida na 2.0.25. Nomes críticos (`@`, `painel`, `www`, `mail`, `migrar` e outros) ficam bloqueados. A versão 2.0.16 **não** alterava automaticamente DNS ao criar projetos, nem permite alterar valores de registros existentes. A API exige `dnsrecords:read` e `dnsrecords:write` para essas ações. Nenhuma mudança DNS foi executada em produção durante o desenvolvimento.
 

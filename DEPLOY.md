@@ -1,3 +1,7 @@
+## Atualização 2.0.37 — Domínios
+
+Use **Mais → Domínios** no celular. Para abrir o catálogo, a chave Spaceship precisa de `domains:read`. Os redirecionamentos usam um novo módulo isolado do helper Nginx, instalado automaticamente pelo pacote. Consulte [escopos, diagnóstico e HTTPS no guia](vps/docs/ATUALIZACAO-2.0.37.md).
+
 ## Atualização 2.0.36 — Projetos e Ficha técnica
 
 Após atualizar o painel, abra **Projetos → projeto → Ficha técnica**. A versão e o tamanho vêm da leitura da VPS, sem confundir configuração Nginx com disponibilidade pública. Atualização e backups de código do IguatamaOnline continuam isolados da atualização do painel. Consulte [o guia da 2.0.36](vps/docs/ATUALIZACAO-2.0.36.md).
