@@ -12,6 +12,7 @@ import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, st
 import { projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
 import { hostOverview, hostRebootStatus, rebootPending, hostSites } from './host_dashboard.js'
+import { createEc2Reader } from './aws_ec2.js'
 import { serviceInventory, validServiceAction } from './service_inventory.js'
 import { projectLogs } from './project_logs.js'
 import { dependencyInfo, packageProgress, packageHistory, validPackageId } from './dependencies.js'
@@ -23,7 +24,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.49'
+const VERSION = '2.0.50'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -195,7 +196,7 @@ function runTask(task) {
 
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
   hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
-  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease } = {}) {
+  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease, ec2Reader = createEc2Reader() } = {}) {
   const releaseCache = createReleaseCache({load:releaseLookup})
   let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
   const executeTask = taskRunner
@@ -279,6 +280,11 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       if (path === '/api/logout' && req.method === 'POST') {
         invalidateSession(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
         audit('logout', { ip }); return json(res, 200, { ok: true })
+      }
+      if (path === '/api/host/ec2' && req.method === 'GET') {
+        if (new URL(req.url,'http://localhost').search) return fail(res,400,'A consulta usa somente a instância local.')
+        if (!limit(ip,'ec2-status',60)) return fail(res,429,'Aguarde antes de atualizar a consulta da AWS.')
+        return json(res,200,await ec2Reader())
       }
       if (path === '/api/host/reboot' && req.method === 'GET') return json(res,200,hostStatus())
       if (path === '/api/host/reboot' && req.method === 'POST') {

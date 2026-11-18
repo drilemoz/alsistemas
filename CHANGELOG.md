@@ -1,3 +1,9 @@
+## 2.0.50 — Consulta somente leitura da EC2 (18/11/2026)
+
+- Identifica a própria instância via IMDSv2 e mostra região, zona, tipo e endereços IPv4.
+- Consulta estado e verificações da AWS quando há AWS CLI v2 e perfil IAM autorizado.
+- A integração não grava chaves nem muda os controles locais da VPS.
+
 ## 2.0.49 — Correção de inicialização após reiniciar a VPS (18/11/2026)
 
 - Cria /run/alsistemas-vps com systemd-tmpfiles no boot e na instalação, antes da montagem do namespace da unidade.

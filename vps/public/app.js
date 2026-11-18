@@ -231,6 +231,57 @@ function renderHostSites(data) {
   }))
   renderHostAlerts()
 }
+let ec2Request=0
+const ec2Lifecycle={pending:'Iniciando',running:'Em execução','shutting-down':'Encerrando',terminated:'Encerrada',stopping:'Parando',stopped:'Parada'}
+const ec2Health={ok:'Normal',impaired:'Falha detectada',initializing:'Inicializando','insufficient-data':'Dados insuficientes','not-applicable':'Não aplicável'}
+async function loadHostEc2() {
+  if (!csrf) return
+  const request=++ec2Request, session=csrf
+  const button=$('host-ec2-refresh'), status=$('host-ec2-status'), fields=$('host-ec2-fields')
+  button.disabled=true
+  status.textContent='Consultando a instância local…'
+  fields.replaceChildren()
+  const current=()=>request===ec2Request&&session===csrf
+  try {
+    const data=await api('/api/host/ec2','GET',undefined,{timeoutMs:14000})
+    if(!current())return
+    if(data.state!=='metadata_ok'||!data.identity) {
+      status.textContent='Identidade EC2 indisponível. Verifique se esta VPS está na EC2 com IMDSv2 acessível.'
+      return
+    }
+    const {identity,checks}=data
+    const row=(label,value)=>{
+      const item=node('div','','host-system-row')
+      item.append(node('dt',label,'small muted'),node('dd',value || 'Indisponível','small break-text'))
+      fields.append(item)
+    }
+    row('Tipo',identity.instanceType)
+    row('Região',identity.region)
+    row('Zona',identity.zone)
+    row('ID da instância',identity.instanceId)
+    row('IPv4 privado',identity.privateIp)
+    row('IPv4 público',identity.publicIp || (identity.publicIpState==='not_assigned'?'Não atribuído':null))
+    if(identity.launchedAt)row('Lançamento da instância',hostShortDate(identity.launchedAt))
+    if(checks?.state==='ok') {
+      row('Estado na AWS',ec2Lifecycle[checks.instanceState])
+      row('Verificação do sistema',ec2Health[checks.system])
+      row('Verificação da instância',ec2Health[checks.instance])
+      if(checks.ebs)row('Verificação EBS',ec2Health[checks.ebs])
+    }
+    const note={cli_missing:'Metadados carregados. Para o status na AWS, instale a AWS CLI v2 e associe um perfil IAM de leitura.',
+      role_missing:'Metadados carregados. Para o status na AWS, associe um perfil IAM de leitura à instância.',
+      access_denied:'Metadados carregados. O perfil IAM não tem acesso à verificação de status.',
+      not_reported:'Metadados carregados. A AWS ainda não retornou verificações desta instância.',
+      unavailable:'Metadados carregados. O status na API da AWS está indisponível.'
+    }[checks?.state]
+    status.textContent=(note||'Dados da AWS carregados.')+' Consulta · '+hostShortDate(data.checkedAt)
+  } catch(error) {
+    if(current())status.textContent=error.httpStatus===401?'Entre novamente para consultar a AWS.':'Não foi possível consultar a AWS agora.'
+  } finally {
+    if(current())button.disabled=false
+  }
+}
+$('host-ec2-refresh').addEventListener('click',()=>void loadHostEc2())
 const hostRebootKey='als-host-reboot-v1'
 const hostRebootDismissKey='als-host-reboot-dismiss-v1'
 const hostRebootWindow=240_000
@@ -1660,6 +1711,10 @@ function resetDashboardOverview() {
   $('overview-host').textContent='VM Linux'
   $('overview-uptime').textContent='Tempo ligado indisponível'
   for (const id of ['overview-system-info','overview-services','overview-site-counts','overview-sites']) $(id).replaceChildren()
+  ec2Request++
+  $('host-ec2-refresh').disabled=false
+  $('host-ec2-status').textContent=''
+  $('host-ec2-fields').replaceChildren()
   $('overview-details-status').hidden=false
   $('overview-details-status').textContent='Aguardando leitura do servidor…'
   $('overview-sites-dialog-meta').textContent='Teste feito pelo Nginx local. Não verifica DNS público ou acesso pela internet.'

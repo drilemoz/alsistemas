@@ -979,3 +979,11 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .reboot-monitor #host-reboot-copy{margin:.1rem 0}
 .reboot-monitor #host-reboot-countdown{font-size:1.55rem;font-weight:700;font-variant-numeric:tabular-nums;margin:0;color:var(--accent)}
 .reboot-monitor .reboot-controls{display:flex;flex-wrap:wrap;gap:.35rem}
+
+/* Dados da nuvem não substituem métricas do Linux. */
+.host-ec2{margin-top:.85rem;padding-top:.7rem;border-top:1px solid var(--border)}
+.host-ec2-header{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap}
+.host-ec2-header h3{font-size:1rem;margin:0 0 .14rem}
+.host-ec2-header p,.host-ec2 #host-ec2-status{margin:.18rem 0 .55rem}
+.host-ec2-fields{margin:.25rem 0 0}
+.host-ec2-fields dd{margin:0;font-weight:600}

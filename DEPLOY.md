@@ -1,3 +1,7 @@
+## Atualização 2.0.50 — Dados da Amazon EC2
+
+Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Depois abra **Início → Dados da VPS → Amazon EC2**. Veja [configuração e validação](vps/docs/ATUALIZACAO-2.0.50.md).
+
 ## Atualização 2.0.49 — Correção do boot da VPS
 
 Se o painel estiver em 502 e o journal indicar 226/NAMESPACE para /run/alsistemas-vps, siga primeiro a [recuperação por SSH](vps/docs/ATUALIZACAO-2.0.49.md). Depois instale o ZIP e confira a regra de boot.
