@@ -11,8 +11,9 @@ import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
 import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, strongPassword, verifyPassword, verifyTotp } from './security.js'
 import { monitor, projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
+import { serviceInventory, validServiceAction } from './service_inventory.js'
 import { projectLogs } from './project_logs.js'
-import { dependencyInfo, validPackageId } from './dependencies.js'
+import { dependencyInfo, packageProgress, validPackageId } from './dependencies.js'
 import crypto from 'node:crypto'
 import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } from './integrations.js'
 
@@ -21,7 +22,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.42'
+const VERSION = '2.0.43'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -453,21 +454,45 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         }
       }
       if (path === '/api/dependencies' && req.method === 'GET') return json(res, 200, dependencyInfo())
-      if (path === '/api/dependencies/install' && req.method === 'POST') {
+      if (path === '/api/dependencies/status' && req.method === 'GET') return json(res,200,{status:packageProgress()})
+      if (path === '/api/dependencies/cancel' && req.method === 'POST') {
+        const input = await body(req)
+        if (Object.keys(input).sort().join(',') !== 'job' || typeof input.job !== 'string' || !/^[a-f0-9]{24}$/.test(input.job)) return fail(res,400,'Operação inválida')
+        if (!limit(ip,'dependency-cancel',10)) return fail(res,429,'Muitas tentativas')
+        try { return json(res,202,await taskRunner({action:'cancel_package',job:input.job})) }
+        catch(error) { return fail(res,409,error.message) }
+      }
+      if (['/api/dependencies/install','/api/dependencies/remove'].includes(path) && req.method === 'POST') {
+        const operation = path.endsWith('/remove') ? 'remove' : 'install'
         if (!limit(ip, 'dependency-install', 6)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
         if (Object.keys(input).sort().join(',') !== 'package' || !validPackageId(input.package)) return fail(res, 400, 'Pacote ou parâmetros não autorizados')
         try {
-          const result = await taskRunner({ action: 'install_package', package: input.package })
-          audit('package_install_requested', { ip, package: input.package })
+          const result = await taskRunner({ action: operation === 'remove' ? 'remove_package' : 'install_package', package: input.package })
+          audit('package_' + operation + '_requested', { ip, package: input.package })
           return json(res, 202, result)
         } catch (error) {
-          audit('package_install_rejected', { ip, package: input.package })
+          audit('package_' + operation + '_rejected', { ip, package: input.package })
           return fail(res, 422, error.message)
         }
       }
       if (path === '/api/monitor' && req.method === 'GET') return json(res, 200, monitor())
       if (path === '/api/services' && req.method === 'GET') return json(res, 200, serviceDiagnostics())
+      if (path === '/api/services/inventory' && req.method === 'GET') {
+        if (!limit(ip,'services-inventory',120)) return fail(res,429,'Muitas consultas')
+        return json(res,200,serviceInventory())
+      }
+      if (path === '/api/services/action' && req.method === 'POST') {
+        if (!limit(ip,'services-control',24)) return fail(res,429,'Muitas operações')
+        const input=await body(req)
+        if (Object.keys(input).sort().join(',') !== 'operation,unit' || !validServiceAction(input.unit,input.operation))
+          return fail(res,400,'Serviço ou ação não permitida.')
+        try {
+          const result=await taskRunner({action:'control_service',unit:input.unit,operation:input.operation})
+          audit('service_action',{ip,name:input.unit,action:input.operation,success:true})
+          return json(res,202,result)
+        } catch (error) { return fail(res,422,error.message) }
+      }
       if (path === '/api/backups' && req.method === 'GET') {
         try { return json(res, 200, await taskRunner({ action: 'list_backups' })) }
         catch (err) { return fail(res, 503, 'Inventário de backups indisponível: ' + err.message) }

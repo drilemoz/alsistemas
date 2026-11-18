@@ -1,3 +1,7 @@
+## Atualização 2.0.43 — Serviços e pacotes
+
+Atualize em **Mais → Atualizar → Arquivo ZIP**. Em **Serviços** consulte ou controle unidades suportadas. Em **Dependências** instale ou remova pacotes do catálogo, com acompanhamento do APT. A atualização não instala novos componentes por conta própria. Consulte o [guia de administração](vps/docs/ATUALIZACAO-2.0.43.md).
+
 ## Atualização 2.0.42 — Publicação em uma janela
 
 Atualize em **Mais → Atualizar → Arquivo ZIP**. Para publicar conteúdo, use **Projetos → Publicação e domínio → Adicionar ZIP**. O ZIP do site não deve ser enviado ao atualizador do painel. Confira o [novo fluxo](vps/docs/ATUALIZACAO-2.0.42.md).

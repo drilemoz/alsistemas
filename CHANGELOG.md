@@ -1,3 +1,10 @@
+## 2.0.43 — Administração de serviços e progresso do APT (18/11/2026)
+
+- Janela de operação persistente com plano, saída do APT, cancelamento antes da aplicação e nova tentativa.
+- Inventário de serviços systemd, filtros, pesquisa e controle dos serviços suportados.
+- Catálogos de Ruby/Rails, MongoDB, Redis e e-mail. Remoção de pacotes autorizados sem purge ou autoremove.
+- E-mail mostra serviços e portas em escuta locais. Instalação de clientes não configura contas.
+
 ## 2.0.42 — Criação e publicação em uma janela (17/11/2026)
 
 - Revisão, criação e publicação sem janelas empilhadas.

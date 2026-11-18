@@ -22,5 +22,14 @@
   {"id":"git","apt":"git","group":"tools","label":"Git","detail":"Gerencia repositórios de código."},
   {"id":"curl","apt":"curl","group":"tools","label":"cURL","detail":"Consulta URLs e APIs pelo terminal. Não é a extensão do PHP."},
   {"id":"zip","apt":"zip","group":"tools","label":"ZIP","detail":"Compacta arquivos no terminal."},
-  {"id":"unzip","apt":"unzip","group":"tools","label":"Unzip","detail":"Extrai arquivos ZIP no terminal."}
+  {"id":"unzip","apt":"unzip","group":"tools","label":"Unzip","detail":"Extrai arquivos ZIP no terminal."},
+  {"id":"ruby","apt":"ruby-full","group":"ruby","label":"Ruby","detail":"Runtime Ruby e ferramentas de desenvolvimento do Ubuntu."},
+  {"id":"ruby-rails","apt":"ruby-rails","group":"ruby","label":"Ruby on Rails","detail":"Framework distribuído pelo Ubuntu. Não cria nem sobe aplicações."},
+  {"id":"ruby-bundler","apt":"ruby-bundler","group":"ruby","label":"Bundler","detail":"Gerenciador de dependências Ruby. Não executa projetos."},
+  {"id":"mongodb","apt":"mongodb-org","group":"database","label":"MongoDB Community 8.0","detail":"Instala pelo repositório oficial do MongoDB e pode disponibilizar o serviço mongod."},
+  {"id":"redis","apt":"redis-server","group":"database","label":"Redis","detail":"Servidor de dados em memória. O APT pode iniciar o serviço."},
+  {"id":"mutt","apt":"mutt","group":"mail","label":"Mutt","detail":"Cliente de e-mail pelo terminal. Uma conta ainda precisa ser configurada."},
+  {"id":"msmtp","apt":"msmtp","group":"mail","label":"msmtp","detail":"Cliente SMTP para envio. Não cria contas nem instala webmail."},
+  {"id":"dovecot","apt":"dovecot-imapd","group":"mail","label":"Dovecot · IMAP","detail":"Servidor IMAP. Requer configuração antes de receber e-mail."},
+  {"id":"postfix","apt":"postfix","group":"mail","label":"Postfix · SMTP","detail":"Servidor SMTP. Instalar não configura o domínio de e-mail."}
 ]

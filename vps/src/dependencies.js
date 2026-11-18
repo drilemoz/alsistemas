@@ -33,19 +33,23 @@ function npmVersion(runner) {
   } catch { return {state:'unavailable',version:null} }
 }
 
-export function dependencyInfo(runner = spawnSync, now = Date.now()) {
+export function packageProgress(now = Date.now()) {
   let status = null
   try { status = readJson('packages-status.json') } catch { /* first installation */ }
   if (status && typeof status === 'object') {
-    if (['queued','checking','installing'].includes(status.stage) && now - Date.parse(status.time) > 10*60*1000) {
+    if (['queued','checking','installing','removing'].includes(status.stage) && now - Date.parse(status.time) > 10*60*1000) {
       status = {...status,stage:'failed',message:'A instalação parou de atualizar. Recarregue o inventário antes de tentar novamente.'}
     }
   } else status = null
+  return status
+}
+export function dependencyInfo(runner = spawnSync) {
+  const status = packageProgress()
   const inventory = queryPackages(runner)
   const packages = PACKAGE_CATALOG.map(({id,apt,label,detail,group}) => ({
     id,group,label,detail,version:inventory?.get(apt) || null,
     installed: inventory ? inventory.has(apt) : null,
-    installable: !!inventory
+    installable: !!inventory, removable: inventory?.has(apt) && !['python3','curl','unzip'].includes(apt)
   }))
   const npm = npmVersion(runner)
   return {

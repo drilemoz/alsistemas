@@ -111,10 +111,8 @@ function renderMetrics(m) {
   metric('Swap livre', `${bytes(m.swap.free)} / ${bytes(m.swap.total)}`, 'updates')
   metric('Disco livre', `${bytes(m.disk.free)} / ${bytes(m.disk.total)}`, 'disk')
   metric('Uptime', `${Math.floor(m.uptimeSeconds/86400)}d ${Math.floor(m.uptimeSeconds%86400/3600)}h`, 'clock')
-  $('services').replaceChildren()
   $('overview-services').replaceChildren()
   for (const [name, status] of Object.entries(m.services)) {
-    serviceCard($('services'), name, status)
     serviceCard($('overview-services'), name, status)
   }
 }
@@ -1461,6 +1459,7 @@ function enterDashboard(sess) {
   $('logout').classList.remove('hidden')
   activateTab(validAppRoute(appRouteFromUrl()) ? appRouteFromUrl() : 'overview', { record: false })
   void resumeUpdateIfNeeded()
+  void watchPackages()
 }
 async function bootstrapPage() {
   const status = await api('/api/status')
@@ -1619,6 +1618,8 @@ $('logout').addEventListener('click', async () => {
   try {
     await api('/api/logout', 'POST')
     csrf = ''
+    clearTimeout(aptTimer)
+    $('apt-progress-panel').classList.add('hidden')
     projectCatalogSession++
     closePanelPopups()
     resetDomainsPage()
@@ -1747,16 +1748,82 @@ async function updateBackups() {
     $('backups').append(node('p', `Inventário não disponível: ${e.message}`, 'small muted'))
   }
 }
-async function updateDiagnostics() {
-  try {
-    const details = await api('/api/services')
-    $('services').replaceChildren()
-    for (const item of details.services) {
-      const label = `${item.active} / ${item.substate} • ${item.enabled}`
-      serviceCard($('services'), item.unit, item.active, `${item.substate} · ${item.enabled}`)
-    }
-  } catch { /* painel ainda pode exibir os estados básicos vindos de /api/monitor */ }
+let serviceSnapshot = null, serviceLimit = 20, serviceFocus = null, serviceRequest = 0, serviceTimer = null
+const serviceLabels = {active:'Em execução',inactive:'Parado',failed:'Falhou',activating:'Iniciando',deactivating:'Parando','not-loaded':'Não carregado'}
+function paintServiceDialog() {
+  if (!$('service-control-dialog').open || !serviceFocus) return
+  const item = serviceSnapshot?.services.find(row=>row.unit===serviceFocus)
+  if (!item) return
+  $('service-control-meta').textContent = (serviceLabels[item.active] || item.active) + ' · ' + (item.substate || item.enabled || '')
+  const buttons = item.actions.map(operation=>{
+    const label = {start:'Iniciar',stop:'Parar',restart:'Reiniciar'}[operation]
+    const button = node('button',label,'outline button-small')
+    button.type = 'button'
+    button.disabled = operation==='start' && item.active==='active' || operation==='stop' && item.active==='inactive'
+    button.addEventListener('click',async () => {
+      if (!await confirmAction(label + ' ' + item.unit + '? Sites ou conexões que usam esse serviço podem ser interrompidos.',label)) return
+      button.disabled = true
+      try {
+        await api('/api/services/action','POST',{unit:item.unit,operation})
+        $('service-control-feedback').textContent = 'Solicitado ao systemd. O estado será consultado novamente.'
+        clearTimeout(serviceTimer)
+        await updateDiagnostics()
+        serviceTimer = setTimeout(()=>{if(currentAppRoute==='services')void updateDiagnostics()},2100)
+      } catch (error) { $('service-control-feedback').textContent = error.message }
+      finally { button.disabled=false }
+    })
+    return button
+  })
+  if (!buttons.length) buttons.push(node('p','Somente consulta. Este serviço não tem ações gerenciadas pelo painel.','small muted'))
+  $('service-commands').replaceChildren(...buttons)
 }
+function paintServices() {
+  if (!serviceSnapshot) return
+  const filter = $('services-filter').value, query = $('services-query').value.trim().toLowerCase()
+  const {services,mail,inventoryAvailable} = serviceSnapshot
+  const rows = services.filter(item=>(!query || (item.unit+' '+(item.description||'')).toLowerCase().includes(query)) &&
+    (filter==='all' || filter==='active'&&item.active==='active' || filter==='managed'&&item.actions.length || filter==='mail'&&item.mail))
+  const totalActive = services.filter(item=>item.active==='active').length
+  $('services-manager-status').textContent = inventoryAvailable ? totalActive + ' ativos · ' + services.length + ' conhecidos · ' + rows.length + ' neste filtro' : 'Systemd indisponível para consulta.'
+  const mailInfo = $('services-mail-info')
+  mailInfo.hidden = filter!=='mail'
+  mailInfo.textContent = 'Portas locais de e-mail: ' + (mail?.length ? mail.join(', ') : mail ? 'nenhuma detectada' : 'consulta indisponível') +
+    '. Isso não confirma entrega externa nem configuração de uma conta. Mutt e msmtp ficam em Dependências.'
+  $('services-more').hidden = rows.length<=serviceLimit
+  $('services').replaceChildren(...rows.slice(0,serviceLimit).map(item=>{
+    const button=node('button','','service-manager-row outline')
+    button.type='button'
+    const left=node('span','','service-manager-copy')
+    left.append(node('strong',item.unit,'break-text'),node('small',item.description || (item.actions.length?'Gerenciável':'Somente consulta'),'muted break-text'))
+    button.append(left,dependencyPill(serviceLabels[item.active]||item.active,item.active==='active'?'good':item.active==='failed'?'bad':''))
+    button.addEventListener('click',()=>{
+      serviceFocus=item.unit
+      $('service-control-title').textContent=item.unit
+      $('service-control-feedback').textContent=''
+      $('service-control-dialog').showModal()
+      paintServiceDialog()
+    })
+    return button
+  }))
+  if (!rows.length && inventoryAvailable) $('services').append(node('p','Nenhum serviço neste filtro.','small muted'))
+  paintServiceDialog()
+}
+async function updateDiagnostics() {
+  const req=++serviceRequest
+  $('refresh-services').disabled=true
+  if(!serviceSnapshot) $('services-manager-status').textContent='Consultando o systemd…'
+  try {
+    const data=await api('/api/services/inventory')
+    if(req!==serviceRequest || currentAppRoute!=='services') return
+    serviceSnapshot=data
+    paintServices()
+  } catch(error) {
+    if(req===serviceRequest && currentAppRoute==='services') $('services-manager-status').textContent=error.message
+  } finally { if(req===serviceRequest) $('refresh-services').disabled=false }
+}
+$('refresh-services').addEventListener('click',()=>void updateDiagnostics())
+for(const id of ['services-filter','services-query']) $(id).addEventListener(id==='services-query'?'input':'change',()=>{serviceLimit=20;paintServices()})
+$('services-more').addEventListener('click',()=>{serviceLimit+=25;paintServices()})
 $('nginx-test').addEventListener('click', async () => {
   $('nginx-test').disabled = true
   $('nginx-diagnostic').textContent = 'Executando nginx -t…'
@@ -1799,11 +1866,13 @@ $('backup-form').addEventListener('submit', async e => {
 const dependencyGroups = [
   {id:'node', title:'Node.js e npm', icon:'code', summary:'Runtime e ferramentas de compilação', detail:'O Node.js é o runtime do próprio painel. O npm é consultado localmente. As ferramentas ajudam a compilar módulos nativos, mas as dependências de cada projeto não são instaladas por esta tela.'},
   {id:'php', title:'PHP e Composer', icon:'code', summary:'CLI, PHP-FPM e extensões', detail:'Instale o PHP 8.3, extensões ou o Composer. O conector MySQL não instala um servidor de banco, e o Composer aqui não executa projetos.'},
-  {id:'database', title:'Banco de dados', icon:'database', summary:'MariaDB, SQLite e cliente PostgreSQL', detail:'Instala os pacotes do banco ou do cliente. Não cria bancos, contas ou regras de acesso.'},
+  {id:'database', title:'Banco de dados', icon:'database', summary:'MariaDB, MongoDB, Redis e clientes', detail:'Instala os pacotes do banco ou do cliente. Não cria bancos, contas ou regras de acesso.'},
+  {id:'ruby', title:'Ruby on Rails', icon:'code', summary:'Ruby, Rails e Bundler', detail:'Instala pelo APT. Usa o Rails da distribuição, sem criar nem publicar aplicativos.'},
+  {id:'mail', title:'E-mail', icon:'terminal', summary:'Clientes e serviços de e-mail', detail:'Mutt e msmtp são clientes. Postfix e Dovecot são servidores e precisam de configuração. Diagnóstico local em Serviços.'},
   {id:'tools', title:'Ferramentas da VPS', icon:'package', summary:'Certbot, Git, cURL e ZIP', detail:'Ferramentas do sistema para HTTPS, repositórios, consultas e arquivos. O Nginx aparece só para consulta.'}
 ]
-const packageBusy = state => ['queued','checking','installing'].includes(state?.stage)
-let packageToInstall = null, packageGroup = null, packageInventory = null
+const packageBusy = state => ['queued','checking','installing','removing'].includes(state?.stage)
+let packageToInstall = null, packageOperation = 'install', packageGroup = null, packageInventory = null
 let packagePoll, packageRequest = 0, packageSubmitting = false
 function dependencyPill(text, css = '') {return node('span',text,'status-chip dependency-pill ' + css)}
 function dependencyState(id,state,packages) {
@@ -1811,7 +1880,7 @@ function dependencyState(id,state,packages) {
   el.hidden = !state
   if (!state) { el.replaceChildren(); return }
   const title = packages.find(item=>item.id === state.package)?.label || state.package || 'Pacote'
-  const status = {queued:'Na fila',checking:'Verificando',installing:'Instalando',completed:'Concluído',failed:'Não concluído'}[state.stage] || 'Andamento'
+  const status = {queued:'Na fila',checking:'Verificando',installing:'Instalando',removing:'Removendo',canceled:'Cancelado',completed:'Concluído',failed:'Não concluído'}[state.stage] || 'Andamento'
   el.replaceChildren(dependencyPill(status,state.stage === 'completed' ? 'good' : state.stage === 'failed' ? 'bad' : ''),node('strong',title),node('small',state.message || '','muted break-text'))
 }
 function dependencyRow(pkg, state) {
@@ -1830,18 +1899,23 @@ function dependencyRow(pkg, state) {
       install.setAttribute('aria-label','Instalar ' + pkg.label)
       install.disabled = packageBusy(state)
       install.addEventListener('click',() => {
-        packageToInstall = pkg
-        $('package-title').textContent = 'Instalar ' + pkg.label
-        $('package-description').textContent = pkg.detail + ' O APT verifica o que precisa ser instalado antes de alterar a VPS.'
-        $('package-install-feedback').hidden = true
-        $('package-form').querySelector('[type=submit]').disabled = false
-        $('package-dialog').showModal()
+        openPackageOperation(pkg,'install')
       })
       line.append(install)
     }
   } else {
     const label = pkg.installed === true ? (pkg.readOnly ? 'Do sistema' : 'Instalado') : pkg.installed === false ? 'Não encontrado' : 'Não verificado'
-    line.append(dependencyPill(label,pkg.installed ? 'good' : ''))
+    if (pkg.removable && pkg.installed) {
+      const actions = node('div','','dependency-row-actions')
+      actions.append(dependencyPill(label,'good'))
+      const remove = node('button','Remover','outline button-small')
+      remove.type='button'
+      remove.setAttribute('aria-label','Remover '+pkg.label)
+      remove.disabled=packageBusy(state)
+      remove.addEventListener('click',()=>openPackageOperation(pkg,'remove'))
+      actions.append(remove)
+      line.append(actions)
+    } else line.append(dependencyPill(label,pkg.installed ? 'good' : ''))
   }
   return line
 }
@@ -1919,21 +1993,17 @@ $('reload-packages').addEventListener('click', () => void refreshDependencies())
 $('package-form').addEventListener('submit', async event => {
   event.preventDefault()
   if (!packageToInstall || packageSubmitting) return
-  const pkg = packageToInstall
+  const pkg = packageToInstall, op = packageOperation
   const submitButton = event.currentTarget.querySelector('button[type=submit]')
   const feedback = $('package-install-feedback')
   packageSubmitting = true
   submitButton.disabled = true
   feedback.hidden = true
   try {
-    await api('/api/dependencies/install','POST',{package:pkg.id})
+    await launchPackageOperation(pkg,op)
     if (currentAppRoute !== 'dependencies') return
     if ($('package-dialog').open) $('package-dialog').close()
-    if (packageInventory) {
-      packageInventory = {...packageInventory,status:{package:pkg.id,stage:'queued',message:'Solicitação enviada. Aguardando o APT.'}}
-      renderDependencies(packageInventory)
-    }
-    await refreshDependencies({background:true})
+    if (currentAppRoute === 'dependencies') await refreshDependencies({background:true})
   } catch (error) {
     if (currentAppRoute === 'dependencies' && $('package-dialog').open) {
       feedback.textContent = error.message
@@ -1941,6 +2011,78 @@ $('package-form').addEventListener('submit', async event => {
       feedback.classList.add('bad')
     }
   } finally { packageSubmitting = false; submitButton.disabled = false }
+})
+
+let aptTimer, aptView, aptWatchId=0, aptExpanded=true, aptDismissed=null, aptCanceling=false
+function openPackageOperation(pkg,operation) {
+  packageToInstall=pkg; packageOperation=operation
+  const verb=operation==='remove'?'Remover':'Instalar'
+  $('package-title').textContent=verb+' '+pkg.label
+  $('package-description').textContent=operation==='remove' ?
+    'Pode interromper serviços que usam este pacote. Remove pelo APT sem purgar configurações nem apagar dados pelo painel. Faça backup se houver dados importantes.' :
+    pkg.detail+' O APT verifica o plano antes de alterar a VPS.'
+  $('package-install-feedback').hidden=true
+  const submit=$('package-form').querySelector('[type=submit]')
+  submit.textContent=verb+' pacote';submit.disabled=false
+  $('package-dialog').showModal()
+}
+function paintApt(state) {
+  aptView=state
+  const frame=$('apt-progress-panel')
+  const busy=packageBusy(state)
+  if(!state || !csrf || (!busy && (!state.job || aptDismissed===state.job))) {frame.classList.add('hidden');return}
+  frame.classList.remove('hidden')
+  const label=packageInventory?.packages.find(pkg=>pkg.id===state.package)?.label || ({'node-build':'Compiladores e Make','ruby-rails':'Ruby on Rails',mongodb:'MongoDB Community'})[state.package] || state.package
+  const stage={queued:'Na fila',checking:'Verificando',installing:'Instalando',removing:'Removendo',completed:'Concluído',failed:'Falhou',canceled:'Cancelado'}[state.stage] || 'Operação'
+  $('apt-progress-title').textContent=stage+' · '+label
+  $('apt-progress-message').textContent=(state.message || '') + (['installing','removing'].includes(state.stage)?' Aguarde esta etapa antes de reiniciar.':'')
+  const log=$('apt-progress-log')
+  const follow=log.scrollHeight-log.scrollTop-log.clientHeight<35
+  log.textContent=state.log || (busy?'Aguardando saída do APT…':'Sem saída adicional.')
+  if(follow)log.scrollTop=log.scrollHeight
+  $('apt-progress-body').hidden=!aptExpanded
+  $('apt-toggle').textContent=aptExpanded?'Minimizar':'Ver progresso'
+  $('apt-toggle').setAttribute('aria-expanded',String(aptExpanded))
+  $('apt-cancel').hidden=!state.job || !['queued','checking'].includes(state.stage)
+  $('apt-cancel').disabled=aptCanceling
+  $('apt-retry').hidden=!['failed','canceled'].includes(state.stage)
+  $('apt-dismiss').hidden=busy
+}
+async function watchPackages() {
+  clearTimeout(aptTimer)
+  const session=csrf, id=++aptWatchId
+  if(!session)return
+  try {
+    const {status}=await api('/api/dependencies/status')
+    if(csrf!==session || id!==aptWatchId)return
+    const wasBusy=packageBusy(aptView)
+    paintApt(status)
+    if(wasBusy && !packageBusy(status) && currentAppRoute==='dependencies') void refreshDependencies({background:true})
+  } catch { /* reconecta sem perder a última saída */ }
+  finally { if(csrf===session && id===aptWatchId)aptTimer=setTimeout(watchPackages,packageBusy(aptView)?2200:15000) }
+}
+async function launchPackageOperation(pkg,op) {
+  const result=await api('/api/dependencies/'+op,'POST',{package:pkg.id})
+  aptDismissed=null;aptExpanded=true
+  $('apt-progress-feedback').hidden=true
+  paintApt({package:pkg.id,job:result.job,operation:op,stage:'queued',message:'Solicitação enviada. Aguardando o APT.'})
+  void watchPackages()
+}
+$('apt-toggle').addEventListener('click',()=>{aptExpanded=!aptExpanded;paintApt(aptView)})
+$('apt-dismiss').addEventListener('click',()=>{aptDismissed=aptView?.job;paintApt(aptView)})
+$('apt-cancel').addEventListener('click',async()=>{
+  if(!aptView?.job || aptCanceling)return
+  const feedback=$('apt-progress-feedback')
+  aptCanceling=true;paintApt(aptView)
+  try { await api('/api/dependencies/cancel','POST',{job:aptView.job});feedback.textContent='Cancelamento solicitado. Aguardando etapa segura.' }
+  catch(error) { feedback.textContent=error.message }
+  finally {aptCanceling=false;feedback.hidden=false;void watchPackages()}
+})
+$('apt-retry').addEventListener('click',()=>{
+  if(!aptView || packageBusy(aptView))return
+  const pkg=packageInventory?.packages.find(row=>row.id===aptView.package) || {id:aptView.package,label:aptView.package,detail:'Repete a última operação selecionada.'}
+  if(currentAppRoute!=='dependencies')navigateApp('dependencies')
+  openPackageOperation(pkg,aptView.operation==='remove'?'remove':'install')
 })
 
 function activateTab(tab, { record = true } = {}) {

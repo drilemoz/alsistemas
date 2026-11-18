@@ -847,3 +847,24 @@ button.dependency-category:hover,button.dependency-category:focus-visible{border
 .hosting-review-row{display:grid;grid-template-columns:minmax(0,80px) minmax(0,1fr);gap:.4rem;padding:.52rem 0;border-bottom:1px solid var(--border);font-size:.82rem}
 .hosting-review-row:last-child{border:0}
 .hosting-review-row dd{margin:0;font-weight:650}
+
+/* Operação APT persistente e inventário de serviços */
+.apt-progress-panel{position:fixed;z-index:32;right:14px;bottom:18px;width:min(450px,calc(100vw - 28px));background:var(--surface);border:1px solid var(--border);border-radius:.9rem;padding:.72rem .85rem;box-shadow:0 10px 32px #171c3040}
+.apt-panel-header{display:flex;justify-content:space-between;align-items:center;gap:.55rem}
+.apt-panel-header .eyebrow{margin-bottom:.08rem}
+.apt-panel-header strong{font-size:.87rem;overflow-wrap:anywhere}
+.apt-progress-panel [hidden],.services-manager [hidden]{display:none!important}
+#apt-progress-message,#apt-progress-feedback{margin:.45rem 0}
+#apt-progress-log{max-height:min(26dvh,210px);white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;margin:.48rem 0;background:var(--bg);border:1px solid var(--border);border-radius:.45rem;padding:.54rem;font-size:.76rem;line-height:1.44}
+.apt-actions,.services-commands{display:flex;flex-wrap:wrap;gap:.4rem}
+.services-filters{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:.55rem}
+.services-filters label{margin:0}
+.services-filters input,.services-filters select{font-size:16px}
+#services-manager-status{margin:.52rem 0}
+button.service-manager-row{display:grid;grid-template-columns:minmax(0,1fr) auto;width:100%;padding:.58rem .6rem;gap:.5rem;margin:.33rem 0;align-items:center;text-align:left;min-height:44px}
+.service-manager-copy{display:grid;min-width:0;font-size:.83rem}
+.services-tools{margin-top:.7rem;border-top:1px solid var(--border);padding-top:.55rem}
+.services-tools p{margin:.3rem 0 0}
+.dependency-row-actions{display:grid;gap:.3rem;justify-items:end}
+#services-more{margin-top:.48rem}
+@media(max-width:700px){.apt-progress-panel{bottom:calc(69px + env(safe-area-inset-bottom));right:10px;width:calc(100vw - 20px)}}

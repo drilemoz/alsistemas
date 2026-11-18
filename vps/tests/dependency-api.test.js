@@ -36,7 +36,7 @@ test('API de pacotes exige sessão, CSRF e allowlist, sem reautenticação', asy
     const csrf=login.body.csrf
     const inv=await call('/api/dependencies','GET',undefined,cookie)
     assert.equal(inv.status,200)
-    assert.equal(inv.body.packages.length,24)
+    assert.equal(inv.body.packages.length,33)
     assert.equal(inv.body.runtime.node.version,process.versions.node)
     assert.ok(inv.body.packages.some(p=>p.id==='node-build' && p.group==='node'))
     assert.ok(inv.body.packages.some(p=>p.id==='mariadb-server' && p.group==='database'))

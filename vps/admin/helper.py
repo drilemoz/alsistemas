@@ -26,7 +26,8 @@ from other_project_permissions import ProfileError, handle_permissions, configur
 from project_explorer import browse_project, update_mode
 from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
-from package_policy import ALLOWED as APPROVED_PACKAGES, package_status
+from package_policy import ALLOWED as APPROVED_PACKAGES, package_status, package_gate, read_job, write_job
+from admin_services import ServiceError, control_service
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -806,35 +807,47 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
             if staged: staged.unlink(missing_ok=True)
             raise
         return {'ok': True, 'operationId': token, 'started': True}
-    if action == 'install_package':
-        if set(task) != {'action', 'package'}:
-            raise TaskError('Parâmetros de instalação inválidos.')
+    if action == 'control_service':
+        return control_service(task,runner)
+    if action == 'cancel_package':
+        job=task.get('job')
+        if set(task) != {'action','job'} or not isinstance(job,str) or not re.fullmatch('[a-f0-9]{24}',job):
+            raise TaskError('Identificador de operação inválido.')
+        with package_gate():
+            control=read_job()
+            if control.get('job') != job or control.get('phase') not in ('queued','checking'):
+                raise TaskError('Não é seguro interromper nesta etapa. Aguarde o APT concluir.')
+            write_job({**control,'cancel':True})
+        return {'ok':True,'requested':True}
+    if action in ('install_package','remove_package'):
+        if set(task) != {'action','package'}: raise TaskError('Parâmetros de pacote inválidos.')
         package = task.get('package')
-        if not isinstance(package, str) or package not in APPROVED_PACKAGES:
-            raise TaskError('Pacote não autorizado.')
-        running = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
-                                  'alsistemas-package-installer.service'], capture_output=True, timeout=5)
-        if running.returncode == 0:
-            raise TaskError('Outra instalação já está em andamento.')
+        if not isinstance(package,str) or package not in APPROVED_PACKAGES: raise TaskError('Pacote não autorizado.')
+        operation = 'install' if action == 'install_package' else 'remove'
+        if operation == 'remove' and APPROVED_PACKAGES[package] in {'python3','curl','unzip','nodejs','npm','nginx'}:
+            raise TaskError('Pacote protegido pelo painel.')
+        active = subprocess.run(['/bin/systemctl','show','-p','ActiveState','--value','alsistemas-package-installer.service'],
+                                capture_output=True,text=True,timeout=5)
+        if getattr(active,'stdout','').strip() in ('active','activating','deactivating','reloading'):
+            raise TaskError('Outra operação já está em andamento.')
         request = Path('/run/alsistemas-vps/package-request.json')
-        if request.exists() or request.is_symlink():
-            raise TaskError('Já existe uma solicitação pendente; verifique o serviço de pacotes.')
-        fd = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        if request.exists() or request.is_symlink(): raise TaskError('Há uma operação pendente.')
+        job=secrets.token_hex(12)
+        fd=os.open(request,os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,0o600)
         try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as out:
-                json.dump({'package': package}, out)
-                out.flush(); os.fsync(out.fileno())
-            package_status('queued',package,'Solicitação recebida. Aguardando o instalador…')
-            proc = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block',
-                                   'alsistemas-package-installer.service'], capture_output=True, timeout=12)
-            if proc.returncode != 0:
-                raise TaskError('Não foi possível iniciar o instalador APT.')
+            with os.fdopen(fd,'w',encoding='utf-8') as out:
+                json.dump({'package':package,'job':job,'operation':operation},out)
+                out.flush();os.fsync(out.fileno())
+            with package_gate(): write_job({'job':job,'phase':'queued','cancel':False})
+            package_status('queued',package,'Solicitação recebida. Aguardando o APT…',job=job,operation=operation)
+            proc=subprocess.run(['/bin/systemctl','start','--no-block','alsistemas-package-installer.service'],capture_output=True,timeout=12)
+            if proc.returncode: raise TaskError('Não foi possível iniciar a operação APT.')
         except Exception:
             request.unlink(missing_ok=True)
-            package_status('failed',package,'Não foi possível iniciar o instalador APT.')
+            with package_gate(): write_job({'job':job,'phase':'done','cancel':False})
+            package_status('failed',package,'Não foi possível iniciar o APT.',job=job,operation=operation)
             raise
-        return {'ok': True, 'started': True, 'package': package,
-                'message': 'Instalação autorizada. Consulte o progresso no módulo Dependências.'}
+        return {'ok':True,'started':True,'job':job,'operation':operation,'package':package}
     if action == 'start_update':
         if set(task) not in ({'action'}, {'action', 'upload', 'sha256'}):
             raise TaskError('Parâmetros inesperados na atualização.')
@@ -946,6 +959,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, ProjectError, ProfileError, RedirectError, HostingError, OSError, ValueError, subprocess.TimeoutExpired) as err:
+    except (TaskError, ServiceError, ProjectError, ProfileError, RedirectError, HostingError, OSError, ValueError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)

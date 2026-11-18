@@ -2,10 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { validPackageId, PACKAGE_CATALOG, dependencyInfo } from '../src/dependencies.js'
 
-test('catálogo contém as quatro categorias e impede troca do próprio runtime', () => {
+test('catálogo contém as seis categorias e impede troca do próprio runtime', () => {
   for (const id of ['php-curl','php-zip','composer','certbot','mariadb-server','php-pgsql','node-build','git']) assert.equal(validPackageId(id),true)
   for (const id of ['../etc','nginx;rm','nodejs','npm','sudo','php8.3-curl',null,[]]) assert.equal(validPackageId(id),false)
-  assert.deepEqual(new Set(PACKAGE_CATALOG.map(p=>p.group)),new Set(['node','php','database','tools']))
+  assert.deepEqual(new Set(PACKAGE_CATALOG.map(p=>p.group)),new Set(['node','php','database','tools','ruby','mail']))
   assert.equal(new Set(PACKAGE_CATALOG.map(p=>p.id)).size,PACKAGE_CATALOG.length)
 })
 test('inventário usa dpkg-query em lote e reconhece npm mesmo incluído no pacote nodejs', () => {

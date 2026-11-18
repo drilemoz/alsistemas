@@ -216,7 +216,21 @@
   <a class="button-link" id="hosting-open-site" target="_blank" rel="noopener noreferrer" hidden>Ver site</a>
 </div>
 </div></dialog>
-<section class="tab-page hidden" id="page-services"><p class="eyebrow">DIAGNÓSTICO</p><h1>Serviços</h1><p class="muted">Estado atual, sem reinícios automáticos.</p><section class="panel"><div class="heading"><h2>Serviços instalados</h2><button class="outline button-small action-quiet" id="nginx-test" type="button"><svg aria-hidden="true" class="icon" focusable="false"><use href="#i-check"></use></svg>Testar Nginx</button></div><div class="stack" id="services"></div><p aria-live="polite" class="small muted" id="nginx-diagnostic">O teste executa nginx -t sem alterar a configuração.</p></section></section>
+<section class="tab-page hidden" id="page-services">
+<div class="heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Serviços</h1><p class="muted">Inventário do systemd. Controles nos serviços suportados.</p></div>
+<button id="refresh-services" class="outline icon-button" type="button" aria-label="Atualizar serviços"><svg class="icon" aria-hidden="true"><use href="#i-updates"></use></svg></button></div>
+<section class="panel services-manager">
+<div class="services-filters"><label>Mostrar<select id="services-filter" aria-label="Mostrar serviços"><option value="active">Em execução</option><option value="all">Todos os serviços</option><option value="managed">Gerenciáveis</option><option value="mail">E-mail da VPS</option></select></label><label>Buscar<input type="search" id="services-query" placeholder="Nome do serviço"></label></div>
+<p id="services-manager-status" class="small muted" role="status"></p><p id="services-mail-info" class="hint" hidden></p>
+<div id="services"></div>
+<button id="services-more" class="outline button-small" type="button" hidden>Mostrar mais</button>
+<div class="services-tools"><button class="outline button-small" id="nginx-test" type="button">Testar Nginx</button><p aria-live="polite" class="small muted" id="nginx-diagnostic"></p></div>
+</section></section>
+<dialog id="service-control-dialog" class="panel-popup" data-panel-popup aria-labelledby="service-control-title"><div class="dialog-body">
+<header class="modal-heading"><div><p class="eyebrow">SERVIÇO DA VPS</p><h2 id="service-control-title"></h2></div><button type="button" class="outline icon-button modal-x" data-close="service-control-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
+<div class="popup-scroll"><p class="small muted" id="service-control-meta"></p><p class="small muted" id="service-control-feedback" role="status"></p><div class="services-commands" id="service-commands"></div></div>
+<div class="dialog-actions"><button type="button" class="outline" data-close="service-control-dialog">Fechar</button></div>
+</div></dialog>
 <section class="tab-page hidden" id="page-dependencies">
 <header class="heading"><div><p class="eyebrow">AMBIENTE</p><h1>Dependências</h1><p class="muted">Versões instaladas e pacotes disponíveis na VPS.</p></div>
 <button class="outline icon-button" id="reload-packages" type="button" aria-label="Atualizar dependências" title="Atualizar dependências"><svg class="icon" aria-hidden="true"><use href="#i-updates"></use></svg></button></header>
@@ -392,4 +406,11 @@
 <label id="dn-ns-hosts-label" hidden>Servidores DNS<textarea name="hosts" rows="3" placeholder="Um hostname por linha" maxlength="3100"></textarea></label>
 <button type="submit">Revisar servidores DNS</button></form>
 <p class="small domain-feedback" id="dn-ns-result" role="status"></p></div><div class="dialog-actions"><button type="button" class="outline" data-close="dn-ns-edit">Fechar</button></div></div></dialog><dialog id="dn-record-detail" class="panel-popup domain-popup" data-panel-popup aria-labelledby="dn-record-detail-title"><div class="dialog-body"><header class="modal-heading"><div><p class="eyebrow">REGISTROS DNS</p><h2 id="dn-record-detail-title">Detalhes do registro</h2></div><button type="button" class="outline icon-button modal-x" data-close="dn-record-detail" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header><div class="popup-scroll"><div id="dn-record-meta" class="hosting-stages"></div><p id="dn-record-feedback" class="small domain-feedback" role="status"></p></div><div class="dialog-actions"><button id="dn-record-copy" type="button" class="outline">Copiar</button><button id="dn-record-edit" type="button" class="outline">Trocar destino</button><button id="dn-record-test" type="button">Testar registro</button><button type="button" class="outline" data-close="dn-record-detail">Fechar</button></div></div></dialog><dialog id="public-dns-test" class="panel-popup domain-popup" data-panel-popup aria-labelledby="public-dns-test-title"><div class="dialog-body"><header class="modal-heading"><div><p class="eyebrow">DIAGNÓSTICO</p><h2 id="public-dns-test-title">Resultado do DNS</h2></div><button type="button" class="outline icon-button modal-x" data-close="public-dns-test" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header><div class="popup-scroll"><div id="public-dns-result" class="hosting-stages" role="status"></div></div><div class="dialog-actions"><button type="button" class="outline" data-close="public-dns-test">Fechar</button></div></div></dialog><footer>AL Sistemas VPS <span id="footer-version"></span> • Uma VPS por painel • Ações administrativas restritas</footer>
+<aside id="apt-progress-panel" class="apt-progress-panel hidden" aria-label="Operação de pacotes">
+<div class="apt-panel-header"><div><p class="eyebrow">PACOTES DA VPS</p><strong id="apt-progress-title"></strong></div><button type="button" id="apt-toggle" class="outline button-small" aria-expanded="true" aria-controls="apt-progress-body">Minimizar</button></div>
+<div id="apt-progress-body"><p class="small muted" id="apt-progress-message" role="status"></p>
+<pre id="apt-progress-log" aria-label="Registro do APT" tabindex="0"></pre>
+<div class="apt-actions"><button type="button" id="apt-cancel" class="outline button-small" hidden>Cancelar operação</button><button type="button" id="apt-retry" class="outline button-small" hidden>Tentar novamente</button><button type="button" id="apt-dismiss" class="outline button-small" hidden>Fechar</button></div>
+<p class="small muted" id="apt-progress-feedback" role="status" hidden></p></div>
+</aside>
 </main></body></html>
