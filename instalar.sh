@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.47: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.49: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -190,10 +190,27 @@ if [[ -e /etc/systemd/system/alsistemas-vps.service ]]; then
   install -d -m 0700 /var/backups/alsistemas
   cp -p /etc/systemd/system/alsistemas-vps.service "/var/backups/alsistemas/systemd-$(date -u +%Y%m%dT%H%M%SZ).service"
 fi
+# /run é volátil. Tmpfiles cria o diretório antes de o systemd montar
+# ReadWritePaths; um ExecStartPre na própria unit chegaria tarde demais.
+TMPFILES_DIR='/etc/tmpfiles.d'
+RUNTIME_RULE="$TMPFILES_DIR/alsistemas-vps.conf"
+RUNTIME_SOURCE="$BASE/vps/systemd/alsistemas-vps.conf"
+[[ -f "$RUNTIME_SOURCE" && ! -L "$RUNTIME_SOURCE" ]] || fail 'Regra de runtime ausente ou insegura no pacote.'
+[[ ! -L "$TMPFILES_DIR" && ! -L "$RUNTIME_RULE" && ! -L /run/alsistemas-vps ]] || fail 'Configuração ou diretório runtime é um link simbólico.'
+if [[ -e "$RUNTIME_RULE" ]]; then
+  [[ -f "$RUNTIME_RULE" ]] || fail 'Regra runtime existente não é um arquivo regular.'
+  cmp -s "$RUNTIME_SOURCE" "$RUNTIME_RULE" || fail 'Regra runtime existente difere da configuração do painel; revise antes de atualizar.'
+fi
+if [[ ! -d "$TMPFILES_DIR" ]]; then install -d -o root -g root -m 0755 "$TMPFILES_DIR"; fi
+install -o root -g root -m 0644 "$RUNTIME_SOURCE" "$RUNTIME_RULE"
+systemd-tmpfiles --create "$RUNTIME_RULE" || fail 'Não foi possível preparar o diretório de runtime do painel.'
+[[ ! -L /run/alsistemas-vps && -d /run/alsistemas-vps && "$(stat -c '%u:%g:%a' /run/alsistemas-vps)" == '0:0:700' ]] || fail 'O runtime do painel não ficou protegido (root:root, 0700).'
+
 cat > /etc/systemd/system/alsistemas-vps.service <<'EOF' 
 [Unit]
 Description=AL Sistemas VPS (painel local)
-After=network.target nginx.service
+Wants=systemd-tmpfiles-setup.service
+After=network.target nginx.service systemd-tmpfiles-setup.service
 [Service]
 Type=simple
 User=alsistemas
@@ -207,7 +224,6 @@ Restart=on-failure
 RestartSec=5
 UMask=0077
 ProtectSystem=strict
-ExecStartPre=+/usr/bin/install -d -o root -g root -m 0700 /run/alsistemas-vps
 ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps /var/log/nginx -/run/nginx.pid -/etc/letsencrypt -/var/lib/letsencrypt -/var/log/letsencrypt
 ProtectHome=true
 PrivateTmp=true
@@ -395,9 +411,6 @@ if [[ -f /etc/systemd/system/alsistemas-vps.service.d/lock.conf && ! -L /etc/sys
     log 'Ajuste temporário amplo de /run/lock substituído pelo diretório restrito.'
   fi
 fi
-# Acesso restrito ao mutex: /run é root-owned, e este subdiretório é 0700.
-[[ ! -L /run/alsistemas-vps ]] || fail 'Diretório runtime é um link simbólico; recusado.'
-install -d -o root -g root -m 0700 /run/alsistemas-vps
 # Preserva a origem em upgrades de instalações HTTPS existentes.
 # Os caminhos já existentes do Certbot mantêm seus modos e donos.
 for acme_path in /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt; do

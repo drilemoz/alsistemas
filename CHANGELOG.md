@@ -1,3 +1,15 @@
+## 2.0.49 — Correção de inicialização após reiniciar a VPS (18/11/2026)
+
+- Cria /run/alsistemas-vps com systemd-tmpfiles no boot e na instalação, antes da montagem do namespace da unidade.
+- Remove a criação circular em ExecStartPre e mantém o runtime de helpers e locks restrito a root:root 0700.
+- Inclui recuperação por SSH e testes de recriação do diretório num boot simulado.
+
+## 2.0.48 — Atualizações automáticas e reinício acompanhado (18/11/2026)
+
+- Reorganiza versões, estado da Release, instalação por ZIP e última operação. Consulta automática com cache compartilhado e aviso por versão.
+- A confirmação fixa versão e repositório da Release para o instalador, que confere novamente antes de baixar.
+- Reinício confirmado com contagem, retomada entre abas e fallback offline. Só um novo boot valida o sucesso.
+
 ## 2.0.47 — Visão geral da VPS corrigida (18/11/2026)
 
 - Permite ao serviço ler interfaces Linux e evita que uma falha de rede esconda todas as métricas. Falhas de disco e swap são identificadas sem inventar valores.

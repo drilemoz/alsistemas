@@ -955,3 +955,27 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .host-sites-summary h2{margin-bottom:0}
 #overview-sites-dialog .host-site-badges .pill{white-space:normal}
 @media(min-width:850px){.host-summary .host-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* Atualizações e manutenção globais, sem bloqueio de navegação. */
+.maintenance-notice[hidden],.updates-layout [hidden],.reboot-monitor [hidden],.reboot-monitor[hidden]{display:none!important}
+.maintenance-notice{display:flex;gap:.4rem;align-items:center;margin:0 0 .65rem;padding:.2rem .4rem;background:color-mix(in srgb,var(--accent) 9%,var(--surface));border:1px solid var(--border);border-radius:.65rem}
+.maintenance-release-link{display:flex;justify-content:space-between;align-items:center;gap:.3rem;width:100%;text-align:left;background:transparent;color:var(--accent);font-size:.82rem;min-width:0;min-height:44px}
+.maintenance-release-link span{min-width:0;overflow-wrap:anywhere}
+.maintenance-notice #global-update-dismiss{flex:none;min-width:44px;min-height:44px;font-size:1.1rem}
+.updates-layout{max-width:39rem}
+.update-primary-card,.update-secondary-card{padding:.8rem}
+.update-versions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem;margin:.65rem 0}
+.update-versions>div{padding:.55rem .65rem;background:var(--bg);border-radius:.53rem;min-width:0}
+.update-versions dt{font-size:.76rem;color:var(--muted)}
+.update-versions dd{margin:.12rem 0 0;font-size:1.28rem;font-weight:650;overflow-wrap:anywhere}
+.update-primary-card #apply-update{width:100%;min-height:44px}
+.update-primary-card #update-release-help{margin-top:.35rem}
+.update-option-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.6rem 0;min-width:0;border-bottom:1px solid var(--border)}
+.update-option-row:first-child{padding-top:0}
+.update-option-row>div{min-width:0}
+.update-option-row p{margin:.15rem 0 0}
+.update-option-row button{white-space:normal;flex:none;max-width:48%;min-height:44px}
+.update-secondary-card>a{display:inline-block;margin-top:.5rem;font-size:.8rem}
+.reboot-monitor #host-reboot-copy{margin:.1rem 0}
+.reboot-monitor #host-reboot-countdown{font-size:1.55rem;font-weight:700;font-variant-numeric:tabular-nums;margin:0;color:var(--accent)}
+.reboot-monitor .reboot-controls{display:flex;flex-wrap:wrap;gap:.35rem}

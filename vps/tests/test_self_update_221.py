@@ -18,7 +18,7 @@ class SelfUpdatePolicyTests(unittest.TestCase):
         self.assertNotIn('name="password"', html[start:end])
         script = (ROOT / 'vps/public/app.js').read_text()
         self.assertNotIn("'X-Update-Password'", script[script.index("function sendZip(file,"):script.index("$('update-apply-form').addEventListener")])
-        self.assertIn("api('/api/updates/apply', 'POST', {})", script)
+        self.assertIn("api('/api/updates/apply', 'POST', {version:reviewedUpdateVersion})", script)
 
 if __name__ == '__main__':
     unittest.main()

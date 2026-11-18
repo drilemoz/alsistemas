@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { finished } from 'node:stream/promises'
 import { findTrusted, rememberDevice, revokeDevice, revokeAllDevices, trustedDevices, TRUST_MS } from './trusted.js'
-import { updateInfo, checkRelease, validateRepo, configureRepo } from './updates.js'
+import { updateInfo, checkRelease, createReleaseCache, compareVersion, validateRepo, configureRepo } from './updates.js'
 import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
 import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, strongPassword, verifyPassword, verifyTotp } from './security.js'
 import { projects, serviceDiagnostics } from './monitor.js'
@@ -23,7 +23,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.47'
+const VERSION = '2.0.49'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -162,11 +162,12 @@ function acceptedOrigin(req) {
 function serveUi(req, res) {
   const pathname = new URL(req.url, 'http://localhost').pathname
   const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/domains.js': ['domains.js', 'text/javascript; charset=utf-8'], '/hosting.js': ['hosting.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
+  Object.assign(paths, { '/maintenance-worker.js':['maintenance-worker.js','text/javascript; charset=utf-8'], '/maintenance-offline.html':['maintenance-offline.html','text/html; charset=utf-8'], '/maintenance-offline.js':['maintenance-offline.js','text/javascript; charset=utf-8'], '/maintenance-offline.css':['maintenance-offline.css','text/css; charset=utf-8'] })
   const asset = paths[pathname]
   if (!asset) return fail(res, 404, 'Não encontrado')
   const source = path.join(publicDir, asset[0])
   res.writeHead(200, { 'content-type': asset[1], 'x-content-type-options': 'nosniff', 'cache-control': 'no-store',
-    'content-security-policy': pathname === '/tutorial-instalacao.html' ? "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" : "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'content-security-policy': pathname === '/tutorial-instalacao.html' ? "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" : "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' })
   fs.createReadStream(source).pipe(res)
 }
@@ -194,7 +195,8 @@ function runTask(task) {
 
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
   hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
-  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites } = {}) {
+  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease } = {}) {
+  const releaseCache = createReleaseCache({load:releaseLookup})
   let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
   const executeTask = taskRunner
   taskRunner = async task => {
@@ -438,17 +440,22 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         }
       }
       if (path === '/api/updates' && req.method === 'GET') return json(res, 200, updateInfo(VERSION))
+      if (path === '/api/updates/availability' && req.method === 'GET') {
+        if (!limit(ip, 'update-availability', 180)) return fail(res, 429, 'Muitas consultas')
+        return json(res, 200, await releaseCache.read(VERSION,updateInfo(VERSION).repo))
+      }
       if (path === '/api/updates/check' && req.method === 'POST') {
         const input = await body(req)
         if (Object.keys(input).length) return fail(res, 400, 'Parâmetros não permitidos')
         if (!limit(ip, 'update-check', 12)) return fail(res, 429, 'Muitas consultas')
-        return json(res, 200, await checkRelease(VERSION))
+        return json(res, 200, await releaseCache.read(VERSION,updateInfo(VERSION).repo,{force:true}))
       }
       if (path === '/api/updates/configure' && req.method === 'POST') {
         if (!limit(ip, 'update-configure', 8)) return fail(res, 429, 'Muitas tentativas')
         const input = await body(req)
         if (Object.keys(input).sort().join(',') !== 'repo' || !validateRepo(input.repo)) return fail(res, 400, 'Repositório inválido')
         configureRepo(input.repo)
+        releaseCache.invalidate()
         audit('update_repo_configured', { ip })
         return json(res, 200, updateInfo(VERSION))
       }
@@ -457,12 +464,20 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         const input = await body(req)
         // Sessão válida e token CSRF já foram verificados acima.
         // Para atualizar o núcleo, não exigir novamente a senha do login.
-        if (Object.keys(input).length !== 0) return fail(res, 400, 'Parâmetros inesperados')
-        if (!updateInfo(VERSION).repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
+        const keys=Object.keys(input)
+        if (keys.length && (keys.join(',') !== 'version' || typeof input.version !== 'string' || compareVersion(input.version,VERSION)!==1))
+          return fail(res, 400, 'Versão de atualização inválida.')
+        const repo=updateInfo(VERSION).repo
+        if (!repo) return fail(res, 409, 'Configure o repositório autorizado no GitHub')
         if (['queued', 'checking', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back'].includes(updateInfo(VERSION).status?.stage))
           return fail(res, 409, 'Atualização já está em andamento')
         try {
-          const result = await taskRunner({ action: 'start_update' })
+          if (input.version) {
+            const release=await releaseCache.read(VERSION,repo)
+            if (release.checkError || !release.assetsReady || release.latest!==input.version || updateInfo(VERSION).repo!==repo)
+              return fail(res,409,'A versão disponível mudou ou não pôde ser verificada. Confira a Release novamente.')
+          }
+          const result = await taskRunner({ action: 'start_update', ...(input.version ? {version:input.version,repo} : {}) })
           audit('update_requested', { ip })
           return json(res, 202, result)
         } catch (error) {

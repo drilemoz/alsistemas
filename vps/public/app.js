@@ -114,7 +114,7 @@ function metric(title, value, icon, usage=null, foot='') {
 const hostPercent = (available,total) => Number.isFinite(available) && Number.isFinite(total) && total>0 ? Math.round(100*(total-available)/total) : null
 const hostShortDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : 'Indisponível'
 const hostTimeOnly = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Não informado'
-let hostSample=null, hostSiteSample=null, hostReboot=null, hostRequest=0, hostPoll, hostPollStarted=0, hostPollId=0, hostSending=false
+let hostSample=null, hostSiteSample=null, hostReboot=null, hostRequest=0, hostPoll, hostPollId=0, hostSending=false
 const hostUptime = value => {
   if (!Number.isFinite(value) || value < 0) return null
   const parts = [Math.floor(value/86400), Math.floor(value%86400/3600), Math.floor(value%3600/60)]
@@ -231,61 +231,168 @@ function renderHostSites(data) {
   }))
   renderHostAlerts()
 }
-function paintHostReboot(state,connection='') {
+const hostRebootKey='als-host-reboot-v1'
+const hostRebootDismissKey='als-host-reboot-dismiss-v1'
+const hostRebootWindow=240_000
+let hostTrack=null, hostRecheck=null, hostCountdownTimer
+const hostAwaiting=state=>['sending','scheduled','dispatching','reconnecting'].includes(state)
+function storedHostTrack() {
+  try {
+    const row=JSON.parse(localStorage.getItem(hostRebootKey)||'null')
+    return row && Number.isFinite(row.deadline) && Date.now()<row.deadline+86400_000 &&
+      (row.target===null || Number.isFinite(row.target)) && (row.requestedAt===null || Number.isFinite(Date.parse(row.requestedAt))) ? row : null
+  } catch { return null }
+}
+function saveHostTrack(track) {
+  hostTrack=track
+  try {
+    if (track) {
+      const json=JSON.stringify(track)
+      if(localStorage.getItem(hostRebootKey)!==json) localStorage.setItem(hostRebootKey,json)
+    } else localStorage.removeItem(hostRebootKey)
+  } catch {}
+}
+function hostNoticeDismissed(state) {
+  try { return !!state?.requestedAt && localStorage.getItem(hostRebootDismissKey)===state.requestedAt } catch { return false }
+}
+function paintRebootClock() {
+  const clock=$('host-reboot-countdown')
+  const remaining=hostTrack?.target ? Math.max(0,Math.ceil((hostTrack.target-Date.now())/1000)) : 0
+  clock.hidden=hostReboot?.state!=='scheduled'||remaining===0
+  if (!clock.hidden) clock.textContent='00:'+String(Math.min(59,remaining)).padStart(2,'0')
+  else if (hostReboot?.state==='scheduled' && hostTrack?.target) paintHostReboot({...hostReboot,state:'dispatching'})
+}
+function paintHostReboot(state) {
   hostReboot=state
-  const pending=['scheduled','dispatching'].includes(state?.state)
+  const phase=state?.state
+  const pending=hostAwaiting(phase)
   const busy=hostSample?.maintenance?.busy||[]
-  const banner=$('overview-reboot-status'), button=$('host-reboot-open'), note=$('host-reboot-note')
-  const visible=state?.state && state.state!=='idle'
+  const banner=$('overview-reboot-status'), note=$('host-reboot-note')
+  const visible=!!phase && phase!=='idle' && (pending||!hostNoticeDismissed(state))
   banner.hidden=!visible
-  banner.classList.toggle('needs-attention',state?.state==='blocked'||state?.state==='unconfirmed')
+  banner.classList.toggle('needs-attention',['blocked','unconfirmed','offline','auth'].includes(phase))
   if (visible) {
-    const title={scheduled:'Reinício solicitado',dispatching:'Aguardando a VPS voltar',rebooted:'Novo boot confirmado',
-      blocked:'Reinício não executado',unconfirmed:'Reinício sem confirmação'}[state.state]
-    const copy=connection || state.message || ({scheduled:'O Linux vai receber o pedido em alguns segundos.',
-      dispatching:'A conexão pode cair por alguns instantes. O painel continuará tentando.',
-      rebooted:'O Linux voltou com outro identificador de inicialização.',
-      unconfirmed:'Ainda não foi possível confirmar um novo boot. Consulte a VPS antes de pedir outro.'})[state.state] || ''
-    banner.replaceChildren(node('strong',title||'Status do reinício'),node('small',copy,'muted break-text'))
+    const title={sending:'Confirmando o pedido',scheduled:'Reinício previsto em',dispatching:'Aguardando a VPS voltar',
+      reconnecting:'Aguardando a VPS voltar',rebooted:'Novo boot confirmado',blocked:'Reinício não executado',
+      unconfirmed:'Reinício não confirmado',offline:'Ainda sem resposta da VPS',auth:'Entre para confirmar o reinício'}[phase]
+    const copy=state.message||({sending:'Ainda não foi possível confirmar o agendamento.',
+      scheduled:'O painel e os sites podem ficar indisponíveis.',
+      dispatching:'Verificando automaticamente. A última leitura foi mantida.',
+      reconnecting:'Sem conexão no momento. Tentando confirmar o novo boot…',
+      rebooted:'O identificador mudou e a VPS respondeu.',
+      unconfirmed:'O painel respondeu, mas não confirmou um novo boot.',
+      offline:'Confira o console da AWS ou o SSH. O pedido não será reenviado.'})[phase]||''
+    if ($('host-reboot-label').textContent!==title) $('host-reboot-label').textContent=title||'Status do reinício'
+    if ($('host-reboot-copy').textContent!==copy) $('host-reboot-copy').textContent=copy
   }
-  button.disabled=hostSending||pending||!state?.canCheckBoot||busy.length>0
-  note.textContent=pending?'Há um reinício pendente.':busy.length?'Aguarde as tarefas em andamento.':
+  const details=$('host-reboot-details')
+  details.hidden=!visible||!['blocked','unconfirmed','offline','auth'].includes(phase)
+  if (details.hidden) details.open=false
+  else {
+    const when=state.requestedAt||hostTrack?.requestedAt
+    const at=when?'Pedido registrado em '+hostShortDate(when)+'. ':''
+    $('host-reboot-details-copy').textContent=at+'Só um novo boot comprova que a VPS reiniciou. Nenhum pedido é reenviado automaticamente.'
+  }
+  $('host-reboot-recheck').hidden=!['unconfirmed','offline','reconnecting','auth'].includes(phase)
+  $('host-reboot-dismiss').hidden=!visible||!['rebooted','blocked'].includes(phase)
+  $('host-reboot-open').disabled=hostSending||pending||!state?.canCheckBoot||busy.length>0||phase==='offline'||phase==='auth'
+  note.textContent=pending?'Há um reinício em acompanhamento.':busy.length?'Aguarde as tarefas em andamento.':
     !state?.canCheckBoot?'Não foi possível verificar o boot do Linux.':'O painel e os sites ficam indisponíveis durante o reinício.'
+  clearTimeout(hostCountdownTimer)
+  if(visible && phase==='scheduled' && hostTrack?.target) {
+    paintRebootClock()
+    if(!clockSettled())hostCountdownTimer=setTimeout(tickHostReboot,250)
+  } else $('host-reboot-countdown').hidden=true
 }
-function followHostReboot() {
-  if (!hostPollStarted) hostPollStarted=Date.now()
-  clearTimeout(hostPoll)
-  const session=csrf, id=++hostPollId
-  async function check() {
-    if(!session||csrf!==session||id!==hostPollId)return
-    try {
-      const next=await api('/api/host/reboot','GET',undefined,{timeoutMs:4500})
-      if(csrf!==session||id!==hostPollId)return
-      if(next.state==='idle' && ['scheduled','dispatching'].includes(hostReboot?.state)) {
-        paintHostReboot({...hostReboot,state:'unconfirmed',canCheckBoot:next.canCheckBoot,message:'O registro do pedido não foi encontrado quando a VPS respondeu.'})
-        hostPollStarted=0
-        return
-      }
-      paintHostReboot(next)
-      if (!['scheduled','dispatching'].includes(next.state)) {
-        hostPollStarted=0
-        if(currentAppRoute==='overview')void loadDashboardOverview()
-        return
-      }
-    } catch(error) {
-      if(csrf!==session||id!==hostPollId)return
-      if (error.httpStatus===401 || Date.now()-hostPollStarted>270000) {
-        const message=error.httpStatus===401?'Entre novamente para verificar se houve um novo boot.':'Ainda sem resposta da VPS. Atualize para conferir assim que ela voltar.'
-        paintHostReboot({state:'unconfirmed',canCheckBoot:false,message})
-        hostPollStarted=0
-        return
-      }
-      paintHostReboot({...hostReboot,state:'dispatching'},'Sem conexão no momento. Tentando confirmar o novo boot…')
-    }
-    hostPoll=setTimeout(check,3200)
+function clockSettled() {return hostReboot?.state!=='scheduled'||!hostTrack?.target}
+function tickHostReboot() {
+  paintRebootClock()
+  if(!clockSettled())hostCountdownTimer=setTimeout(tickHostReboot,250)
+}
+function receiveHostReboot(state, {poll=false}={}) {
+  if (!state || typeof state.state!=='string') return
+  const {state:phase,requestedAt}=state
+  if (hostTrack && (phase==='idle' || (hostTrack.prior && requestedAt===hostTrack.prior))) {
+    if(!poll) return
+    if(!hostTrack.requestedAt && Date.now()-hostTrack.sentAt<25_000) return
+    paintHostReboot({...state,state:'unconfirmed',message:'O servidor não encontrou o registro deste pedido.'})
+    saveHostTrack(null)
+    return
   }
-  hostPoll=setTimeout(check,2600)
+  if (hostTrack?.requestedAt && requestedAt && Date.parse(requestedAt)<Date.parse(hostTrack.requestedAt)) return
+  if (['scheduled','dispatching'].includes(phase)) {
+    if (requestedAt && hostTrack?.requestedAt!==requestedAt && Number.isFinite(Date.parse(requestedAt))) {
+      const now=Date.now(), server=Date.parse(state.serverTime)
+      const delta=Number.isFinite(server)?server-Date.now():0
+      const scheduled=Date.parse(state.scheduledFor)-delta
+      const deadline=Date.parse(state.deadlineAt)-delta
+      saveHostTrack({requestedAt, sentAt:hostTrack?.sentAt||now,
+        target:Number.isFinite(scheduled)?Math.min(now+8000,scheduled):null,
+        deadline:Number.isFinite(deadline)?Math.min(now+hostRebootWindow,deadline):now+hostRebootWindow})
+    }
+    if(!hostTrack)saveHostTrack({requestedAt:null,sentAt:Date.now(),target:null,deadline:Date.now()+hostRebootWindow})
+    const canCount=phase==='scheduled' && hostTrack.target>Date.now()
+    paintHostReboot({...state,state:canCount?'scheduled':phase==='scheduled'&&!hostTrack.target?'sending':'dispatching'})
+    followHostReboot()
+    return
+  }
+  if(!poll && hostTrack && ['reconnecting','offline','auth'].includes(hostReboot?.state) && requestedAt!==hostTrack.requestedAt) return
+  if(hostTrack && ['rebooted','blocked','unconfirmed'].includes(phase)) saveHostTrack(null)
+  paintHostReboot(state)
 }
+function followHostReboot(immediate=false) {
+  if (!csrf || hostRecheck) return hostRecheck
+  if(hostPoll && !immediate)return
+  clearTimeout(hostPoll)
+  const session=csrf, id=hostPollId
+  const current=()=>session===csrf&&id===hostPollId
+  async function check() {
+    hostPoll=null
+    if(!current())return
+    $('host-reboot-recheck').disabled=true
+    const work=api('/api/host/reboot','GET',undefined,{timeoutMs:4500})
+    hostRecheck=work
+    try {
+      const next=await work
+      if(!current())return
+      receiveHostReboot(next,{poll:true})
+      if(!hostTrack && next.state==='rebooted' && currentAppRoute==='overview') void loadDashboardOverview()
+    } catch(error) {
+      if(!current())return
+      const ended=Date.now()>=(hostTrack?.deadline||0)
+      if(error.httpStatus===401) paintHostReboot({state:'auth',message:'Sua sessão expirou. Reabra o painel e entre para retomar o acompanhamento.'})
+      else if(ended)paintHostReboot({state:'offline'})
+      else paintHostReboot({state:'reconnecting'})
+    } finally {
+      if(hostRecheck===work)hostRecheck=null
+      if(current()){
+        $('host-reboot-recheck').disabled=false
+        if(hostTrack && hostAwaiting(hostReboot?.state) && Date.now()<hostTrack.deadline) followHostReboot()
+      }
+    }
+  }
+  if(immediate)return check()
+  hostPoll=setTimeout(check,3200)
+}
+function resumeHostReboot() {
+  hostTrack=storedHostTrack()
+  if(hostTrack){
+    const phase=Date.now()>=hostTrack.deadline?'offline':hostTrack.target>Date.now()?'scheduled':hostTrack.requestedAt?'dispatching':'sending'
+    paintHostReboot({state:phase,requestedAt:hostTrack.requestedAt})
+    void followHostReboot(true)
+  } else if(currentAppRoute!=='overview') void followHostReboot(true)
+}
+$('host-reboot-recheck').addEventListener('click',()=>{
+  if(hostReboot?.state==='auth')location.reload()
+  else void followHostReboot(true)
+})
+$('host-reboot-dismiss').addEventListener('click',()=>{
+  try { if(hostReboot?.requestedAt)localStorage.setItem(hostRebootDismissKey,hostReboot.requestedAt) } catch {}
+  $('overview-reboot-status').hidden=true
+})
+window.addEventListener('storage',event=>{if(csrf&&event.key===hostRebootKey&&!hostSending)resumeHostReboot()})
+window.addEventListener('online',()=>{if(csrf&&hostTrack)void followHostReboot(true)})
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&csrf&&hostTrack)void followHostReboot(true)})
 // v2.0.20: projetos são páginas navegáveis. Nenhum dado sensível é colocado no endereço.
 let knownProjects = new Map()
 let projectCatalogLoaded = false
@@ -349,7 +456,11 @@ function showAppRoute(route, { keepPopup = null } = {}) {
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
     if (page === 'project-logs') void loadExternalReport()
   }
-  if (route === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
+  if (route === 'updates') {
+    void loadUpdateInfo().catch(e => notice(e.message, true))
+    void refreshRelease()
+  }
+  paintRelease()
   if (route === 'dependencies') void refreshDependencies()
   if (route === 'domains') void openDomainsPage()
   if (route === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
@@ -1567,12 +1678,15 @@ async function loadDashboardOverview() {
   const metrics=api('/api/monitor','GET',undefined,{timeoutMs:12000}).then(data=>{
     if(!current())return
     renderMetrics(data)
-    paintHostReboot(data.reboot)
-    if(['scheduled','dispatching'].includes(data.reboot?.state))followHostReboot()
+    receiveHostReboot(data.reboot)
   }).catch(error=>{
     if(!current())return
-    const message=hostSample?'Leitura anterior mantida. Não foi possível atualizar a VPS.':'Dados da VPS indisponíveis. Use Atualizar para tentar novamente.'
+    const maintenance=hostAwaiting(hostReboot?.state)
+    const message=maintenance ? (hostSample?'Última leitura antes do reinício.':'Aguardando nova leitura após o reinício.')
+      : hostSample?'Leitura anterior mantida. Não foi possível atualizar a VPS.':'Dados da VPS indisponíveis. Use Atualizar para tentar novamente.'
     status.textContent=message
+    status.classList.toggle('bad',!maintenance)
+    status.classList.toggle('muted',maintenance)
     status.hidden=false
     const detailsStatus=$('overview-details-status')
     detailsStatus.textContent=message
@@ -1585,7 +1699,8 @@ async function loadDashboardOverview() {
     if(current())renderHostSites(data)
   }).catch(error=>{
     if(!current())return
-    const message=hostSiteSample?'Exibindo o último teste local. Não foi possível atualizar.':'Teste local indisponível.'
+    const message=hostAwaiting(hostReboot?.state) ? 'Teste local será atualizado após o reinício.'
+      : hostSiteSample?'Exibindo o último teste local. Não foi possível atualizar.':'Teste local indisponível.'
     $('overview-sites-meta').textContent=message
     $('overview-sites-dialog-meta').textContent=message
   })
@@ -1670,6 +1785,9 @@ function enterDashboard(sess) {
   activateTab(validAppRoute(appRouteFromUrl()) ? appRouteFromUrl() : 'overview', { record: false })
   void resumeUpdateIfNeeded()
   void watchPackages()
+  resumeHostReboot()
+  startReleaseWatch()
+  if ('serviceWorker' in navigator && window.isSecureContext) void navigator.serviceWorker.register('/maintenance-worker.js').catch(()=>{})
 }
 async function bootstrapPage() {
   const status = await api('/api/status')
@@ -1891,27 +2009,31 @@ $('host-reboot-form').addEventListener('submit',async e=>{
   $('host-reboot-send').disabled=true
   $('host-reboot-error').hidden=true
   const session=csrf
+  const now=Date.now()
+  const previous=hostReboot?.requestedAt
+  saveHostTrack({requestedAt:null,target:null,sentAt:now,deadline:now+hostRebootWindow,prior:previous||null})
   try {
     const response=await api('/api/host/reboot','POST',{confirm:confirmation.value},{timeoutMs:16000})
     if(csrf!==session)return
     dialog.close()
-    paintHostReboot(response)
-    followHostReboot()
+    receiveHostReboot(response)
+    if(hostTrack) followHostReboot()
   } catch(error) {
     if(csrf!==session)return
-    if (error.httpStatus) {
+    if (error.httpStatus && (error.httpStatus<500 || (error.httpStatus===503 && error.message!=='HTTP 503'))) {
+      saveHostTrack(null)
       $('host-reboot-error').textContent=error.message
       $('host-reboot-error').hidden=false
       void loadDashboardOverview()
     } else {
       dialog.close()
-      paintHostReboot({state:'scheduled',canCheckBoot:true},'A resposta não chegou. Consultando se o pedido foi registrado…')
+      paintHostReboot({state:'sending',message:'A resposta não chegou. Consultando se o pedido foi registrado…'})
       followHostReboot()
     }
   } finally {
     hostSending=false
     $('host-reboot-send').disabled=confirmation.value!=='REINICIAR'
-    $('host-reboot-open').disabled=!hostReboot?.canCheckBoot || ['scheduled','dispatching'].includes(hostReboot?.state) || !!hostSample?.maintenance?.busy?.length
+    $('host-reboot-open').disabled=!hostReboot?.canCheckBoot || hostAwaiting(hostReboot?.state) || !!hostSample?.maintenance?.busy?.length
   }
 })
 $('refresh').addEventListener('click', () => { clearNotice(); void loadDashboardOverview() })
@@ -1919,9 +2041,13 @@ $('logout').addEventListener('click', async () => {
   try {
     await api('/api/logout', 'POST')
     csrf = ''
+    stopReleaseWatch()
     clearTimeout(aptTimer)
     clearTimeout(hostPoll)
-    hostPollId++; hostPollStarted=0;hostSample=null;hostSiteSample=null;hostReboot=null
+    clearTimeout(hostCountdownTimer)
+    hostPoll=null;hostRecheck=null;hostPollId++
+    saveHostTrack(null)
+    hostSample=null;hostSiteSample=null;hostReboot=null
     resetDashboardOverview()
     aptView=null
     $('apt-progress-panel').classList.add('hidden')
@@ -2610,6 +2736,7 @@ $('revoke-devices').addEventListener('submit', e => {
     await api('/api/security/revoke-all', 'POST', {})
     e.target.reset()
     csrf = ''
+    stopReleaseWatch()
     shown('login')
     $('logout').classList.add('hidden')
     setTrustedLogin(false)
@@ -2617,7 +2744,9 @@ $('revoke-devices').addEventListener('submit', e => {
   })
 })
 
-let lastRelease = null
+let lastRelease = null, releaseIssue = '', updatePanelInfo = null, releasePending = null, releaseGeneration = 0
+let releaseTimer = null, releaseAttemptAt = 0, reviewedUpdateVersion = null
+const releaseNoticeKey = 'als-release-notice-v1'
 function showReleaseNotes(data) {
   const button = $('update-release-help')
   const content = $('update-notes-content')
@@ -2664,45 +2793,125 @@ $('update-readme-back').addEventListener('click', () => {
   $('update-readme-dialog').close()
   $('update-release-dialog').showModal()
 })
-function rowInfo(container, title, value) { appendLine(container, title, value) }
+const releaseInterval = 30 * 60_000
+const releaseRetry = 60_000
+function releaseNoticeId() {
+  return lastRelease?.available && lastRelease.assetsReady && !lastRelease.checkError &&
+    (!updatePanelInfo || updatePanelInfo.installed === lastRelease.installed) ? lastRelease.repo + ':v' + lastRelease.latest : ''
+}
+function dismissedRelease() {
+  try { return localStorage.getItem(releaseNoticeKey) } catch { return null }
+}
+function paintRelease() {
+  const info=updatePanelInfo
+  const release=lastRelease
+  const knownRelease=release && (!info || (info.repo===release.repo && info.installed===release.installed))
+  const available=!!(knownRelease && release.available && release.latest)
+  const ready=!!(available && release.assetsReady && !releaseIssue && !release.checkError)
+  const stage=info?.status?.stage
+  const busy=updateBusy.has(stage)
+  const state=$('update-release-state')
+  state.textContent=releasePending && !release ? 'Verificando GitHub…' : releaseIssue || (knownRelease && release.checkError)
+    ? 'Não foi possível verificar' : available ? (ready ? 'Atualização disponível' : 'Release sem pacote pronto')
+    : knownRelease && release.releaseStatus==='published' ? 'Painel atualizado'
+    : knownRelease && release.releaseStatus==='no_stable_release' ? 'Sem Release estável'
+    : knownRelease && release.releaseStatus==='repo_unavailable' ? 'Repositório indisponível' : 'Aguardando verificação'
+  state.classList.toggle('good',ready)
+  $('update-installed-version').textContent=info?.installed || release?.installed ? 'v'+(info?.installed || release.installed) : '—'
+  $('update-available-version').textContent=available ? 'v'+release.latest : '—'
+  $('update-release-copy').textContent=releaseIssue || (knownRelease && release.message) || 'O painel verifica o GitHub automaticamente.'
+  $('update-source-label').textContent=info?.repo || release?.repo || 'GitHub Releases'
+  $('update-check-time').textContent=knownRelease && release.checkedAt ? 'Última consulta · '+hostShortDate(release.checkedAt) : 'Ainda não verificado'
+  const operation=info?.status
+  $('update-last-operation').textContent=stage==='completed' ? 'v'+info.installed+' instalada e verificada.' :
+    operation ? updateStageLabel(stage)+' · '+(operation.message||'') : 'Nenhuma operação registrada.'
+  $('view-update-progress').hidden=!operation
+  $('view-update-progress').textContent=busy?'Acompanhar':'Ver detalhes'
+  $('apply-update').hidden=!ready
+  $('apply-update').disabled=busy||!ready
+  $('upload-update').disabled=busy
+  $('check-update').disabled=!!releasePending
+  const key=releaseNoticeId()
+  $('global-update-notice').hidden=!csrf||!key||busy||!!releaseIssue||currentAppRoute==='updates'||dismissedRelease()===key
+  $('global-update-label').textContent=key ? 'Atualização disponível · v'+release.latest : ''
+}
+$('global-update-open').addEventListener('click',()=>navigateApp('updates'))
+$('global-update-dismiss').addEventListener('click',()=>{
+  const key=releaseNoticeId()
+  try { if(key) localStorage.setItem(releaseNoticeKey,key) } catch {}
+  $('global-update-notice').hidden=true
+})
+window.addEventListener('storage',event=>{if(event.key===releaseNoticeKey)paintRelease()})
 async function loadUpdateInfo() {
-  const data = await api('/api/updates', 'GET', undefined, { timeoutMs: 8000 })
-  $('update-summary').replaceChildren()
-  rowInfo($('update-summary'), 'Instalada', `v${data.installed}`)
-  rowInfo($('update-summary'), 'Repositório', data.repo || 'Não configurado')
-  if (data.status) rowInfo($('update-summary'), 'Última operação', `${data.status.stage}: ${data.status.message}`)
-  $('update-repo').value = data.repo || 'drilemoz/alsistemas'
-  document.querySelector('.repo-url').textContent = `https://github.com/${$('update-repo').value}`
-  const repo = data.repo || 'drilemoz/alsistemas'
-  $('github-releases-link').href = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\/[a-zA-Z0-9_.-]+$/.test(repo) ? `https://github.com/${repo}/releases` : 'https://github.com/drilemoz/alsistemas/releases'
-  const inProgress = updateBusy.has(data.status?.stage)
-  $('apply-update').disabled = inProgress || !(lastRelease?.available && lastRelease?.assetsReady)
-  $('upload-update').disabled = inProgress
+  const session=csrf
+  const data=await api('/api/updates','GET',undefined,{timeoutMs:8000})
+  if (session!==csrf) return data
+  updatePanelInfo=data
+  if (lastRelease && (data.installed!==lastRelease.installed || data.repo!==lastRelease.repo)) {
+    lastRelease=null
+    showReleaseNotes(null)
+    releaseAttemptAt=0
+  }
+  $('update-repo').value=data.repo || 'drilemoz/alsistemas'
+  document.querySelector('.repo-url').textContent='https://github.com/'+$('update-repo').value
+  const repo=data.repo || 'drilemoz/alsistemas'
+  $('github-releases-link').href=/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\/[a-zA-Z0-9_.-]+$/.test(repo) ? 'https://github.com/'+repo+'/releases' : 'https://github.com/drilemoz/alsistemas/releases'
+  paintRelease()
   return data
 }
-$('check-update').addEventListener('click', async () => {
-  $('check-update').disabled = true
-  try {
-    const data = await api('/api/updates/check', 'POST', {})
-    lastRelease = data
+function refreshRelease({force=false}={}) {
+  if (!csrf || (!force && (document.hidden || hostAwaiting(hostReboot?.state)))) return
+  if (releasePending) return releasePending
+  if (!force && Date.now()-releaseAttemptAt<(releaseIssue||lastRelease?.checkError?releaseRetry:releaseInterval)) return
+  releaseAttemptAt=Date.now()
+  const generation=releaseGeneration, session=csrf
+  const current=()=>csrf===session&&releaseGeneration===generation
+  releasePending=(force?api('/api/updates/check','POST',{},{timeoutMs:20000})
+    :api('/api/updates/availability','GET',undefined,{timeoutMs:20000})).then(data=>{
+    if(!current())return
+    if(typeof data?.repo!=='string'||typeof data?.installed!=='string') throw new Error('Resposta indisponível')
+    lastRelease=data
+    releaseIssue=''
+    if (updatePanelInfo && (updatePanelInfo.repo!==data.repo || updatePanelInfo.installed!==data.installed)) updatePanelInfo=null
     showReleaseNotes(data)
-    await loadUpdateInfo()
-    if (data.latest) rowInfo($('update-summary'), 'Última Release', `v${data.latest}`)
-    rowInfo($('update-summary'), 'Verificação', data.message)
-    $('apply-update').disabled = updateBusy.has((await loadUpdateInfo()).status?.stage) || !(data.available && data.assetsReady)
-  } catch (e) { lastRelease = null; showReleaseNotes(null); notice(e.message, true) }
-  finally { $('check-update').disabled = false }
-})
+  }).catch(error=>{
+    if(!current())return
+    releaseIssue=error.httpStatus===401?'Entre novamente para verificar.':'Não foi possível consultar o GitHub agora.'
+  }).finally(()=>{
+    if(!current())return
+    releasePending=null
+    paintRelease()
+  })
+  paintRelease()
+  return releasePending
+}
+function stopReleaseWatch() {
+  clearInterval(releaseTimer)
+  releaseGeneration++
+  lastRelease=updatePanelInfo=releasePending=null
+  releaseIssue=''
+  releaseAttemptAt=0
+  showReleaseNotes(null)
+  paintRelease()
+}
+function startReleaseWatch() {
+  clearInterval(releaseTimer)
+  void refreshRelease()
+  releaseTimer=setInterval(()=>void refreshRelease(),60_000)
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshRelease()})
+window.addEventListener('online',()=>void refreshRelease())
+$('check-update').addEventListener('click',()=>void refreshRelease({force:true}))
 $('update-repo-form').addEventListener('submit', e => {
   e.preventDefault()
   submit(e.currentTarget, async data => {
     await api('/api/updates/configure', 'POST', data)
-    lastRelease = null
-    showReleaseNotes(null)
+    stopReleaseWatch()
     e.target.reset()
     $('repo-dialog').close()
     await loadUpdateInfo()
-    notice('Repositório de atualizações configurado. Próximo passo: verificar a Release.')
+    startReleaseWatch()
+    notice('Repositório salvo. Verificando as Releases.')
   })
 })
 // Atualizações: cada etapa usa o estado persistido no servidor; percentuais somente
@@ -2792,9 +3001,12 @@ function openProgress() {
   if (!$('update-progress-dialog').open) $('update-progress-dialog').showModal()
   $('view-update-progress').classList.remove('hidden')
 }
+function updateStageLabel(stage) {
+  return updateSteps.find(([key]) => key === stage)?.[1] || ({failed:'Falha na atualização', up_to_date:'Nenhuma versão nova', rolling_back:'Revertendo instalação', stalled:'Progresso interrompido'})[stage] || 'Estado não informado'
+}
 function showUpdateProgress(state) {
   const stage = state?.stage || 'queued'
-  const label = updateSteps.find(([key]) => key === stage)?.[1] || ({failed:'Falha na atualização', up_to_date:'Nenhuma versão nova', rolling_back:'Revertendo instalação', stalled:'Progresso interrompido'})[stage] || 'Verificando…'
+  const label=updateStageLabel(stage)
   $('update-progress-state').textContent = label
   $('update-progress-message').textContent = state?.message || 'Verificando a atualização no servidor.'
   showProgressSource()
@@ -2892,7 +3104,9 @@ async function resumeUpdateIfNeeded() {
 }
 function configureUpdateDialog(method) {
   updateMethod = method
-  $('update-title').textContent = method === 'file' ? 'Atualizar por arquivo ZIP' : 'Atualizar pelo GitHub'
+  reviewedUpdateVersion = method==='github' ? lastRelease?.latest : null
+  if(method==='github' && (!reviewedUpdateVersion || $('apply-update').disabled))return
+  $('update-title').textContent = method === 'file' ? 'Atualizar por arquivo ZIP' : 'Instalar v'+reviewedUpdateVersion+' pelo GitHub'
   $('update-confirm-description').textContent = method === 'file'
     ? 'Escolha um ZIP confiável de versão superior. O servidor verificará SHA-256, estrutura e versão. Depois fará backup e reiniciará o serviço. ZIPs locais não comprovam a identidade do autor.'
     : 'O painel baixará a Release, validará o manifesto SHA-256 e o ZIP, fará backup e reiniciará o serviço.'
@@ -2988,7 +3202,7 @@ $('update-apply-form').addEventListener('submit', async e => {
   try {
     const result = updateMethod === 'file'
       ? await sendZip(file, percent => showUpdateProgress({ stage:'uploading', percent, message:`Enviando ${file.name} para a VPS` }))
-      : await api('/api/updates/apply', 'POST', {})
+      : await api('/api/updates/apply', 'POST', {version:reviewedUpdateVersion})
     form.reset()
     syncFilePicker('update-file-input', 'update-file-name', 'Nenhum arquivo selecionado.')
     beginTrackedUpdate(result)

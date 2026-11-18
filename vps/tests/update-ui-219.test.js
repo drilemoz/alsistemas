@@ -10,7 +10,7 @@ const css = fs.readFileSync(path.join(root, 'vps/public/style.css'), 'utf8')
 const installer = fs.readFileSync(path.join(root, 'instalar.sh'), 'utf8')
 
 test('Notas e README em diálogos sem repetir a Release na página', () => {
-  assert.match(html, /id="update-release-help"[^>]*>\?<\/button>/)
+  assert.match(html, /id="update-release-help"[^>]*>O que mudou<\/button>/)
   assert.match(html, /<dialog[^>]+id="update-release-dialog"/)
   assert.match(html, /<dialog[^>]+id="update-readme-dialog"/)
   assert.doesNotMatch(html, /id="update-notes"/)
@@ -19,12 +19,12 @@ test('Notas e README em diálogos sem repetir a Release na página', () => {
   assert.match(js, /\.textContent = readme/)
 })
 
-test('Ações de atualizar GitHub, ZIP e andamento permanecem em uma linha compacta', () => {
-  assert.match(html, /id="apply-update"[^>]*>GitHub<\/button>/)
+test('Atualizações separa o botão principal de ZIP e andamento', () => {
+  assert.match(html, /id="apply-update"[^>]*>Revisar atualização<\/button>/)
   assert.match(html, /id="upload-update"[^>]*>Arquivo ZIP<\/button>/)
   assert.match(html, /id="view-update-progress"[^>]*>Andamento<\/button>/)
-  assert.match(css, /\.update-actions\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
-  assert.match(css, /\.update-actions button\{min-width:0/)
+  assert.match(css, /\.update-versions\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/)
+  assert.match(css, /\.update-primary-card #apply-update\{width:100%/)
 })
 
 test('Relatório do erro em diálogo com cópia e download, disponível em falhas', () => {

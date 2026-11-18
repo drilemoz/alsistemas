@@ -192,12 +192,15 @@ def local_request():
     if REQUEST.is_symlink() or not REQUEST.is_file():
         raise RuntimeError('Solicitação de atualização ausente ou insegura')
     req = json.loads(REQUEST.read_text(encoding='utf-8'))
-    if set(req) not in ({'id', 'mode'}, {'id', 'mode', 'archive', 'sha256'}):
+    if set(req) not in ({'id', 'mode'}, {'id', 'mode', 'archive', 'sha256'}, {'id', 'mode', 'version', 'repo'}):
         raise RuntimeError('Formato de solicitação inválido')
     if not re.fullmatch(r'[0-9a-f]{24}', str(req.get('id', ''))):
         raise RuntimeError('ID da operação inválido')
     if req['mode'] not in ('github', 'file'):
         raise RuntimeError('Origem da atualização inválida')
+    if 'version' in req:
+        if req['mode'] != 'github' or not re.fullmatch(r'[0-9]{1,9}(?:\.[0-9]{1,9}){2}', str(req['version'])) or not REPO_RE.fullmatch(str(req['repo'])):
+            raise RuntimeError('Versão ou repositório da solicitação inválidos')
     if req['mode'] == 'file':
         filename = req.get('archive', '')
         if not re.fullmatch(r'upload-[0-9a-f]{24}\.zip', str(filename)):
@@ -272,9 +275,13 @@ def apply(request=None):
                 repo = cfg.get('repo')
                 if not isinstance(repo, str) or not REPO_RE.fullmatch(repo) or '..' in repo or repo.endswith('.git'):
                     raise RuntimeError('Repositório não autorizado')
+                if (request or {}).get('repo', repo) != repo:
+                    raise RuntimeError('O repositório mudou depois da confirmação. Verifique novamente no painel.')
                 status('checking', 'Consultando Release do repositório configurado', repo=repo, installedBefore=current)
                 release = json.loads(fetch(f'https://api.github.com/repos/{repo}/releases/latest', repo, 1024 * 1024))
                 version = str(release.get('tag_name', '')).removeprefix('v')
+                if (request or {}).get('version', version) != version:
+                    raise RuntimeError('A Release mudou depois da confirmação. Verifique novamente no painel.')
                 if version_tuple(version) <= version_tuple(current):
                     status('up_to_date', 'Nenhuma versão superior à instalada', installed=current, repo=repo)
                     return

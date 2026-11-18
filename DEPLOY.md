@@ -1,3 +1,11 @@
+## Atualização 2.0.49 — Correção do boot da VPS
+
+Se o painel estiver em 502 e o journal indicar 226/NAMESPACE para /run/alsistemas-vps, siga primeiro a [recuperação por SSH](vps/docs/ATUALIZACAO-2.0.49.md). Depois instale o ZIP e confira a regra de boot.
+
+## Atualização 2.0.48 — Atualizações e acompanhamento de reinício
+
+Envie o ZIP em **Mais → Atualizar → Arquivo ZIP**. A instalação reinicia o serviço do painel. O recurso de reiniciar a VPS permanece uma ação separada, com confirmação. Consulte [o guia](vps/docs/ATUALIZACAO-2.0.48.md).
+
 ## Atualização 2.0.47 — Correção das métricas da VPS
 
 Abra **Mais → Atualizar → Arquivo ZIP** e envie o pacote da 2.0.47. A atualização reinstala a unidade do painel, sem solicitar reinício do Linux. Veja o [guia da correção](vps/docs/ATUALIZACAO-2.0.47.md).

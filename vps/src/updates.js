@@ -56,8 +56,7 @@ async function releaseDocument(repo, tag, file, fetcher) {
   } catch { return null }
 }
 
-export async function checkRelease(version, fetcher = fetch) {
-  const { repo } = updateInfo(version)
+export async function checkRelease(version, fetcher = fetch, repo = updateInfo(version).repo) {
   if (!repo) return { installed: version, available: false, message: 'Configure o repositório GitHub autorizado.' }
   const controller = AbortSignal.timeout(10000)
   const response = await fetcher(`https://api.github.com/repos/${repo}/releases/latest`, {
@@ -117,7 +116,36 @@ export async function checkRelease(version, fetcher = fetch) {
   return {
     installed: version, latest: target, repo, available: order > 0,
     assetsReady, repoAccessible: true, releaseStatus: 'published',
+    publishedAt: Number.isFinite(Date.parse(release.published_at)) ? release.published_at : null,
     releaseNotes, changes, readme, readmeUrl: readme ? `https://github.com/${repo}/blob/v${target}/README.md` : null,
     message: order > 0 ? (assetsReady ? 'Pacote disponível. SHA-256 e estrutura serão conferidos antes de instalar.' : 'Release sem ZIP e manifesto SHA-256 necessários para atualização.') : 'Nenhuma versão mais recente encontrada.'
   }
+}
+
+// Coalesce concurrent tabs. Short error TTL still lets GitHub recover and prevents a retry storm.
+export function createReleaseCache({ load = checkRelease, now = Date.now } = {}) {
+  let entry = null
+  function invalidate() { entry = null }
+  async function read(version, repo, { force = false } = {}) {
+    const key = version + '|' + repo
+    if (entry?.key === key) {
+      if (entry.pending) return entry.pending
+      const ttl = entry.value?.checkError ? 60_000 : (force ? 60_000 : 30 * 60_000)
+      if (now() - entry.done < ttl) return entry.value
+    }
+    const candidate = { key, done: 0, value: null, pending: null }
+    entry = candidate
+    candidate.pending = Promise.resolve().then(() => load(version, undefined, repo)).then(
+      result => ({...result, checkedAt: new Date(now()).toISOString(), checkError: false}),
+      error => ({installed: version, repo, checkedAt: new Date(now()).toISOString(), checkError: true,
+        available: false, assetsReady: false, message: error?.status === 502 ? error.message : 'Não foi possível consultar o GitHub agora.'})
+    ).then(value => {
+      candidate.value = value
+      candidate.done = now()
+      candidate.pending = null
+      return value
+    })
+    return candidate.pending
+  }
+  return { read, invalidate }
 }

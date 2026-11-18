@@ -40,7 +40,9 @@ export function rebootState(data, boot, now=Date.now()) {
   if (!data || !bootPattern.test(data.boot||'') || !Number.isFinite(data.requestedAt) || data.requestedAt<1) return {state:'idle'}
   const since=data.requestedAt*1000
   if (!Number.isFinite(since) || since>now+60000 || since<1000 || since>8640000000000000) return {state:'idle'}
-  const context={requestedAt:new Date(since).toISOString()}
+  const context={requestedAt:new Date(since).toISOString(),
+    scheduledFor:new Date(since+8000).toISOString(), deadlineAt:new Date(since+240000).toISOString(),
+    serverTime:new Date(now).toISOString()}
   if (['failed','blocked'].includes(data.phase)) return {...context,state:'blocked',message:String(data.reason||'O reinício não foi enviado.').slice(0,250)}
   if (!['scheduled','dispatching'].includes(data.phase)) return {state:'idle'}
   if (boot && data.boot!==boot) return {...context,state:'rebooted'}

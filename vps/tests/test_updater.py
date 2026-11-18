@@ -24,6 +24,19 @@ class UpdaterTests(unittest.TestCase):
         self.assertFalse(u.safe_url('https://github.com/other/repo/releases/download/v2.0.5/AL-Sistemas-v2.0.5-VPS.zip', 'user/repo', 'AL-Sistemas-v2.0.5-VPS.zip'))
         self.assertTrue(u.safe_url('https://release-assets.githubusercontent.com/some/path?auth=temporary', 'user/repo', 'AL-Sistemas-v2.0.5-VPS.zip'))
 
+    def test_github_update_refuses_changed_release_before_downloading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'updates-config.json').write_text(json.dumps({'repo':'owner/repo'}))
+            with patch.multiple(u, DATA=root, BACKUP=root), patch.object(u, 'read_current', return_value='2.0.48'), \
+                 patch.object(u.os, 'geteuid', return_value=0), patch.object(u, 'status'), \
+                 patch.object(u, 'fetch', return_value=b'{"tag_name":"v2.0.50"}') as network, \
+                 patch.object(u, 'run_installer') as installer:
+                with self.assertRaisesRegex(RuntimeError, 'Release mudou'):
+                    u.apply({'mode':'github','version':'2.0.49','repo':'owner/repo'})
+                network.assert_called_once()
+                installer.assert_not_called()
+
     def test_zip_refuses_traversal_and_symlink(self):
         for filename, mode in [('../outside', 0o100644), ('folder/symlink', 0o120777)]:
             mem = io.BytesIO()

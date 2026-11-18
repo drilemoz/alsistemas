@@ -850,7 +850,7 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
             raise
         return {'ok':True,'started':True,'job':job,'operation':operation,'package':package}
     if action == 'start_update':
-        if set(task) not in ({'action'}, {'action', 'upload', 'sha256'}):
+        if set(task) not in ({'action'}, {'action', 'upload', 'sha256'}, {'action', 'version', 'repo'}):
             raise TaskError('Parâmetros inesperados na atualização.')
         request_file = Path('/etc/alsistemas-vps/update-request.json')
         backup_dir = Path('/var/backups/alsistemas')
@@ -862,6 +862,13 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         token = secrets.token_hex(12)
         request = {'id': token, 'mode': 'github'}
         staged = None
+        if 'version' in task:
+            version, repo = task['version'], task['repo']
+            if not isinstance(version, str) or not re.fullmatch(r'[0-9]{1,9}(?:\.[0-9]{1,9}){2}', version):
+                raise TaskError('Versão de atualização inválida.')
+            if not isinstance(repo, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,38}/[A-Za-z0-9_.-]{1,100}', repo) or '..' in repo or repo.endswith('.git'):
+                raise TaskError('Repositório de atualização inválido.')
+            request.update(version=version, repo=repo)
         if 'upload' in task:
             upload = task['upload']
             expected_hash = task['sha256']
