@@ -922,9 +922,18 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .host-details{padding:.55rem}
 .host-detail-toggle{border:0;width:100%;justify-content:space-between;text-align:left;min-height:42px;gap:.42rem}
 .host-detail-toggle .icon{width:15px;height:15px}
-.host-system-info{padding:.25rem .45rem}
-.host-system-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.24rem .72rem;padding:.29rem 0}
-.host-system-row strong{min-width:0}
+.host-system-info{margin:.1rem 0 .65rem;padding:0}
+.host-system-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:.42rem;padding:.25rem 0}
+.host-system-row + .host-system-row{border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent)}
+.host-fact-label,.host-popup-title,.ec2-section-title,.ec2-backup-title,.ec2-card-label{display:flex;align-items:center;gap:.42rem;min-width:0}
+.host-fact-label>span:last-child,.ec2-card-label>span{min-width:0}
+.host-fact-value{margin:0;min-width:0;text-align:right;font-weight:600}
+.host-fact-icon,.host-popup-icon{display:grid;place-items:center;flex:none;border-radius:.48rem;background:color-mix(in srgb,var(--accent) 9%,var(--surface));color:var(--accent);width:1.52rem;height:1.52rem}
+.host-fact-icon .icon{width:.86rem;height:.86rem}
+.host-popup-icon{width:2.35rem;height:2.35rem;border-radius:.7rem}
+.host-popup-icon .icon{width:1.2rem;height:1.2rem}
+.host-popup-title{gap:.55rem}
+.host-popup-title>div{min-width:0}
 .host-log-button{justify-content:flex-start;text-align:left}
 #host-reboot-confirm{font-size:16px}
 
@@ -997,10 +1006,14 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .host-ec2 #host-ec2-status{margin:.33rem 0 0}
 .ec2-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.42rem;margin:.65rem 0}
 .ec2-card{min-width:0;border:1px solid var(--border);border-radius:.65rem;padding:.43rem .5rem}
-.ec2-card span,.ec2-card strong{display:block}
+.ec2-card strong{display:block}
+.ec2-card-label{gap:.24rem;line-height:1.2}
+.ec2-card-label .icon{flex:none;width:.75rem;height:.75rem;color:var(--accent)}
 .ec2-card strong{font-size:.8rem;line-height:1.25;margin-top:.2rem}
 .ec2-section{margin:.62rem 0;padding:.59rem .65rem;border:1px solid var(--border);border-radius:.65rem}
 .ec2-section h3{font-size:.88rem;margin:0 0 .2rem}
+.ec2-section-title{gap:.37rem}
+.ec2-section-title .host-fact-icon{width:1.42rem;height:1.42rem}
 .ec2-section .host-ec2-fields{margin:0}
 .ec2-section dd{min-width:0;text-align:right}
 .ec2-volumes{list-style:none;padding:0;margin:0}

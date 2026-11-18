@@ -96,6 +96,15 @@ function iconGraphic(name) {
   svg.append(use)
   return svg
 }
+function hostFact(label,value,icon) {
+  const row=node('div','','host-system-row')
+  const term=node('dt','','host-fact-label small muted')
+  const glyph=node('span','','host-fact-icon')
+  glyph.append(iconGraphic(icon))
+  term.append(glyph,node('span',label,'break-text'))
+  row.append(term,node('dd',String(value||'Indisponível'),'host-fact-value small break-text'))
+  return row
+}
 function metric(title, value, icon, usage=null, foot='') {
   const card = node('div', '', 'stat host-metric')
   const label = node('div', '', 'stat-label')
@@ -135,18 +144,14 @@ function renderMetrics(m) {
   metric('Disco livre',hostBytePair(disk.free,disk.total),'disk',hostPercent(disk.free,disk.total))
   metric('Swap livre',swap.total===0?'Sem swap':hostBytePair(swap.free,swap.total),'updates',hostPercent(swap.free,swap.total))
   const details=[]
-  const put=(key,value)=>{
-    const item=node('div','','host-system-row')
-    item.append(node('span',key,'small muted'),node('strong',String(value),'small break-text'))
-    details.push(item)
-  }
-  put('Host',m.hostname||'Indisponível')
-  if(m.system?.kernel) put('Kernel Linux',m.system.kernel)
-  if(m.bootedAt) put('Último boot',hostShortDate(m.bootedAt))
-  put('Em execução',uptime||'Indisponível')
-  if(Array.isArray(m.loadAverage)) put('Carga média · 1 / 5 / 15 min',m.loadAverage.map(value=>Number(value).toFixed(2)).join(' / '))
-  if(m.system?.interfacesAvailable===false) put('Rede','Interfaces indisponíveis nesta leitura')
-  else for(const item of m.system?.interfaces||[]) put(item.name+' · '+item.family,item.address)
+  const put=(key,value,icon)=>details.push(hostFact(key,value,icon))
+  put('Host',m.hostname,'server')
+  if(m.system?.kernel) put('Kernel Linux',m.system.kernel,'terminal')
+  if(m.bootedAt) put('Último boot',hostShortDate(m.bootedAt),'backup')
+  put('Em execução',uptime,'clock')
+  if(Array.isArray(m.loadAverage)) put('Carga média · 1 / 5 / 15 min',m.loadAverage.map(value=>Number(value).toFixed(2)).join(' / '),'activity')
+  if(m.system?.interfacesAvailable===false) put('Rede','Interfaces indisponíveis nesta leitura','network')
+  else for(const item of m.system?.interfaces||[]) put(item.name+' · '+item.family,item.address,'network')
   $('overview-details-status').hidden=true
   $('overview-system-info').replaceChildren(...details)
   $('overview-services').replaceChildren()
@@ -341,35 +346,33 @@ $('ec2-snapshots-submit').addEventListener('click',async()=>{
 })
 function paintEc2(data) {
   const {identity,checks,resources}=data
-  const row=(target,label,value)=>{
-    const item=node('div','','host-system-row')
-    item.append(node('dt',label,'small muted'),node('dd',value || 'Indisponível','small break-text'))
-    $(target).append(item)
-  }
+  const row=(target,label,value,icon)=>$(target).append(hostFact(label,value,icon))
   const cards=$('host-ec2-cards')
-  for(const [label,value] of [['Tipo',identity.instanceType],['Zona',identity.zone],['Estado na AWS',ec2Lifecycle[checks?.instanceState]]]){
+  for(const [label,value,icon] of [['Tipo',identity.instanceType,'cpu'],['Zona',identity.zone,'pin'],['Estado na AWS',ec2Lifecycle[checks?.instanceState],'activity']]){
     const card=node('div','','ec2-card')
-    card.append(node('span',label,'small muted'),node('strong',value||'Não consultado','break-text'))
+    const title=node('div','','ec2-card-label small muted')
+    title.append(iconGraphic(icon),node('span',label,'break-text'))
+    card.append(title,node('strong',value||'Não consultado','break-text'))
     cards.append(card)
   }
-  row('host-ec2-fields','ID da instância',identity.instanceId)
-  row('host-ec2-fields','Região',identity.region)
-  if(identity.launchedAt)row('host-ec2-fields','Lançamento',hostShortDate(identity.launchedAt))
-  row('host-ec2-network','IPv4 privado',identity.privateIp)
-  row('host-ec2-network','IPv4 público',identity.publicIp || (identity.publicIpState==='not_assigned'?'Não atribuído':null))
+  row('host-ec2-fields','ID da instância',identity.instanceId,'list')
+  row('host-ec2-fields','Região',identity.region,'pin')
+  if(identity.launchedAt)row('host-ec2-fields','Lançamento',hostShortDate(identity.launchedAt),'clock')
+  row('host-ec2-network','IPv4 privado',identity.privateIp,'lock')
+  row('host-ec2-network','IPv4 público',identity.publicIp || (identity.publicIpState==='not_assigned'?'Não atribuído':null),'globe')
   const full=checks?.state==='ok'&&resources?.state==='ok'
   $('host-ec2-mode').textContent=full?'Dados da AWS':'Dados parciais'
   $('host-ec2-updated').textContent='Consulta · '+hostShortDate(data.checkedAt)
   if(checks?.state==='ok'){
     $('host-ec2-checks-section').hidden=false
-    row('host-ec2-checks','Sistema',ec2Health[checks.system])
-    row('host-ec2-checks','Instância',ec2Health[checks.instance])
-    if(checks.ebs)row('host-ec2-checks','EBS',ec2Health[checks.ebs])
+    row('host-ec2-checks','Sistema',ec2Health[checks.system],'activity')
+    row('host-ec2-checks','Instância',ec2Health[checks.instance],'server')
+    if(checks.ebs)row('host-ec2-checks','EBS',ec2Health[checks.ebs],'disk')
   }
   if(resources?.state==='ok') {
-    row('host-ec2-network','VPC',resources.vpc)
-    row('host-ec2-network','Sub-rede',resources.subnet)
-    for(const group of resources.groups||[]) row('host-ec2-network','Grupo de segurança',group)
+    row('host-ec2-network','VPC',resources.vpc,'cloud')
+    row('host-ec2-network','Sub-rede',resources.subnet,'network')
+    for(const group of resources.groups||[]) row('host-ec2-network','Grupo de segurança',group,'shield')
     const list=$('host-ec2-volumes')
     $('host-ec2-volumes-section').hidden=false
     for(const volume of resources.volumes||[]){

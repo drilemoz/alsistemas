@@ -1,3 +1,7 @@
+## Atualização 2.0.52 — Ícones nos dados da VPS e da Amazon EC2
+
+Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Confira as janelas **Dados da VPS** e **Amazon EC2** em **Início**. Nenhuma configuração adicional é necessária para a mudança visual.
+
 ## Atualização 2.0.51 — Snapshots EBS no painel da Amazon EC2
 
 Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Depois abra **Início → Ações da VPS → Amazon EC2**. Veja o [guia de configuração](vps/docs/ATUALIZACAO-2.0.51.md).

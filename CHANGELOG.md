@@ -1,3 +1,9 @@
+## 2.0.52 — Ícones nas janelas da VPS e da EC2 (18/11/2026)
+
+- Inclui ícones nos dados do Linux, nas interfaces de rede e nas seções e campos da Amazon EC2.
+- Mantém valores e rótulos lado a lado com quebra de linha para identificadores e endereços longos.
+- Não altera a API, as permissões AWS ou o funcionamento dos snapshots.
+
 ## 2.0.51 — Snapshots EBS no painel da Amazon EC2 (18/11/2026)
 
 - Adiciona listagem e criação manual de snapshot do disco raiz EBS, com confirmação, andamento e mensagens de permissão.
