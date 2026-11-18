@@ -26,6 +26,7 @@ from other_project_permissions import ProfileError, handle_permissions, configur
 from project_explorer import browse_project, update_mode
 from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
+from package_policy import ALLOWED as APPROVED_PACKAGES, package_status
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -808,9 +809,8 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     if action == 'install_package':
         if set(task) != {'action', 'package'}:
             raise TaskError('Parâmetros de instalação inválidos.')
-        approved = {'php-curl','php-mbstring','php-xml','php-mysql','php-zip','php-gd','php-intl','composer','certbot'}
         package = task.get('package')
-        if not isinstance(package, str) or package not in approved:
+        if not isinstance(package, str) or package not in APPROVED_PACKAGES:
             raise TaskError('Pacote não autorizado.')
         running = subprocess.run(['/usr/bin/systemctl', 'is-active', '--quiet',
                                   'alsistemas-package-installer.service'], capture_output=True, timeout=5)
@@ -824,12 +824,14 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
             with os.fdopen(fd, 'w', encoding='utf-8') as out:
                 json.dump({'package': package}, out)
                 out.flush(); os.fsync(out.fileno())
+            package_status('queued',package,'Solicitação recebida. Aguardando o instalador…')
             proc = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block',
                                    'alsistemas-package-installer.service'], capture_output=True, timeout=12)
             if proc.returncode != 0:
                 raise TaskError('Não foi possível iniciar o instalador APT.')
         except Exception:
             request.unlink(missing_ok=True)
+            package_status('failed',package,'Não foi possível iniciar o instalador APT.')
             raise
         return {'ok': True, 'started': True, 'package': package,
                 'message': 'Instalação autorizada. Consulte o progresso no módulo Dependências.'}

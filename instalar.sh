@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.40: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.41: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -149,7 +149,7 @@ fi
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
 # Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
-for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py managed_hosting.py; do
+for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py managed_hosting.py package_policy.py; do
   [[ ! -L "/usr/local/libexec/$candidate" ]] || fail 'Script de projeto existente é link simbólico.'
   install -o root -g root -m 0700 "$BASE/vps/admin/$candidate" "/usr/local/libexec/$candidate"
 done
@@ -245,6 +245,8 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
+[[ ! -L /usr/local/libexec/package_catalog.json ]] || fail 'Catálogo de pacotes é link simbólico.'
+install -o root -g root -m 0644 "$BASE/vps/src/package_catalog.json" /usr/local/libexec/package_catalog.json
 # Instalações APT opcionais ocorrem em serviço root-owned, pacote restrito à allowlist.
 PACKAGE_WORKER='/usr/local/libexec/alsistemas-packages'
 [[ ! -L "$PACKAGE_WORKER" ]] || fail 'Executor de pacotes existente é link simbólico.'

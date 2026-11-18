@@ -182,7 +182,8 @@ function showAppRoute(route) {
     if (page === 'project-logs') void loadExternalReport()
   }
   if (route === 'updates') loadUpdateInfo().catch(e => notice(e.message, true))
-  if (route === 'dependencies') refreshDependencies().catch(e => notice(e.message, true))
+  if (route === 'dependencies') void refreshDependencies()
+  else clearTimeout(packagePoll)
   if (route === 'domains') void openDomainsPage()
   if (route === 'integrations') refreshIntegrations().catch(e => notice(e.message, true))
   if (route === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
@@ -1804,45 +1805,152 @@ $('backup-form').addEventListener('submit', async e => {
 })
 
 
-// Navegação por módulos: troca somente a visualização, sem carregar dados em intervalos.
-let packageToInstall = null
-async function refreshDependencies() {
-  const info = await api('/api/dependencies')
-  $('package-list').replaceChildren()
-  const state = info.status
-  $('package-status').textContent = state ? `${state.package || ''}: ${state.message || state.stage || ''}` : 'Nenhuma instalação iniciada pelo painel.'
-  for (const pkg of info.packages) {
-    const line = node('div', '', 'package-line')
-    const label = node('div', '', 'package-info')
-    const helps = { 'php-curl': 'Requisições HTTP a serviços externos', 'php-mbstring': 'Strings e acentuação UTF-8', 'php-xml': 'Leitura e criação de XML', 'php-mysql': 'Conexão do PHP ao MariaDB', 'php-zip': 'Arquivos compactados ZIP', 'php-gd': 'Processamento de imagens', 'php-intl': 'Internacionalização e idiomas', composer: 'Dependências de projetos PHP', certbot: 'Certificados HTTPS dos sites gerenciados' }
-    const iconWrap = node('span', '', 'package-icon')
-    iconWrap.append(iconGraphic(pkg.id === 'composer' ? 'package' : pkg.id === 'php-mysql' ? 'database' : pkg.id === 'php-curl' ? 'globe' : 'code'))
-    label.append(node('strong', pkg.label), node('div', helps[pkg.id] || 'Pacote do ambiente', 'small muted'), node('div', pkg.installed ? `Instalado · ${pkg.version}` : 'Não instalado', pkg.installed ? 'small good' : 'small muted'))
-    line.append(iconWrap, label)
-    const b = node('button', pkg.installed ? 'Instalado' : 'Instalar', 'outline button-small')
-    b.disabled = !!pkg.installed || state?.stage === 'installing'
-    b.addEventListener('click', () => {
-      packageToInstall = pkg.id
-      $('package-description').textContent = `Instalar ${pkg.label} via APT na VPS? A operação pode instalar dependências adicionais do sistema.`
-      $('package-form').reset()
-      $('package-dialog').showModal()
-    })
-    line.append(b)
-    $('package-list').append(line)
-  }
+// Catálogo de pacotes da VPS. A instalação confirma um único ID e acompanha o APT.
+const dependencyGroups = [
+  {id:'node', title:'Node.js e npm', icon:'code', summary:'Runtime e ferramentas de compilação', detail:'O Node.js é o runtime do próprio painel. O npm é consultado localmente. As ferramentas ajudam a compilar módulos nativos, mas as dependências de cada projeto não são instaladas por esta tela.'},
+  {id:'php', title:'PHP e Composer', icon:'code', summary:'CLI, PHP-FPM e extensões', detail:'Instale o PHP 8.3, extensões ou o Composer. O conector MySQL não instala um servidor de banco, e o Composer aqui não executa projetos.'},
+  {id:'database', title:'Banco de dados', icon:'database', summary:'MariaDB, SQLite e cliente PostgreSQL', detail:'Instala os pacotes do banco ou do cliente. Não cria bancos, contas ou regras de acesso.'},
+  {id:'tools', title:'Ferramentas da VPS', icon:'package', summary:'Certbot, Git, cURL e ZIP', detail:'Ferramentas do sistema para HTTPS, repositórios, consultas e arquivos. O Nginx aparece só para consulta.'}
+]
+const packageBusy = state => ['queued','checking','installing'].includes(state?.stage)
+let packageToInstall = null, packageGroup = null, packageInventory = null
+let packagePoll, packageRequest = 0, packageSubmitting = false
+function dependencyPill(text, css = '') {return node('span',text,'status-chip dependency-pill ' + css)}
+function dependencyState(id,state,packages) {
+  const el = $(id)
+  el.hidden = !state
+  if (!state) { el.replaceChildren(); return }
+  const title = packages.find(item=>item.id === state.package)?.label || state.package || 'Pacote'
+  const status = {queued:'Na fila',checking:'Verificando',installing:'Instalando',completed:'Concluído',failed:'Não concluído'}[state.stage] || 'Andamento'
+  el.replaceChildren(dependencyPill(status,state.stage === 'completed' ? 'good' : state.stage === 'failed' ? 'bad' : ''),node('strong',title),node('small',state.message || '','muted break-text'))
 }
-$('reload-packages').addEventListener('click', () => refreshDependencies().catch(e => notice(e.message, true)))
-$('package-form').addEventListener('submit', async e => {
-  e.preventDefault()
-  const submitButton = e.currentTarget.querySelector('button[type=submit]')
-  submitButton.disabled = true
+function dependencyRow(pkg, state) {
+  const line = node('div','','dependency-row')
+  const info = node('div','','dependency-row-copy')
+  info.append(node('strong',pkg.label))
+  if (pkg.detail) info.append(node('small',pkg.detail,'muted'))
+  if (pkg.version) info.append(node('small','v' + String(pkg.version).replace(/^v/,''),'muted break-text'))
+  line.append(info)
+  if (pkg.installable && pkg.installed === false) {
+    const working = state?.package === pkg.id && packageBusy(state)
+    if (working) line.append(dependencyPill('Em andamento'))
+    else {
+      const install = node('button','Instalar','outline button-small')
+      install.type = 'button'
+      install.setAttribute('aria-label','Instalar ' + pkg.label)
+      install.disabled = packageBusy(state)
+      install.addEventListener('click',() => {
+        packageToInstall = pkg
+        $('package-title').textContent = 'Instalar ' + pkg.label
+        $('package-description').textContent = pkg.detail + ' O APT verifica o que precisa ser instalado antes de alterar a VPS.'
+        $('package-install-feedback').hidden = true
+        $('package-form').querySelector('[type=submit]').disabled = false
+        $('package-dialog').showModal()
+      })
+      line.append(install)
+    }
+  } else {
+    const label = pkg.installed === true ? (pkg.readOnly ? 'Do sistema' : 'Instalado') : pkg.installed === false ? 'Não encontrado' : 'Não verificado'
+    line.append(dependencyPill(label,pkg.installed ? 'good' : ''))
+  }
+  return line
+}
+function dependencySummary(group, data) {
+  if (group.id === 'node') {
+    const npm = data.runtime.npm
+    return 'Node v' + data.runtime.node.version + ' · npm ' + (npm.version ? 'v'+npm.version : npm.state === 'missing' ? 'não encontrado' : 'não verificado')
+  }
+  const list = data.packages.filter(p=>p.group === group.id)
+  return group.summary + (data.inventoryAvailable ? ' · ' + list.filter(p=>p.installed).length + '/' + list.length + ' instalados' : '')
+}
+function dependencyGroupRows(group, data) {
+  if (!group || !$('package-group-dialog').open) return
+  $('package-group-title').textContent = group.title
+  $('package-group-detail').textContent = group.detail
+  const list = data.packages.filter(p=>p.group === group.id)
+  const npm = data.runtime.npm
+  if (group.id === 'node') list.unshift(
+    {label:'Node.js',detail:'Versão do processo que está executando o painel.',version:data.runtime.node.version,installed:true,readOnly:true},
+    {label:'npm',detail:'Versão detectada na VPS. A instalação de pacotes do sistema não troca o npm.',version:npm.version,installed:npm.state === 'ready' ? true : npm.state === 'missing' ? false : null,readOnly:true})
+  if (group.id === 'tools') list.unshift({label:'Nginx',detail:'Servidor web do painel. Somente leitura.',version:data.runtime.nginx.version,installed:data.inventoryAvailable ? !!data.runtime.nginx.version : null,readOnly:true})
+  $('package-list').replaceChildren(...list.map(pkg=>dependencyRow(pkg,data.status)))
+  dependencyState('package-group-status',data.status,data.packages)
+}
+function renderDependencies(data) {
+  const cards = dependencyGroups.map(group => {
+    const btn = node('button','','dependency-category outline')
+    btn.type = 'button'
+    btn.setAttribute('aria-haspopup','dialog')
+    const badge = node('span','','package-icon')
+    badge.append(iconGraphic(group.icon))
+    const copy = node('span','','dependency-category-copy')
+    copy.append(node('strong',group.title),node('small',dependencySummary(group,data),'muted break-text'))
+    const arrow = node('span','›','dependency-arrow')
+    arrow.setAttribute('aria-hidden','true')
+    btn.append(badge,copy,arrow)
+    btn.addEventListener('click',() => {
+      packageGroup = group
+      if (!$('package-group-dialog').open) $('package-group-dialog').showModal()
+      dependencyGroupRows(group,packageInventory)
+    })
+    return btn
+  })
+  $('dependency-groups').replaceChildren(...cards)
+  dependencyState('package-status',data.status,data.packages)
+  dependencyGroupRows(packageGroup,data)
+}
+function dependencyFeedback(message, bad = false) {
+  const el = $('dependencies-feedback')
+  el.hidden = !message
+  el.textContent = message
+  el.classList.toggle('bad',bad)
+}
+async function refreshDependencies({ background = false } = {}) {
+  clearTimeout(packagePoll)
+  const token = ++packageRequest
+  if (!background) {
+    $('reload-packages').disabled = true
+    if (!packageInventory) dependencyFeedback('Consultando a VPS…')
+  }
   try {
-    const result = await api('/api/dependencies/install', 'POST', { package: packageToInstall })
-    $('package-dialog').close()
-    await refreshDependencies()
-    notice(result.message || 'Solicitação de instalação enviada ao servidor.')
-  } catch (error) { notice(error.message, true) }
-  finally { submitButton.disabled = false }
+    const data = await api('/api/dependencies')
+    if (currentAppRoute !== 'dependencies' || token !== packageRequest) return
+    packageInventory = data
+    dependencyFeedback(data.inventoryAvailable ? '' : 'Não foi possível ler o inventário do APT. Atualize para liberar instalações.',!data.inventoryAvailable)
+    renderDependencies(data)
+    if (packageBusy(data.status)) packagePoll = setTimeout(() => void refreshDependencies({background:true}),3500)
+  } catch (error) {
+    if (token !== packageRequest || currentAppRoute !== 'dependencies') return
+    dependencyFeedback(error.message,true)
+    if (packageBusy(packageInventory?.status)) packagePoll = setTimeout(() => void refreshDependencies({background:true}),7000)
+  } finally { if (token === packageRequest) $('reload-packages').disabled = false }
+}
+$('reload-packages').addEventListener('click', () => void refreshDependencies())
+$('package-form').addEventListener('submit', async event => {
+  event.preventDefault()
+  if (!packageToInstall || packageSubmitting) return
+  const pkg = packageToInstall
+  const submitButton = event.currentTarget.querySelector('button[type=submit]')
+  const feedback = $('package-install-feedback')
+  packageSubmitting = true
+  submitButton.disabled = true
+  feedback.hidden = true
+  try {
+    await api('/api/dependencies/install','POST',{package:pkg.id})
+    if (currentAppRoute !== 'dependencies') return
+    if ($('package-dialog').open) $('package-dialog').close()
+    if (packageInventory) {
+      packageInventory = {...packageInventory,status:{package:pkg.id,stage:'queued',message:'Solicitação enviada. Aguardando o APT.'}}
+      renderDependencies(packageInventory)
+    }
+    await refreshDependencies({background:true})
+  } catch (error) {
+    if (currentAppRoute === 'dependencies' && $('package-dialog').open) {
+      feedback.textContent = error.message
+      feedback.hidden = false
+      feedback.classList.add('bad')
+    }
+  } finally { packageSubmitting = false; submitButton.disabled = false }
 })
 
 function activateTab(tab, { record = true } = {}) {

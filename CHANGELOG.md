@@ -1,3 +1,10 @@
+## 2.0.41 — Dependências organizadas e inventário Node/npm (17/11/2026)
+
+- Dependências foi dividida em Node.js e npm, PHP e Composer, Banco de dados e Ferramentas da VPS, com pop-ups por categoria.
+- A versão do Node em execução e a versão do npm são consultadas na VPS.
+- O catálogo APT inclui compiladores, PHP CLI/FPM, extensões, servidor MariaDB, clientes e utilitários. O painel acompanha fila, verificação, instalação e resultado.
+- O instalador simula a operação. Operações que removam pacotes ou alterem Node.js/npm ou Nginx são recusadas. Não executa npm ou Composer de projetos.
+
 ## 2.0.40 — Hospedagem de projetos e verificação de DNS (17/11/2026)
 
 - Novo assistente com nome de exibição, pasta, tipo, domínio existente, subdomínio Spaceship ou criação sem domínio.

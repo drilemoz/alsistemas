@@ -5,29 +5,16 @@ Nenhum argumento, pacote ou comando arbitrário chega do navegador.
 import fcntl
 import json
 import os
-import pwd
-import grp
 import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from datetime import datetime, timezone
+import re
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from package_policy import ALLOWED, package_status as status
 
 RUNTIME = Path('/run/alsistemas-vps')
 REQUEST = RUNTIME / 'package-request.json'
-STATE = Path('/var/lib/alsistemas')
-ALLOWED = {
-    'php-curl': 'php8.3-curl',
-    'php-mbstring': 'php8.3-mbstring',
-    'php-xml': 'php8.3-xml',
-    'php-mysql': 'php8.3-mysql',
-    'php-zip': 'php8.3-zip',
-    'php-gd': 'php8.3-gd',
-    'php-intl': 'php8.3-intl',
-    'composer': 'composer',
-    'certbot': 'certbot',
-}
 
 
 def read_request(path=REQUEST):
@@ -41,30 +28,43 @@ def read_request(path=REQUEST):
         fd = -1
         if len(raw) > 512: raise ValueError('Pedido grande demais')
         payload = json.loads(raw)
-        if not isinstance(payload, dict) or set(payload) != {'package'} or payload['package'] not in ALLOWED:
+        if not isinstance(payload, dict) or set(payload) != {'package'} or not isinstance(payload['package'],str) or payload['package'] not in ALLOWED:
             raise ValueError('Pacote não autorizado')
         return payload['package']
     finally:
         if fd >= 0: os.close(fd)
 
 
-def status(stage, package, message):
-    data = {'stage': stage, 'package': package, 'message': message[:200],
-            'time': datetime.now(timezone.utc).isoformat()}
-    uid = pwd.getpwnam('alsistemas').pw_uid
-    gid = grp.getgrnam('alsistemas').gr_gid
-    fd, raw = tempfile.mkstemp(prefix='.packages-', suffix='.tmp', dir=STATE)
-    temp = Path(raw)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as out:
-            json.dump(data, out, ensure_ascii=False)
-            out.flush(); os.fsync(out.fileno())
-            os.fchmod(out.fileno(), 0o600)
-            os.fchown(out.fileno(), uid, gid)
-        os.replace(temp, STATE / 'packages-status.json')
-    finally:
-        temp.unlink(missing_ok=True)
+APT = ['/usr/bin/apt-get','--no-remove','--no-install-recommends','--no-upgrade']
+PROTECTED = re.compile(r'^(?:nodejs(?:-doc|-dev)?|node|npm|libnode[0-9]*|libnode-dev|nsolid|nginx(?:-core|-full|-light|-common)?)$')
+APT_ENV = {'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','DEBIAN_FRONTEND':'noninteractive'}
 
+def install_allowed(pkg, runner=subprocess.run):
+    if pkg not in ALLOWED: raise ValueError('Pacote não autorizado')
+    package = ALLOWED[pkg]
+    # Fix the installed Node/npm versions in the real transaction as well as in the simulation.
+    pin = runner(['/usr/bin/dpkg-query','-W','-f=${binary:Package}\t${Status}\t${Version}\n','nodejs','npm','nsolid'],
+                 capture_output=True,text=True,env=APT_ENV,timeout=8)
+    if pin.returncode not in (0,1): raise RuntimeError('Não foi possível verificar o Node.js antes de instalar.')
+    preserve = []
+    for row in (pin.stdout or '').splitlines():
+        fields = row.split('\t')
+        if len(fields) == 3 and fields[1] == 'install ok installed' and fields[0] in ('nodejs','npm','nsolid'):
+            if not re.fullmatch(r'[0-9][0-9A-Za-z.:~+_-]{0,99}',fields[2]):
+                raise RuntimeError('O APT retornou uma versão do ambiente não reconhecida.')
+            preserve.append(fields[0] + '=' + fields[2])
+    simulation = runner([*APT,'--simulate','install',package,*preserve],capture_output=True,text=True,env=APT_ENV,timeout=35)
+    if simulation.returncode:
+        raise RuntimeError('O APT não encontrou um plano compatível. Confira os repositórios e o estado dos pacotes.')
+    for line in (simulation.stdout or '').splitlines():
+        parts = line.split()
+        if parts and (parts[0] in ('Remv','Purg') or
+                      (parts[0] in ('Inst','Conf') and len(parts) > 1 and PROTECTED.fullmatch(parts[1].split(':')[0]))):
+            raise RuntimeError('Instalação bloqueada: o APT mudaria o Node.js, o Nginx ou removeria um pacote.')
+    status('installing',pkg,'Plano validado. Instalando pelo APT…')
+    result = runner([*APT,'-y','install',package,*preserve],capture_output=True,timeout=460,env=APT_ENV)
+    if result.returncode:
+        raise RuntimeError('O APT não concluiu a instalação. Consulte o serviço de pacotes da VPS.')
 
 def main(runner=subprocess.run):
     if os.geteuid() != 0: raise RuntimeError('Serviço deve executar como root')
@@ -76,15 +76,15 @@ def main(runner=subprocess.run):
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         pkg = read_request()
         REQUEST.unlink()
-        status('installing', pkg, 'Instalação iniciada via APT; acompanhe o status no painel')
+        status('checking',pkg,'Verificando o plano do APT antes de instalar…')
         try:
-            completed = runner(['/usr/bin/apt-get', 'install', '-y', '--no-install-recommends', ALLOWED[pkg]],
-                               capture_output=True, timeout=480)
-            if completed.returncode != 0:
-                raise RuntimeError('APT retornou erro; veja journalctl -u alsistemas-package-installer.service')
-            status('completed', pkg, 'Pacote instalado; consulte a versão novamente')
+            install_allowed(pkg,runner)
+            status('completed',pkg,'Instalação concluída.')
+        except (subprocess.TimeoutExpired,OSError):
+            status('failed',pkg,'O APT não respondeu a tempo. Consulte o serviço de pacotes da VPS.')
+            raise
         except Exception as exc:
-            status('failed', pkg, str(exc))
+            status('failed',pkg,str(exc))
             raise
 
 

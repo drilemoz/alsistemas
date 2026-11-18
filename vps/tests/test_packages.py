@@ -51,10 +51,37 @@ class PackageTests(unittest.TestCase):
             def runner(args,*a,**kw):
                 calls.append(args)
                 return SimpleNamespace(returncode=3 if 'is-active' in args else 0)
-            with patch.object(helper,'Path',side_effect=fixed_path),patch.object(helper.subprocess,'run',side_effect=runner):
+            with patch.object(helper,'Path',side_effect=fixed_path),patch.object(helper.subprocess,'run',side_effect=runner),patch.object(helper,'package_status'):
                 result=helper.execute_task({'action':'install_package','package':'php-intl'})
             self.assertTrue(result['started'])
             self.assertEqual(json.loads(path.read_text())['package'],'php-intl')
             self.assertEqual(calls[-1], ['/usr/bin/systemctl','start','--no-block','alsistemas-package-installer.service'])
+
+    def test_apt_refuses_removals_and_changes_to_runtime(self):
+        for blocked in ('Remv libfoo [1.2]', 'Purg libfoo [1.2]', 'Inst nodejs:amd64 [22] (24)', 'Inst npm (11)', 'Conf nginx (1.24)'):
+            calls = []
+            def run(cmd,**opts):
+                calls.append(cmd)
+                return SimpleNamespace(returncode=0,stdout='nodejs\tinstall ok installed\t24.22.1-1nodesource1\n' if len(calls)==1 else blocked)
+            with self.subTest(blocked=blocked), self.assertRaisesRegex(RuntimeError,'bloqueada'):
+                pkg.install_allowed('node-build',run)
+            self.assertEqual(len(calls),2)
+            self.assertIn('--simulate',calls[-1])
+
+    def test_apt_uses_same_pins_in_simulation_and_installation(self):
+        calls = []
+        def run(cmd,**opts):
+            calls.append(cmd)
+            return SimpleNamespace(returncode=0,stdout='nodejs\tinstall ok installed\t24.22.1-1nodesource1\n' if len(calls)==1 else 'Inst sqlite3 (3.4)')
+        with patch.object(pkg,'status') as status:
+            pkg.install_allowed('sqlite3',run)
+            status.assert_called_once()
+        self.assertEqual(len(calls),3)
+        for cmd in calls[1:]:
+            self.assertIn('--no-remove',cmd)
+            self.assertIn('sqlite3',cmd)
+            self.assertIn('nodejs=24.22.1-1nodesource1',cmd)
+        self.assertIn('--simulate',calls[1])
+        self.assertIn('-y',calls[2])
 
 if __name__=='__main__':unittest.main()

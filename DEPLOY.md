@@ -1,3 +1,7 @@
+## Atualização 2.0.41 — Dependências
+
+Atualize em **Mais → Atualizar → Arquivo ZIP**. Depois, abra **Mais → Dependências**. Atualizar o painel não instala os pacotes do catálogo. Cada instalação exige confirmação. Consulte o [guia de dependências](vps/docs/ATUALIZACAO-2.0.41.md).
+
 ## Atualização 2.0.40 — Assistente de hospedagem e DNS
 
 Instale em **Mais → Atualizar → Arquivo ZIP**. Configure a chave Spaceship com leitura de domínios e leitura/escrita de DNS. Em **Projetos → Novo projeto**, confirme o IPv4 público fixo no formulário. O painel não muda automaticamente o domínio raiz, nameservers ou projetos existentes. Consulte o [guia de publicação](vps/docs/ATUALIZACAO-2.0.40.md).
