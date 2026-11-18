@@ -1,3 +1,9 @@
+## 2.0.47 — Visão geral da VPS corrigida (18/11/2026)
+
+- Permite ao serviço ler interfaces Linux e evita que uma falha de rede esconda todas as métricas. Falhas de disco e swap são identificadas sem inventar valores.
+- Host, tempo ligado e dados da VPS aparecem no topo. Sites exibem um resumo e mantêm certificados, respostas e logs na janela Ver sites.
+- Se a atualização da leitura falhar, o painel sinaliza a amostra anterior ou mantém os indicadores com marcadores sem dados.
+
 ## 2.0.46 — Ajuda contextual e detalhes no celular (18/11/2026)
 
 - Dados da VPS em uma janela própria e explicações sob demanda, sem retirar alertas e métricas da Visão geral.

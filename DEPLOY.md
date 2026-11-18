@@ -1,3 +1,7 @@
+## Atualização 2.0.47 — Correção das métricas da VPS
+
+Abra **Mais → Atualizar → Arquivo ZIP** e envie o pacote da 2.0.47. A atualização reinstala a unidade do painel, sem solicitar reinício do Linux. Veja o [guia da correção](vps/docs/ATUALIZACAO-2.0.47.md).
+
 ## Atualização 2.0.46 — Ajuda contextual e janelas de detalhe
 
 No AL Sistemas VPS, abra **Mais → Atualizar → Arquivo ZIP** e selecione o pacote da 2.0.46. A publicação de sites mantém suas etapas em uma única janela. A atualização não solicita reinício do Linux. Veja o [guia da versão](vps/docs/ATUALIZACAO-2.0.46.md).

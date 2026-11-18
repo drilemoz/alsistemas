@@ -86,17 +86,27 @@ export async function hostMaintenance(exec=execute) {
   if (['queued','checking','installing','removing'].includes(apt?.stage) && !busy.includes('Dependências do APT')) busy.push('Dependências do APT')
   return {busy,verified}
 }
-export async function hostOverview({transfers=0}={}) {
+export function hostInterfaces(read=os.networkInterfaces) {
+  try {
+    const interfaces=Object.entries(read()).flatMap(([name,addresses])=>
+      (addresses||[]).filter(row=>!row.internal).map(row=>({name,address:row.address,family:row.family}))).slice(0,10)
+    return {interfaces, interfacesAvailable:true}
+  } catch {
+    // Em serviços com AF_NETLINK bloqueado, uv_interface_addresses pode lançar.
+    // Rede é complementar; não invalida métricas nem estado do boot.
+    return {interfaces:[], interfacesAvailable:false}
+  }
+}
+export async function hostOverview({transfers=0,networkInterfaces=os.networkInterfaces}={}) {
   const before=os.cpus()
   const [maintenance]=await Promise.all([hostMaintenance(),pause(310)])
   const cpuPercent=cpuUtilization(before,os.cpus())
   const sample=monitor()
-  const interfaces=Object.entries(os.networkInterfaces()).flatMap(([name,addresses])=>
-    (addresses||[]).filter(row=>!row.internal).map(row=>({name,address:row.address,family:row.family}))).slice(0,10)
+  const network=hostInterfaces(networkInterfaces)
   const rebootRequired=fs.existsSync('/run/reboot-required')
   if (transfers>0) maintenance.busy.push('Transferência de arquivo pelo painel')
   return {...sample,cpuPercent,bootedAt:new Date(Date.now()-sample.uptimeSeconds*1000).toISOString(),
-    system:{kernel:os.release(),interfaces,rebootRequired},maintenance,reboot:hostRebootStatus()}
+    system:{kernel:os.release(),...network,rebootRequired},maintenance,reboot:hostRebootStatus()}
 }
 
 export function probeLocalSite(name,protocol, {request,timeout=2100}={}) {

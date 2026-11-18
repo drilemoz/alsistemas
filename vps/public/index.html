@@ -29,26 +29,39 @@
 <div class="workspace">
 <section class="tab-page host-overview" id="page-overview" aria-labelledby="host-overview-title">
 <header class="heading"><div><p class="eyebrow">SERVIDOR</p><div class="context-heading"><h1 id="host-overview-title">Visão geral</h1><button type="button" class="outline icon-button context-help-button" data-context-help="metrics" aria-haspopup="dialog" aria-label="Como ler os indicadores da VPS" title="Como ler os indicadores da VPS"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg></button></div><p class="small muted" id="overview-sample-time">Leitura sob demanda da VPS.</p></div><button class="outline icon-button" id="refresh" type="button" aria-label="Atualizar Visão geral" title="Atualizar Visão geral"><svg aria-hidden="true" class="icon"><use href="#i-updates"></use></svg></button></header>
+<section class="panel host-summary" aria-label="Resumo da VPS">
+<div class="host-identity"><div><strong id="overview-host" class="break-text">VM Linux</strong><p class="small muted" id="overview-uptime">Tempo ligado indisponível</p></div><button type="button" class="outline button-small" id="overview-details-toggle" data-open-panel="overview-details" aria-haspopup="dialog">Dados da VPS<svg class="icon" aria-hidden="true"><use href="#i-chevron"></use></svg></button></div>
+<div class="grid stats host-metrics" id="metrics" aria-label="Uso de recursos">
+<div class="stat host-metric"><span class="stat-label">CPU</span><strong>—</strong></div>
+<div class="stat host-metric"><span class="stat-label">RAM</span><strong>—</strong></div>
+<div class="stat host-metric"><span class="stat-label">Disco</span><strong>—</strong></div>
+<div class="stat host-metric"><span class="stat-label">Swap</span><strong>—</strong></div>
+</div>
 <p class="small bad" id="overview-load-status" role="status" hidden></p>
+</section>
 <div id="overview-reboot-status" class="host-banner" role="status" hidden></div>
 <div id="overview-alerts" class="host-banner host-alerts" hidden></div>
-<section class="grid stats host-metrics" id="metrics" aria-label="Uso de recursos"></section>
-<section class="panel host-panel" aria-labelledby="overview-sites-title">
-<div class="host-section-heading"><h2 id="overview-sites-title">Saúde dos sites</h2><div class="context-heading"><span class="pill">Teste local</span><button type="button" class="outline icon-button context-help-button" data-context-help="sites" aria-haspopup="dialog" aria-label="O que o teste local verifica" title="O que o teste local verifica"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg></button></div></div>
-<p class="small muted" id="overview-sites-meta">Aguardando consulta ao Nginx.</p><div class="host-site-list" id="overview-sites"></div>
+<section class="panel host-panel host-sites-summary" aria-labelledby="overview-sites-title">
+<div class="host-section-heading"><div><h2 id="overview-sites-title">Sites</h2><p class="small muted" id="overview-sites-meta" role="status">Aguardando teste local…</p></div><button type="button" class="outline button-small" id="overview-sites-open" data-open-panel="overview-sites-dialog" aria-haspopup="dialog">Ver sites<svg class="icon" aria-hidden="true"><use href="#i-chevron"></use></svg></button></div>
+<div id="overview-site-counts" class="host-site-badges" aria-label="Resultado dos testes locais"></div>
 </section>
 <section class="panel host-panel" aria-labelledby="overview-actions-title">
 <h2 id="overview-actions-title">Ações da VPS</h2>
 <div class="host-quick-actions"><button type="button" class="outline button-small" data-tab="services">Ver serviços</button><button type="button" class="outline button-small" id="host-logs-open">Ver logs dos sites</button><button type="button" class="outline button-small" id="host-nginx-test">Testar Nginx</button></div><p id="host-nginx-feedback" class="small muted" role="status"></p>
 <div class="host-reboot-row"><div><strong>Reinício do Linux</strong><p class="small muted" id="host-reboot-note">O painel e os sites ficam indisponíveis durante o reinício.</p></div><button type="button" class="outline button-small" id="host-reboot-open" disabled>Reiniciar VPS</button></div>
 </section>
-<section class="panel host-panel host-details"><button type="button" class="host-detail-toggle outline" id="overview-details-toggle" data-open-panel="overview-details" aria-haspopup="dialog"><span>Dados da VPS</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"></use></svg></button></section>
+
 <dialog id="overview-details" class="panel-popup" data-panel-popup aria-labelledby="overview-details-title"><div class="dialog-body">
 <header class="modal-heading"><div><p class="eyebrow">SERVIDOR, REDE E SERVIÇOS</p><h2 id="overview-details-title">Dados da VPS</h2></div><button type="button" class="outline icon-button modal-x" data-close="overview-details" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
-<div class="popup-scroll"><div id="overview-system-info" class="host-system-info"></div><div class="stack small" id="overview-services"></div></div>
+<div class="popup-scroll"><p id="overview-details-status" class="small muted" role="status">Aguardando leitura do servidor…</p><div id="overview-system-info" class="host-system-info"></div><div class="stack small" id="overview-services"></div></div>
 <div class="dialog-actions"><button type="button" class="outline" data-close="overview-details">Fechar</button></div>
 </div></dialog>
 </section>
+<dialog id="overview-sites-dialog" class="panel-popup" data-panel-popup aria-labelledby="overview-sites-dialog-title"><div class="dialog-body">
+<header class="modal-heading"><div><h2 id="overview-sites-dialog-title">Saúde dos sites</h2><p class="small muted" id="overview-sites-dialog-meta">Teste pelo Nginx local, sem verificar DNS público ou acesso externo.</p></div><button type="button" class="outline icon-button modal-x" data-close="overview-sites-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
+<div class="popup-scroll"><div class="host-site-list" id="overview-sites"></div></div>
+<div class="dialog-actions"><button type="button" class="outline" data-close="overview-sites-dialog">Fechar</button></div>
+</div></dialog>
 <dialog id="host-reboot-dialog" class="panel-popup" data-panel-popup aria-labelledby="host-reboot-title"><div class="dialog-body">
 <header class="modal-heading"><div><p class="eyebrow">AÇÃO ADMINISTRATIVA</p><h2 id="host-reboot-title">Reiniciar a VPS?</h2></div><button type="button" class="outline icon-button modal-x" data-close="host-reboot-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
 <div class="popup-scroll"><p>O Linux será reiniciado. Sites e painel podem ficar fora do ar até os serviços voltarem.</p><form id="host-reboot-form"><label for="host-reboot-confirm">Digite REINICIAR para confirmar<input id="host-reboot-confirm" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label></form><p class="small bad" id="host-reboot-error" role="status" hidden></p></div>
@@ -463,7 +476,6 @@
 <div id="context-help-content" class="popup-scroll context-help-copy"></div><div class="dialog-actions"><button type="button" class="outline" data-close="context-help-dialog">Fechar</button></div>
 </div></dialog>
 <template data-help-topic="metrics" data-help-title="Como ler os indicadores"><p>CPU em porcentagem é o uso medido durante uma amostra. A carga do Linux mostra a média de tarefas em execução ou em espera e não é uma porcentagem.</p><p>As barras de RAM, disco e swap mostram uso estimado, incluindo o que estiver reservado quando isso reduzir o espaço disponível. O horário indica quando a leitura foi feita.</p></template>
-<template data-help-topic="sites" data-help-title="Sobre o teste local"><p>O painel consulta o Nginx da própria VPS usando o nome de cada site. O teste verifica a resposta HTTP ou HTTPS e, quando disponível, o certificado apresentado. Não testa DNS público, não segue redirecionamentos e não confirma acesso pela internet.</p></template>
 <template data-help-topic="logs" data-help-title="Origem dos logs"><p>O painel apresenta trechos recentes das fontes associadas ao projeto, em modo somente leitura. Logs globais ficam de fora para não misturar sites. A ausência de registros aqui não comprova ausência de falhas.</p></template>
 <template data-help-topic="permissions" data-help-title="Permissões dos arquivos"><p><strong>Leitura</strong> permite abrir, <strong>escrita</strong> permite alterar e <strong>execução</strong> permite executar arquivos ou acessar o conteúdo de diretórios. As permissões são separadas para dono, grupo e outros usuários.</p><p>Use o pop-up de propriedades de um item para consultar os valores atuais e revisar a alteração.</p></template>
 <template data-help-topic="packages" data-help-title="Versões dos pacotes"><p><strong>Instalada</strong> é a versão detectada na VPS. <strong>Disponível</strong> é a candidata que o APT encontrou nas fontes configuradas. Um pacote não instalado pode não ter versão candidata.</p><p>Para acompanhar uma operação, use a barra flutuante. Para consultar uma operação finalizada, abra o Histórico do APT.</p></template>

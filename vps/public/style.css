@@ -940,3 +940,18 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .context-help-copy p:last-child{margin-bottom:0}
 .context-help-inline{margin:0 0 .4rem}
 .context-help-inline>.context-help-copy{background:var(--bg);border:1px solid var(--border);border-radius:.65rem;padding:.65rem .8rem}
+
+/* Resumo do servidor antes dos sites. A lista fica sob demanda. */
+.host-summary{padding:.64rem .72rem;margin-bottom:.64rem}
+.host-identity{display:flex;justify-content:space-between;align-items:center;gap:.4rem;margin-bottom:.48rem}
+.host-identity>div,.host-section-heading>div{min-width:0}
+.host-identity strong{font-size:.91rem}
+.host-identity p,.host-sites-summary #overview-sites-meta,.host-summary #overview-load-status{margin:.15rem 0 0}
+.host-identity button,.host-sites-summary button{white-space:normal;text-align:center;min-height:42px;flex-shrink:0}
+.host-summary .host-metrics{margin:0}
+.host-summary .host-metric{padding:.43rem .53rem;background:var(--bg);gap:.22rem}
+.host-summary .host-metric strong{margin-top:0}
+.host-sites-summary #overview-site-counts:not(:empty){margin-top:.43rem}
+.host-sites-summary h2{margin-bottom:0}
+#overview-sites-dialog .host-site-badges .pill{white-space:normal}
+@media(min-width:850px){.host-summary .host-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}

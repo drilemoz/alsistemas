@@ -16,11 +16,17 @@ export function parseMeminfo(text) {
   }
   return result
 }
-export function monitor() {
-  const mem = parseMeminfo(fs.readFileSync('/proc/meminfo', 'utf8'))
-  const disk = fs.statfsSync('/')
-  const total = disk.blocks * disk.bsize
-  const free = disk.bavail * disk.bsize
+export function monitor({ read = fs.readFileSync, statfs = fs.statfsSync } = {}) {
+  let mem = {}
+  let total = null, free = null
+  try { mem = parseMeminfo(read('/proc/meminfo', 'utf8')) } catch { /* fallback para RAM */ }
+  try {
+    const disk = statfs('/')
+    if (disk.blocks > 0 && disk.bsize > 0 && disk.bavail >= 0) {
+      total = disk.blocks * disk.bsize
+      free = disk.bavail * disk.bsize
+    }
+  } catch { /* o restante da leitura continua disponível */ }
   const services = Object.fromEntries(allowed.map(name => {
     try {
       const status = execFileSync('/bin/systemctl', ['is-active', name], { timeout: 1500, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -31,9 +37,9 @@ export function monitor() {
   return {
     timestamp: new Date().toISOString(), hostname: os.hostname(),
     uptimeSeconds: Math.floor(os.uptime()), cpuCount: os.cpus().length,
-    loadAverage: load, ram: { total: mem.MemTotal || os.totalmem(), available: mem.MemAvailable ?? os.freemem() },
-    swap: { total: mem.SwapTotal || 0, free: mem.SwapFree || 0 },
-    disk: { total, free, used: total - free }, services,
+    loadAverage: load, ram: { total: mem.MemTotal || os.totalmem(), available: mem.MemAvailable ?? os.freemem(), source: mem.MemAvailable != null ? 'available' : 'free' },
+    swap: { total: mem.SwapTotal ?? null, free: mem.SwapFree ?? null },
+    disk: { total, free, used: total === null ? null : total - free }, services,
   }
 }
 // Catálogo estritamente informativo. As autorizações continuam nas rotas e no helper.

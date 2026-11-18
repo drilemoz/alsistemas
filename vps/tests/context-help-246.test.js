@@ -10,7 +10,7 @@ const hosting = source('../public/hosting.js')
 test('cada botão de informação tem tópico, rótulo e maneira acessível de abrir', () => {
   const topics = new Set([...html.matchAll(/<template data-help-topic="([^"]+)"/g)].map(match => match[1]))
   const buttons = [...html.matchAll(/<button[^>]*data-context-(help|inline)="([^"]+)"[^>]*>/g)]
-  assert.equal(topics.size, 12)
+  assert.equal(topics.size, 11)
   assert.equal(buttons.length, topics.size + 1)
   for (const [button, type, topic] of buttons) {
     assert.ok(topics.has(topic), topic)

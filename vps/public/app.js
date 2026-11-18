@@ -111,30 +111,43 @@ function metric(title, value, icon, usage=null, foot='') {
   if (foot) card.append(node('small',foot,'muted break-text'))
   $('metrics').append(card)
 }
-const hostPercent = (available,total) => Number.isFinite(available) && total>0 ? Math.round(100*(total-available)/total) : null
+const hostPercent = (available,total) => Number.isFinite(available) && Number.isFinite(total) && total>0 ? Math.round(100*(total-available)/total) : null
 const hostShortDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : 'Indisponível'
 const hostTimeOnly = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Não informado'
 let hostSample=null, hostSiteSample=null, hostReboot=null, hostRequest=0, hostPoll, hostPollStarted=0, hostPollId=0, hostSending=false
+const hostUptime = value => {
+  if (!Number.isFinite(value) || value < 0) return null
+  const parts = [Math.floor(value/86400), Math.floor(value%86400/3600), Math.floor(value%3600/60)]
+  return parts.map((n,i)=>n ? n+['d','h','min'][i] : '').filter(Boolean).join(' ') || 'menos de 1 min'
+}
+const hostBytePair = (available,total) => Number.isFinite(available) && Number.isFinite(total)
+  ? bytes(available)+' / '+bytes(total) : 'Indisponível'
 function renderMetrics(m) {
   hostSample=m
+  const {ram,disk,swap}=m
+  const uptime=hostUptime(m.uptimeSeconds)
   $('metrics').replaceChildren()
+  $('overview-host').textContent=m.hostname||'VM Linux'
+  $('overview-uptime').textContent=uptime?'Ligada há '+uptime:'Tempo ligado indisponível'
   $('overview-sample-time').textContent='Leitura local · '+hostTimeOnly(m.timestamp)
-  metric('Uso de CPU',Number.isFinite(m.cpuPercent)?m.cpuPercent+'%':'Sem amostra','cpu',m.cpuPercent,m.cpuCount+' vCPU')
-  metric('RAM disponível',bytes(m.ram.available)+' / '+bytes(m.ram.total),'memory',hostPercent(m.ram.available,m.ram.total),'Barra de uso estimado')
-  metric('Disco livre',bytes(m.disk.free)+' / '+bytes(m.disk.total),'disk',hostPercent(m.disk.free,m.disk.total),'Barra de espaço ocupado ou reservado')
-  metric('Swap livre',m.swap.total>0?bytes(m.swap.free)+' / '+bytes(m.swap.total):'Sem swap','updates',hostPercent(m.swap.free,m.swap.total),m.swap.total>0?'Barra de uso':'')
+  metric('CPU',Number.isFinite(m.cpuPercent)?m.cpuPercent+'%':'Sem amostra','cpu',m.cpuPercent,Number.isFinite(m.cpuCount)?m.cpuCount+' vCPU':'')
+  metric(ram.source==='free'?'RAM livre':'RAM disponível',hostBytePair(ram.available,ram.total),'memory',hostPercent(ram.available,ram.total))
+  metric('Disco livre',hostBytePair(disk.free,disk.total),'disk',hostPercent(disk.free,disk.total))
+  metric('Swap livre',swap.total===0?'Sem swap':hostBytePair(swap.free,swap.total),'updates',hostPercent(swap.free,swap.total))
   const details=[]
   const put=(key,value)=>{
     const item=node('div','','host-system-row')
     item.append(node('span',key,'small muted'),node('strong',String(value),'small break-text'))
     details.push(item)
   }
-  put('Host',m.hostname)
+  put('Host',m.hostname||'Indisponível')
   if(m.system?.kernel) put('Kernel Linux',m.system.kernel)
   if(m.bootedAt) put('Último boot',hostShortDate(m.bootedAt))
-  put('Em execução',Math.floor(m.uptimeSeconds/86400)+'d '+Math.floor(m.uptimeSeconds%86400/3600)+'h '+Math.floor(m.uptimeSeconds%3600/60)+'min')
+  put('Em execução',uptime||'Indisponível')
   if(Array.isArray(m.loadAverage)) put('Carga média · 1 / 5 / 15 min',m.loadAverage.map(value=>Number(value).toFixed(2)).join(' / '))
-  for(const item of m.system?.interfaces||[]) put(item.name+' · '+item.family,item.address)
+  if(m.system?.interfacesAvailable===false) put('Rede','Interfaces indisponíveis nesta leitura')
+  else for(const item of m.system?.interfaces||[]) put(item.name+' · '+item.family,item.address)
+  $('overview-details-status').hidden=true
   $('overview-system-info').replaceChildren(...details)
   $('overview-services').replaceChildren()
   for (const [name,status] of Object.entries(m.services||{})) serviceCard($('overview-services'),name,status)
@@ -143,8 +156,8 @@ function renderMetrics(m) {
 function renderHostAlerts() {
   if(!hostSample) return
   const m=hostSample, alerts=[]
-  if(m.ram.total>0 && m.ram.available/m.ram.total<.12) alerts.push('Pouca RAM disponível')
-  if(m.disk.total>0 && m.disk.free/m.disk.total<.1) alerts.push('Pouco espaço disponível no disco')
+  if(m.ram.source!=='free' && m.ram.total>0 && Number.isFinite(m.ram.available) && m.ram.available/m.ram.total<.12) alerts.push('Pouca RAM disponível')
+  if(m.disk.total>0 && Number.isFinite(m.disk.free) && m.disk.free/m.disk.total<.1) alerts.push('Pouco espaço disponível no disco')
   if(m.system?.rebootRequired) alerts.push('O Linux sinalizou reinício pendente')
   const inactive=Object.entries(m.services||{}).filter(([name,state])=>state!=='active' &&
     (name==='nginx' || name==='alsistemas-vps' || !['inactive/unknown','unknown'].includes(state)))
@@ -157,7 +170,7 @@ function renderHostAlerts() {
       alerts.push('Certificado perto do vencimento em '+site.name)
   }
   const banner=$('overview-alerts')
-  banner.hidden=false
+  banner.hidden=!alerts.length
   banner.classList.toggle('needs-attention',!!alerts.length)
   if (!alerts.length) {
     banner.replaceChildren(node('strong',hostSiteSample?'Sem alertas nas verificações locais':'Sem alertas do servidor'))
@@ -176,8 +189,22 @@ function hostProbeLabel(probe) {
 function renderHostSites(data) {
   hostSiteSample=data
   const out=$('overview-sites')
-  $('overview-sites-meta').textContent=data.total ? 'Da própria VPS, sem testar a internet pública · '+hostTimeOnly(data.checkedAt)
-    +(data.total>data.sites.length?' · '+data.sites.length+' de '+data.total+' endereços':'') : 'Nenhum site com configuração local identificada.'
+  const checked=data.sites.length
+  const local='Teste local · '+hostTimeOnly(data.checkedAt)
+  $('overview-sites-meta').textContent=checked ? local+(data.total>checked?' · '+checked+' de '+data.total:'') : 'Nenhum site detectado no Nginx.'
+  $('overview-sites-dialog-meta').textContent=checked ? local+'. Não verifica DNS público ou acesso pela internet.' : 'Nenhum site com configuração local identificada.'
+  const counts={responding:0,restricted:0,attention:0}
+  for (const site of data.sites) {
+    const best=site.https||site.http
+    if (!best?.status || (site.https && !best.certificate?.valid) || best.status>=500) counts.attention++
+    else if ([401,403].includes(best.status)) counts.restricted++
+    else if (best.status>=200 && best.status<400) counts.responding++
+    else counts.attention++
+  }
+  $('overview-site-counts').replaceChildren(
+    ...(counts.responding ? [node('span',counts.responding+' com resposta 2xx/3xx','pill good')] : []),
+    ...(counts.restricted ? [node('span',counts.restricted+' com acesso restrito','pill muted')] : []),
+    ...(counts.attention ? [node('span',counts.attention+' para verificar','pill bad')] : []))
   out.replaceChildren(...data.sites.map(site=>{
     const row=node('article','','host-site')
     const main=node('div','','host-site-main')
@@ -1515,11 +1542,27 @@ function loadProjectCatalog({ force = false } = {}) {
   })
   return projectCatalogRequest
 }
+const emptyHostMetrics=$('metrics').cloneNode(true)
+function resetDashboardOverview() {
+  $('metrics').replaceChildren(...emptyHostMetrics.cloneNode(true).childNodes)
+  $('overview-sample-time').textContent='Leitura sob demanda da VPS.'
+  $('overview-host').textContent='VM Linux'
+  $('overview-uptime').textContent='Tempo ligado indisponível'
+  for (const id of ['overview-system-info','overview-services','overview-site-counts','overview-sites']) $(id).replaceChildren()
+  $('overview-details-status').hidden=false
+  $('overview-details-status').textContent='Aguardando leitura do servidor…'
+  $('overview-sites-dialog-meta').textContent='Teste feito pelo Nginx local. Não verifica DNS público ou acesso pela internet.'
+  $('overview-alerts').hidden=true
+  $('overview-reboot-status').hidden=true
+  $('host-reboot-open').disabled=true
+}
 async function loadDashboardOverview() {
   const id=++hostRequest, status=$('overview-load-status'), refresh=$('refresh')
   const current=()=>id===hostRequest&&currentAppRoute==='overview'&&!!csrf
   refresh.disabled=true
   status.hidden=true
+  $('metrics').setAttribute('aria-busy','true')
+  if(!hostSample) $('overview-details-status').textContent='Consultando o Linux…'
   $('overview-sites-meta').textContent=hostSiteSample?'Atualizando teste local…':'Testando os sites pelo Nginx local…'
   const metrics=api('/api/monitor','GET',undefined,{timeoutMs:12000}).then(data=>{
     if(!current())return
@@ -1528,14 +1571,23 @@ async function loadDashboardOverview() {
     if(['scheduled','dispatching'].includes(data.reboot?.state))followHostReboot()
   }).catch(error=>{
     if(!current())return
-    status.textContent='Métricas não atualizadas. '+error.message
+    const message=hostSample?'Leitura anterior mantida. Não foi possível atualizar a VPS.':'Dados da VPS indisponíveis. Use Atualizar para tentar novamente.'
+    status.textContent=message
     status.hidden=false
-  })
+    const detailsStatus=$('overview-details-status')
+    detailsStatus.textContent=message
+    detailsStatus.hidden=false
+    if(!hostSample) $('overview-sample-time').textContent='Leitura do Linux não concluída'
+    $('host-reboot-open').disabled=true
+    if(!hostReboot?.state || hostReboot.state==='idle') $('host-reboot-note').textContent='Aguarde uma leitura da VPS para verificar se o reinício está disponível.'
+  }).finally(()=>{if(id===hostRequest) $('metrics').removeAttribute('aria-busy')})
   const sites=api('/api/host/sites','GET',undefined,{timeoutMs:12000}).then(data=>{
     if(current())renderHostSites(data)
   }).catch(error=>{
     if(!current())return
-    $('overview-sites-meta').textContent='Teste local não atualizado. '+error.message
+    const message=hostSiteSample?'Exibindo o último teste local. Não foi possível atualizar.':'Teste local indisponível.'
+    $('overview-sites-meta').textContent=message
+    $('overview-sites-dialog-meta').textContent=message
   })
   try {await Promise.all([metrics,sites])}
   finally {if(id===hostRequest)refresh.disabled=false}
@@ -1870,6 +1922,7 @@ $('logout').addEventListener('click', async () => {
     clearTimeout(aptTimer)
     clearTimeout(hostPoll)
     hostPollId++; hostPollStarted=0;hostSample=null;hostSiteSample=null;hostReboot=null
+    resetDashboardOverview()
     aptView=null
     $('apt-progress-panel').classList.add('hidden')
     projectCatalogSession++
