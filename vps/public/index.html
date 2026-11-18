@@ -60,23 +60,55 @@
 </section>
 <section class="panel host-panel" aria-labelledby="overview-actions-title">
 <h2 id="overview-actions-title">Ações da VPS</h2>
-<div class="host-quick-actions"><button type="button" class="outline button-small" data-tab="services">Ver serviços</button><button type="button" class="outline button-small" id="host-logs-open">Ver logs dos sites</button><button type="button" class="outline button-small" id="host-nginx-test">Testar Nginx</button></div><p id="host-nginx-feedback" class="small muted" role="status"></p>
+<div class="host-quick-actions"><button type="button" class="outline button-small" data-tab="services">Ver serviços</button><button type="button" class="outline button-small" id="host-logs-open">Ver logs dos sites</button><button type="button" class="outline button-small" id="host-nginx-test">Testar Nginx</button><button type="button" class="outline button-small" data-ec2-dialog aria-haspopup="dialog" aria-controls="host-ec2-dialog" id="host-ec2-open">Amazon EC2</button></div><p id="host-nginx-feedback" class="small muted" role="status"></p>
 <div class="host-reboot-row"><div><strong>Reinício do Linux</strong><p class="small muted" id="host-reboot-note">O painel e os sites ficam indisponíveis durante o reinício.</p></div><button type="button" class="outline button-small" id="host-reboot-open" disabled>Reiniciar VPS</button></div>
 </section>
 
 <dialog id="overview-details" class="panel-popup" data-panel-popup aria-labelledby="overview-details-title"><div class="dialog-body">
 <header class="modal-heading"><div><p class="eyebrow">SERVIDOR, REDE E SERVIÇOS</p><h2 id="overview-details-title">Dados da VPS</h2></div><button type="button" class="outline icon-button modal-x" data-close="overview-details" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
-<div class="popup-scroll"><p id="overview-details-status" class="small muted" role="status">Aguardando leitura do servidor…</p><div id="overview-system-info" class="host-system-info"></div><div class="stack small" id="overview-services"></div>
-<section class="host-ec2" aria-labelledby="host-ec2-title">
-  <div class="host-ec2-header"><div><h3 id="host-ec2-title">Amazon EC2</h3><p class="small muted">Dados da instância · Somente leitura</p></div>
-    <button type="button" class="outline button-small" id="host-ec2-refresh">Consultar AWS</button>
-  </div>
-  <p id="host-ec2-status" class="small muted" role="status"></p>
-  <dl id="host-ec2-fields" class="host-ec2-fields"></dl>
-</section></div>
+<div class="popup-scroll">
+  <div class="host-ec2-local-link"><button type="button" class="outline button-small" data-ec2-dialog aria-haspopup="dialog" aria-controls="host-ec2-dialog">Ver dados na Amazon EC2</button></div>
+  <p id="overview-details-status" class="small muted" role="status">Aguardando leitura do servidor…</p><div id="overview-system-info" class="host-system-info"></div><div class="stack small" id="overview-services"></div>
+</div>
 <div class="dialog-actions"><button type="button" class="outline" data-close="overview-details">Fechar</button></div>
 </div></dialog>
 </section>
+<dialog id="host-ec2-dialog" class="panel-popup" data-panel-popup aria-labelledby="host-ec2-title"><div class="dialog-body">
+<header class="modal-heading"><div><p class="eyebrow">INFRAESTRUTURA NA NUVEM</p><h2 id="host-ec2-title">Amazon EC2</h2></div><button type="button" class="outline icon-button modal-x" data-close="host-ec2-dialog" aria-label="Fechar Amazon EC2"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
+<div class="popup-scroll host-ec2">
+  <div class="ec2-status-box" id="host-ec2-status-box"><div class="ec2-status-head"><strong id="host-ec2-mode" class="ec2-pill">Somente leitura</strong><span id="host-ec2-updated" class="small muted"></span></div><p id="host-ec2-status" class="small muted" role="status">Aguardando consulta.</p></div>
+  <div id="host-ec2-content" hidden>
+    <div class="ec2-cards" id="host-ec2-cards" aria-label="Resumo da instância"></div>
+    <section id="ec2-snapshots" class="ec2-section ec2-backup" aria-labelledby="ec2-snapshots-title">
+      <div class="ec2-backup-header">
+        <div><p class="eyebrow">RECUPERAÇÃO</p><h3 id="ec2-snapshots-title">Snapshots do disco principal</h3></div>
+        <button type="button" class="outline button-small" id="ec2-snapshots-open" aria-expanded="false" aria-controls="ec2-snapshots-panel">Ver snapshots</button>
+      </div>
+      <div id="ec2-snapshots-panel" hidden>
+        <p class="small muted" id="ec2-snapshots-status" role="status"></p>
+        <p class="small" id="ec2-snapshots-feedback" role="status"></p>
+        <ul id="ec2-snapshots-list" class="ec2-volumes"></ul>
+        <div id="ec2-snapshots-confirm" class="ec2-confirm" hidden>
+          <strong>Criar um snapshot agora?</strong>
+          <p class="small">A VPS continua ligada. A AWS pode cobrar pelo armazenamento. Para bancos de dados, mantenha também o backup do projeto.</p>
+          <div class="ec2-snapshot-buttons"><button type="button" class="outline button-small" id="ec2-snapshots-cancel">Cancelar</button><button type="button" class="button-small" id="ec2-snapshots-submit">Confirmar snapshot</button></div>
+        </div>
+        <div class="ec2-snapshot-buttons"><button type="button" class="outline button-small" id="ec2-snapshots-refresh">Atualizar lista</button><button type="button" class="button-small" id="ec2-snapshots-create" disabled>Criar snapshot</button></div>
+      </div>
+    </section>
+    <section class="ec2-section" aria-labelledby="host-ec2-instance-title"><h3 id="host-ec2-instance-title">Instância</h3><dl id="host-ec2-fields" class="host-ec2-fields"></dl></section>
+    <section class="ec2-section" aria-labelledby="host-ec2-network-title"><h3 id="host-ec2-network-title">Rede</h3><dl id="host-ec2-network" class="host-ec2-fields"></dl><p id="host-ec2-network-note" class="small muted" hidden></p></section>
+    <section id="host-ec2-checks-section" class="ec2-section" aria-labelledby="host-ec2-checks-title" hidden><h3 id="host-ec2-checks-title">Verificações da AWS</h3><dl id="host-ec2-checks" class="host-ec2-fields"></dl></section>
+    <section id="host-ec2-volumes-section" class="ec2-section" aria-labelledby="host-ec2-volumes-title" hidden><h3 id="host-ec2-volumes-title">Discos EBS conectados</h3><ul id="host-ec2-volumes" class="ec2-volumes"></ul></section>
+    <details id="host-ec2-setup" class="ec2-setup" hidden><summary>Como habilitar mais dados</summary><p class="small muted">Instale a AWS CLI v2 no servidor e autorize <code>ec2:DescribeInstanceStatus</code> e <code>ec2:DescribeInstances</code> no perfil IAM da instância. Não cole chaves no painel.</p></details>
+  </div>
+</div>
+<div class="dialog-actions ec2-actions">
+  <button type="button" class="outline" id="host-ec2-back" hidden>Voltar</button>
+  <button type="button" class="outline" id="host-ec2-refresh">Atualizar</button>
+  <a id="host-ec2-console" class="button-link" target="_blank" rel="noopener noreferrer" hidden>Abrir no console AWS</a>
+</div>
+</div></dialog>
 <dialog id="overview-sites-dialog" class="panel-popup" data-panel-popup aria-labelledby="overview-sites-dialog-title"><div class="dialog-body">
 <header class="modal-heading"><div><h2 id="overview-sites-dialog-title">Saúde dos sites</h2><p class="small muted" id="overview-sites-dialog-meta">Teste pelo Nginx local, sem verificar DNS público ou acesso externo.</p></div><button type="button" class="outline icon-button modal-x" data-close="overview-sites-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
 <div class="popup-scroll"><div class="host-site-list" id="overview-sites"></div></div>

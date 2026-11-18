@@ -12,7 +12,7 @@ import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, st
 import { projects, serviceDiagnostics } from './monitor.js'
 import { projectOverview, projectActivities, probeProjectWebsite } from './project_overview.js'
 import { hostOverview, hostRebootStatus, rebootPending, hostSites } from './host_dashboard.js'
-import { createEc2Reader } from './aws_ec2.js'
+import { createEc2Reader, createEbsSnapshots } from './aws_ec2.js'
 import { serviceInventory, validServiceAction } from './service_inventory.js'
 import { projectLogs } from './project_logs.js'
 import { dependencyInfo, packageProgress, packageHistory, validPackageId } from './dependencies.js'
@@ -24,7 +24,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.50'
+const VERSION = '2.0.51'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -194,9 +194,21 @@ function runTask(task) {
   })
 }
 
+const snapshotMessages={
+  cli_missing:'Instale a AWS CLI v2 no servidor.',
+  role_missing:'A instância não tem um perfil IAM disponível.',
+  access_denied:'O perfil IAM não tem permissão para a operação de snapshot.',
+  no_root:'Não foi possível identificar um único disco raiz EBS conectado.',
+  metadata_unavailable:'Não foi possível identificar a instância da AWS.',
+  pending:'Já existe um snapshot em andamento para o disco raiz.',
+  busy:'Já existe uma solicitação recente. Consulte a lista antes de tentar novamente.',
+  unconfirmed:'A AWS não confirmou a criação. Confira a lista de snapshots antes de tentar novamente.',
+  unavailable:'Não foi possível consultar os snapshots na AWS agora.'
+}
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
   hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
-  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease, ec2Reader = createEc2Reader() } = {}) {
+  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease,
+  ec2Reader = createEc2Reader(), ebsSnapshots = createEbsSnapshots({readEc2:ec2Reader}) } = {}) {
   const releaseCache = createReleaseCache({load:releaseLookup})
   let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
   const executeTask = taskRunner
@@ -308,6 +320,31 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       }
       if (!csrfSafe.has(req.method) && (rebootRequesting || rebootPending(hostStatus())))
         return fail(res,409,'Há um reinício solicitado. Aguarde a VPS voltar antes de fazer alterações.')
+      if (path === '/api/host/ec2/snapshots' && ['GET','POST'].includes(req.method)) {
+        if (new URL(req.url,'http://localhost').search) return fail(res,400,'A operação usa somente o disco raiz local.')
+        const create=req.method==='POST'
+        if (!limit(ip,create?'ec2-snapshot-create':'ec2-snapshot-list',create?8:90))
+          return fail(res,429,'Muitas solicitações de snapshot. Aguarde antes de tentar novamente.')
+        if (!create) {
+          const result=await ebsSnapshots.list()
+          return json(res,200,result.state==='ok'?result:{...result,error:snapshotMessages[result.state]||snapshotMessages.unavailable})
+        }
+        const input=await body(req)
+        if (Object.keys(input).length!==1 || input.confirm!=='CRIAR_SNAPSHOT') return fail(res,400,'Confirme a criação do snapshot.')
+        if (rebootRequesting || rebootPending(hostStatus()) || activeTransfers || activeTasks)
+          return fail(res,409,'Aguarde a transferência, reinício ou tarefa administrativa em andamento.')
+        activeTasks++
+        try {
+          const result=await ebsSnapshots.create()
+          if(result.state==='accepted'){
+            audit('ec2_snapshot_requested',{ip,snapshotId:result.snapshot.id,success:true})
+            return json(res,202,result)
+          }
+          audit('ec2_snapshot_rejected',{ip,result:result.state,success:false})
+          const status=['busy','pending','no_root'].includes(result.state)?409:result.state==='access_denied'?403:503
+          return json(res,status,{state:result.state,error:snapshotMessages[result.state]||snapshotMessages.unavailable})
+        } finally {activeTasks--}
+      }
       if (req.method==='POST' && (path==='/api/updates/upload' || path==='/api/projects/iguatamaonline/update/upload' ||
           /^\/api\/projects\/[a-z][a-z0-9-]{1,39}\/hosting\/upload$/.test(path))) {
         activeTransfers++

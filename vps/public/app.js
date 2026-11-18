@@ -231,57 +231,219 @@ function renderHostSites(data) {
   }))
   renderHostAlerts()
 }
-let ec2Request=0
+let ec2Request=0, ec2FromLocal=false
+let ebsRequest=0, ebsTimer, ebsPosting=false, ebsCanCreate=false
 const ec2Lifecycle={pending:'Iniciando',running:'Em execução','shutting-down':'Encerrando',terminated:'Encerrada',stopping:'Parando',stopped:'Parada'}
 const ec2Health={ok:'Normal',impaired:'Falha detectada',initializing:'Inicializando','insufficient-data':'Dados insuficientes','not-applicable':'Não aplicável'}
-async function loadHostEc2() {
-  if (!csrf) return
-  const request=++ec2Request, session=csrf
-  const button=$('host-ec2-refresh'), status=$('host-ec2-status'), fields=$('host-ec2-fields')
-  button.disabled=true
-  status.textContent='Consultando a instância local…'
-  fields.replaceChildren()
-  const current=()=>request===ec2Request&&session===csrf
-  try {
-    const data=await api('/api/host/ec2','GET',undefined,{timeoutMs:14000})
+const ec2Disks={attached:'Conectado',attaching:'Conectando',detaching:'Desconectando',detached:'Desconectado'}
+const ec2Reasons={cli_missing:'AWS CLI v2 não detectada.',role_missing:'Perfil IAM não está disponível.',
+  access_denied:'O perfil IAM não tem a permissão necessária.',not_reported:'A AWS não retornou dados para esta instância.',
+  unavailable:'A API da AWS não respondeu à consulta.'}
+function resetEc2View() {
+  for(const id of ['host-ec2-cards','host-ec2-fields','host-ec2-network','host-ec2-checks','host-ec2-volumes']) $(id).replaceChildren()
+  for(const id of ['host-ec2-content','host-ec2-checks-section','host-ec2-volumes-section','host-ec2-network-note','host-ec2-console','host-ec2-setup']) $(id).hidden=true
+  $('host-ec2-console').removeAttribute('href')
+  $('host-ec2-updated').textContent=''
+  $('host-ec2-mode').textContent='Amazon EC2'
+}
+const ebsOpen=()=>$('host-ec2-dialog').open&&!$('ec2-snapshots-panel').hidden
+const ebsStates={pending:'Em andamento',completed:'Concluído',error:'Falhou',recoverable:'Recuperável',recovering:'Recuperando'}
+function toggleEbsPanel(open,load=true){
+  clearTimeout(ebsTimer)
+  ebsRequest++
+  ebsCanCreate=false
+  $('ec2-snapshots-panel').hidden=!open
+  $('ec2-snapshots-open').setAttribute('aria-expanded',String(open))
+  $('ec2-snapshots-open').textContent=open?'Ocultar snapshots':'Ver snapshots'
+  $('ec2-snapshots-create').disabled=true
+  $('ec2-snapshots-confirm').hidden=true
+  $('ec2-snapshots-refresh').disabled=false
+  $('ec2-snapshots-feedback').textContent=''
+  $('ec2-snapshots-list').replaceChildren()
+  if(open&&load)void loadEbsSnapshots()
+}
+async function loadEbsSnapshots(){
+  if(!csrf||!ebsOpen())return
+  clearTimeout(ebsTimer)
+  const request=++ebsRequest, session=csrf
+  const current=()=>request===ebsRequest&&session===csrf&&ebsOpen()
+  const status=$('ec2-snapshots-status'), list=$('ec2-snapshots-list')
+  const create=$('ec2-snapshots-create'), refresh=$('ec2-snapshots-refresh')
+  ebsCanCreate=false
+  create.disabled=refresh.disabled=true
+  status.textContent='Consultando a AWS…'
+  try{
+    const result=await api('/api/host/ec2/snapshots','GET',undefined,{timeoutMs:24000})
     if(!current())return
-    if(data.state!=='metadata_ok'||!data.identity) {
+    list.replaceChildren()
+    if(result.state!=='ok'){
+      status.textContent=result.error||'Não foi possível consultar os snapshots.'
+      $('ec2-snapshots-confirm').hidden=true
+      return
+    }
+    const rows=result.snapshots||[]
+    const pending=rows.some(item=>item.status==='pending')
+    ebsCanCreate=!pending
+    if(pending)$('ec2-snapshots-confirm').hidden=true
+    status.textContent=pending?'Há um snapshot em andamento. A lista atualiza sozinha.':
+      !rows.length?'Ainda não há snapshots para este disco.':
+        result.more?'Mostrando até 50 resultados da AWS. Veja a lista completa no console.':'Snapshots disponíveis para este disco.'
+    for(const item of rows){
+      const li=node('li','','ec2-volume ec2-snapshot-row'), left=node('div')
+      left.append(node('strong',item.id,'small break-text'))
+      if(item.startedAt)left.append(node('div',hostShortDate(item.startedAt),'small muted'))
+      const state=[ebsStates[item.status]||'Estado não informado',item.status==='pending'?item.progress:null].filter(Boolean).join(' · ')
+      li.append(left,node('span',state,'ec2-pill'))
+      list.append(li)
+    }
+    if(pending)ebsTimer=setTimeout(()=>void loadEbsSnapshots(),15000)
+  } catch(error){
+    if(current()){
+      list.replaceChildren()
+      $('ec2-snapshots-confirm').hidden=true
+      status.textContent=error.httpStatus===401?'Entre novamente para consultar os snapshots.':'Não foi possível atualizar a lista agora.'
+    }
+  } finally{
+    if(current()){
+      refresh.disabled=false
+      create.disabled=ebsPosting||!ebsCanCreate
+    }
+  }
+}
+$('ec2-snapshots-open').addEventListener('click',()=>toggleEbsPanel(!ebsOpen()))
+$('ec2-snapshots-refresh').addEventListener('click',()=>void loadEbsSnapshots())
+$('ec2-snapshots-create').addEventListener('click',()=>{
+  if(!ebsCanCreate||ebsPosting)return
+  $('ec2-snapshots-confirm').hidden=false
+  $('ec2-snapshots-cancel').focus()
+})
+$('ec2-snapshots-cancel').addEventListener('click',()=>{
+  $('ec2-snapshots-confirm').hidden=true
+  $('ec2-snapshots-create').focus()
+})
+$('ec2-snapshots-submit').addEventListener('click',async()=>{
+  if(!ebsCanCreate||ebsPosting||!ebsOpen())return
+  const feedback=$('ec2-snapshots-feedback'), session=csrf
+  const sameView=()=>session===csrf&&ebsOpen()
+  ebsPosting=true
+  $('ec2-snapshots-confirm').hidden=true
+  $('ec2-snapshots-create').disabled=true
+  feedback.textContent='Solicitando o snapshot à AWS…'
+  try {
+    const data=await api('/api/host/ec2/snapshots','POST',{confirm:'CRIAR_SNAPSHOT'},{timeoutMs:41000})
+    if(sameView())feedback.textContent='Solicitação aceita pela AWS · '+data.snapshot.id
+  } catch(error){
+    if(sameView())feedback.textContent=error.httpStatus?error.message:'Não recebemos confirmação. Consulte a lista antes de tentar novamente.'
+  } finally {
+    ebsPosting=false
+    if(sameView())void loadEbsSnapshots()
+  }
+})
+function paintEc2(data) {
+  const {identity,checks,resources}=data
+  const row=(target,label,value)=>{
+    const item=node('div','','host-system-row')
+    item.append(node('dt',label,'small muted'),node('dd',value || 'Indisponível','small break-text'))
+    $(target).append(item)
+  }
+  const cards=$('host-ec2-cards')
+  for(const [label,value] of [['Tipo',identity.instanceType],['Zona',identity.zone],['Estado na AWS',ec2Lifecycle[checks?.instanceState]]]){
+    const card=node('div','','ec2-card')
+    card.append(node('span',label,'small muted'),node('strong',value||'Não consultado','break-text'))
+    cards.append(card)
+  }
+  row('host-ec2-fields','ID da instância',identity.instanceId)
+  row('host-ec2-fields','Região',identity.region)
+  if(identity.launchedAt)row('host-ec2-fields','Lançamento',hostShortDate(identity.launchedAt))
+  row('host-ec2-network','IPv4 privado',identity.privateIp)
+  row('host-ec2-network','IPv4 público',identity.publicIp || (identity.publicIpState==='not_assigned'?'Não atribuído':null))
+  const full=checks?.state==='ok'&&resources?.state==='ok'
+  $('host-ec2-mode').textContent=full?'Dados da AWS':'Dados parciais'
+  $('host-ec2-updated').textContent='Consulta · '+hostShortDate(data.checkedAt)
+  if(checks?.state==='ok'){
+    $('host-ec2-checks-section').hidden=false
+    row('host-ec2-checks','Sistema',ec2Health[checks.system])
+    row('host-ec2-checks','Instância',ec2Health[checks.instance])
+    if(checks.ebs)row('host-ec2-checks','EBS',ec2Health[checks.ebs])
+  }
+  if(resources?.state==='ok') {
+    row('host-ec2-network','VPC',resources.vpc)
+    row('host-ec2-network','Sub-rede',resources.subnet)
+    for(const group of resources.groups||[]) row('host-ec2-network','Grupo de segurança',group)
+    const list=$('host-ec2-volumes')
+    $('host-ec2-volumes-section').hidden=false
+    for(const volume of resources.volumes||[]){
+      const item=node('li','','ec2-volume')
+      item.append(node('strong',volume.id,'break-text'),
+        node('span',[volume.root?'Disco raiz':null,volume.device,ec2Disks[volume.status]].filter(Boolean).join(' · '),'small muted break-text'))
+      list.append(item)
+    }
+    if(!list.hasChildNodes())list.append(node('li','Nenhum volume EBS retornado.','small muted'))
+  } else if(checks?.state==='ok') {
+    $('host-ec2-network-note').hidden=false
+    $('host-ec2-network-note').textContent='Inventário de rede e discos indisponível. '+(ec2Reasons[resources?.state]||'')
+  }
+  $('host-ec2-setup').hidden=!['cli_missing','role_missing','access_denied'].includes(checks?.state)
+    &&!['cli_missing','role_missing','access_denied'].includes(resources?.state)
+  $('host-ec2-status').textContent=full?'Metadados e inventário específicos desta instância.':
+    (checks?.state==='ok'?'Metadados e verificações carregados. O inventário não está completo.':
+      'Metadados carregados. '+(ec2Reasons[checks?.state]||'Verificações da AWS indisponíveis.'))
+  if(typeof data.consoleUrl==='string' &&
+     /^https:\/\/(?:[a-z0-9-]+\.console\.aws\.amazon\.com|console\.amazonaws-us-gov\.com)\/ec2\/home\?region=[a-z0-9-]+#InstanceDetails:instanceId=i-[0-9a-f]+$/.test(data.consoleUrl)){
+    const link=$('host-ec2-console')
+    link.href=data.consoleUrl
+    link.hidden=false
+  }
+  $('host-ec2-content').hidden=false
+}
+async function loadHostEc2() {
+  if(!csrf)return
+  const request=++ec2Request,session=csrf
+  const button=$('host-ec2-refresh'),status=$('host-ec2-status')
+  button.disabled=true
+  resetEc2View()
+  status.textContent='Consultando a instância local…'
+  const current=()=>request===ec2Request&&session===csrf
+  try{
+    const data=await api('/api/host/ec2','GET',undefined,{timeoutMs:14500})
+    if(!current())return
+    if(data.state!=='metadata_ok'||!data.identity){
       status.textContent='Identidade EC2 indisponível. Verifique se esta VPS está na EC2 com IMDSv2 acessível.'
       return
     }
-    const {identity,checks}=data
-    const row=(label,value)=>{
-      const item=node('div','','host-system-row')
-      item.append(node('dt',label,'small muted'),node('dd',value || 'Indisponível','small break-text'))
-      fields.append(item)
-    }
-    row('Tipo',identity.instanceType)
-    row('Região',identity.region)
-    row('Zona',identity.zone)
-    row('ID da instância',identity.instanceId)
-    row('IPv4 privado',identity.privateIp)
-    row('IPv4 público',identity.publicIp || (identity.publicIpState==='not_assigned'?'Não atribuído':null))
-    if(identity.launchedAt)row('Lançamento da instância',hostShortDate(identity.launchedAt))
-    if(checks?.state==='ok') {
-      row('Estado na AWS',ec2Lifecycle[checks.instanceState])
-      row('Verificação do sistema',ec2Health[checks.system])
-      row('Verificação da instância',ec2Health[checks.instance])
-      if(checks.ebs)row('Verificação EBS',ec2Health[checks.ebs])
-    }
-    const note={cli_missing:'Metadados carregados. Para o status na AWS, instale a AWS CLI v2 e associe um perfil IAM de leitura.',
-      role_missing:'Metadados carregados. Para o status na AWS, associe um perfil IAM de leitura à instância.',
-      access_denied:'Metadados carregados. O perfil IAM não tem acesso à verificação de status.',
-      not_reported:'Metadados carregados. A AWS ainda não retornou verificações desta instância.',
-      unavailable:'Metadados carregados. O status na API da AWS está indisponível.'
-    }[checks?.state]
-    status.textContent=(note||'Dados da AWS carregados.')+' Consulta · '+hostShortDate(data.checkedAt)
-  } catch(error) {
+    paintEc2(data)
+  } catch(error){
     if(current())status.textContent=error.httpStatus===401?'Entre novamente para consultar a AWS.':'Não foi possível consultar a AWS agora.'
-  } finally {
+  } finally{
     if(current())button.disabled=false
   }
 }
-$('host-ec2-refresh').addEventListener('click',()=>void loadHostEc2())
+for(const button of document.querySelectorAll('[data-ec2-dialog]')){
+  button.addEventListener('click',()=>{
+    ec2FromLocal=$('overview-details').open
+    closePanelPopups()
+    $('host-ec2-back').hidden=!ec2FromLocal
+    $('host-ec2-dialog').showModal()
+    $('host-ec2-dialog').querySelector('.popup-scroll').scrollTop=0
+    void loadHostEc2()
+  })
+}
+$('host-ec2-dialog').addEventListener('close',()=>{
+  if($('host-ec2-dialog').open)return
+  ec2Request++
+  toggleEbsPanel(false)
+  $('host-ec2-refresh').disabled=false
+  if(!ec2FromLocal&&currentAppRoute==='overview')$('host-ec2-open').focus()
+})
+$('host-ec2-back').addEventListener('click',()=>{
+  $('host-ec2-dialog').close()
+  $('overview-details').showModal()
+  $('overview-details').querySelector('[data-ec2-dialog]').focus()
+})
+$('host-ec2-refresh').addEventListener('click',()=>{
+  toggleEbsPanel(false)
+  void loadHostEc2()
+})
 const hostRebootKey='als-host-reboot-v1'
 const hostRebootDismissKey='als-host-reboot-dismiss-v1'
 const hostRebootWindow=240_000
@@ -1714,7 +1876,7 @@ function resetDashboardOverview() {
   ec2Request++
   $('host-ec2-refresh').disabled=false
   $('host-ec2-status').textContent=''
-  $('host-ec2-fields').replaceChildren()
+  resetEc2View()
   $('overview-details-status').hidden=false
   $('overview-details-status').textContent='Aguardando leitura do servidor…'
   $('overview-sites-dialog-meta').textContent='Teste feito pelo Nginx local. Não verifica DNS público ou acesso pela internet.'

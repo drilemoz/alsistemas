@@ -1,3 +1,9 @@
+## 2.0.51 — Snapshots EBS no painel da Amazon EC2 (18/11/2026)
+
+- Adiciona listagem e criação manual de snapshot do disco raiz EBS, com confirmação, andamento e mensagens de permissão.
+- Usa a AWS CLI e a função IAM da instância. Não aceita seleção de outro volume, não exclui nem restaura snapshots e não para a máquina.
+- Mantém o pop-up Amazon EC2 com inventário da instância, da rede e dos discos.
+
 ## 2.0.50 — Consulta somente leitura da EC2 (18/11/2026)
 
 - Identifica a própria instância via IMDSv2 e mostra região, zona, tipo e endereços IPv4.

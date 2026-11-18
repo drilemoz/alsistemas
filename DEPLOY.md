@@ -1,3 +1,7 @@
+## Atualização 2.0.51 — Snapshots EBS no painel da Amazon EC2
+
+Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Depois abra **Início → Ações da VPS → Amazon EC2**. Veja o [guia de configuração](vps/docs/ATUALIZACAO-2.0.51.md).
+
 ## Atualização 2.0.50 — Dados da Amazon EC2
 
 Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Depois abra **Início → Dados da VPS → Amazon EC2**. Veja [configuração e validação](vps/docs/ATUALIZACAO-2.0.50.md).
