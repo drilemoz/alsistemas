@@ -6,7 +6,7 @@ const dnFqdn = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0
 const dnLocalNames = new Set(['www','painel','panel','admin','api','mail','smtp','imap','pop','autodiscover','migrar'])
 const dnApi = (domain, section) => '/api/domains/' + encodeURIComponent(domain) + '/' + section
 const dnWhen = (id, message, bad = false) => { const el = $(id); el.textContent = message; el.classList.toggle('bad', bad) }
-const dnActive = (zone, pane) => currentAppRoute === 'domains' && dnZone?.name === zone && (!pane || dnPane === pane)
+const dnActive = (zone, pane) => currentAppRoute === 'domains' && dnZone?.name === zone && (!pane || (dnPane === pane && $('dn-pane-' + pane).open))
 function dnButton(text, use, css = 'outline button-small') {
   const button = node('button', text, css)
   button.type = 'button'
@@ -21,7 +21,7 @@ function resetDomainsPage() {
   dnZone = null
   dnSkip = 0
   dnNext = null
-  dnPane = ''
+  dnShowPane('')
   $('dn-selected').hidden = true
   $('dn-select').replaceChildren(new Option('Selecione um domínio', ''))
   $('dn-select').disabled = true
@@ -32,18 +32,24 @@ function dnDescribeNs(ns) {
   return ns?.provider === 'basic' ? 'DNS da Spaceship' : ns?.provider === 'custom' ? 'DNS personalizado' : 'DNS não informado'
 }
 function dnHideForms() {
-  $('dn-redirect-form').hidden = true
-  $('dn-probe-form').hidden = true
+  for (const id of ['dn-rule-dialog','dn-test-dialog']) {
+    if ($(id).open) $(id).close()
+  }
   dnEditRule = null
   dnTestRule = null
 }
 function dnSelect(name, keepPane = false) {
   const zone = dnDomains.find(item => item.name === name)
+  const keep = !!zone && keepPane && dnZone?.name === zone.name
   dnZone = zone || null
   dnPaneRequest++
   $('dn-selected').hidden = !zone
-  dnHideForms()
-  if (!zone) return
+  if (!keep) {
+    dnHideForms()
+    if ($('dn-ns-dialog').open) $('dn-ns-dialog').close()
+  }
+  if (!zone) { dnShowPane(''); return }
+  for (const label of document.querySelectorAll('[data-domain-dialog-zone]')) label.textContent = zone.unicodeName || zone.name
   $('dn-select').value = name
   $('dn-name').textContent = zone.unicodeName || name
   $('dn-ns-summary').textContent = dnDescribeNs(zone.nameservers)
@@ -55,7 +61,7 @@ function dnSelect(name, keepPane = false) {
   $('dn-settings-result').textContent = ''
   dnResetPointer()
   dnFillSettings()
-  dnShowPane(keepPane ? dnPane : '')
+  dnShowPane(keep ? dnPane : '')
 }
 async function openDomainsPage(skip = dnSkip, name = dnZone?.name, keepPane = true) {
   const activeRequest = ++dnCatalogRequest
@@ -91,14 +97,23 @@ function dnShowPane(pane) {
   dnPane = pane
   dnPaneRequest++
   for (const button of document.querySelectorAll('[data-domain-pane]')) {
-    const active = button.dataset.domainPane === pane
-    button.setAttribute('aria-pressed', String(active))
-    $('dn-pane-' + button.dataset.domainPane).hidden = !active
+    const dialog = $('dn-pane-' + button.dataset.domainPane)
+    if (button.dataset.domainPane !== pane && dialog.open) dialog.close()
   }
-  if (!dnZone) return
+  if (!dnZone || !pane) return
+  const dialog = $('dn-pane-' + pane)
+  if (!dialog.open) dialog.showModal()
   if (pane === 'dns') void dnLoadDns()
   if (pane === 'redirect') void dnLoadRedirects()
   if (pane === 'settings') dnFillSettings()
+}
+for (const pane of ['dns','pointer','redirect','settings']) {
+  const dialog = $('dn-pane-' + pane)
+  dialog.addEventListener('close', () => {
+    if (dialog.open || dnPane !== pane) return
+    dnPane = ''
+    dnPaneRequest++
+  })
 }
 $('dn-select').addEventListener('change', e => dnSelect(e.target.value))
 $('dn-refresh').addEventListener('click', () => void openDomainsPage())
@@ -238,7 +253,8 @@ function dnOpenRule(rule = null) {
   dnEditRule = rule
   const form = $('dn-redirect-form'), f = form.elements
   form.reset()
-  form.hidden = false
+  dnWhen('dn-rule-result','')
+  $('dn-rule-dialog').showModal()
   $('dn-rule-title').textContent = rule ? 'Editar regra' : 'Nova regra'
   f.namedItem('source').readOnly = !!rule
   if (rule) {
@@ -255,7 +271,7 @@ function dnOpenTest(row) {
   dnHideForms()
   dnTestRule = row
   const form = $('dn-probe-form')
-  form.hidden = false
+  $('dn-test-dialog').showModal()
   $('dn-probe-title').textContent = 'Testar ' + row.host
   $('dn-probe-result').replaceChildren()
   form.elements.namedItem('ip').focus()
@@ -265,14 +281,15 @@ async function dnDeleteRule(zone, row) {
   await dnWriteRule(zone,'DELETE',{ host:row.host, revision:row.revision })
 }
 async function dnWriteRule(zone, method, request) {
-  dnWhen('dn-redirect-status','Validando e recarregando o Nginx…')
+  const feedback = method === 'POST' ? 'dn-rule-result' : 'dn-redirect-status'
+  dnWhen(feedback,'Validando e recarregando o Nginx…')
   try {
     await api(dnApi(zone,'redirects'),method,request,{timeoutMs:70000})
     if (!dnActive(zone,'redirect')) return
     dnHideForms()
     dnWhen('dn-redirect-status',method === 'DELETE' ? 'Regra excluída da VPS.' : 'Configuração aplicada na VPS. Teste o DNS e a resposta.')
     await dnLoadRedirects({ quiet:true })
-  } catch (error) { if (dnActive(zone,'redirect')) dnWhen('dn-redirect-status',error.message,true) }
+  } catch (error) { if (dnActive(zone,'redirect')) dnWhen(feedback,error.message,true) }
 }
 $('dn-new-redirect').addEventListener('click', () => dnOpenRule())
 $('dn-rule-cancel').addEventListener('click',dnHideForms)
@@ -290,7 +307,7 @@ $('dn-redirect-form').addEventListener('submit', async event => {
       !dnFqdn.test(url.hostname) || url.hostname === host || (preserve && url.search)) throw new Error()
     const path = preserve ? url.pathname.replace(/\/+$/,'') : url.pathname
     destination = (url.origin + path + url.search).replace(/[\$'\[\]{};\\|^]/g,ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())
-  } catch { dnWhen('dn-redirect-status','Use uma URL HTTP/HTTPS pública, sem porta, senha ou fragmento. Ao preservar o caminho, não inclua parâmetros no destino.',true); return }
+  } catch { dnWhen('dn-rule-result','Use uma URL HTTP/HTTPS pública, sem porta, senha ou fragmento. Ao preservar o caminho, não inclua parâmetros no destino.',true); return }
   const revision = dnEditRule?.revision ?? null
   const rule = { destination, code:Number(f.namedItem('code').value), preserve, enabled:f.namedItem('enabled').checked, https:f.namedItem('https').checked }
   const message = `${host} → ${destination}\nHTTP ${rule.code}${preserve ? ' · preserva caminho e parâmetros' : ''}\n${rule.enabled ? 'Ativa' : 'Desativada'} · ${rule.https ? 'HTTP e HTTPS' : 'Somente HTTP'}. O DNS não muda.`
@@ -309,7 +326,7 @@ $('dn-probe-form').addEventListener('submit', async event => {
   submit.disabled = true
   try {
     const result = await api(dnApi(zone,'redirect-check'),'POST',{ host:rule.host, ip:form.elements.namedItem('ip').value.trim() },{timeoutMs:10000})
-    if (!dnActive(zone,'redirect') || dnTestRule !== rule) return
+    if (!dnActive(zone,'redirect') || dnTestRule !== rule || !$('dn-test-dialog').open) return
     output.replaceChildren()
     const append = (label, value, good) => {
       const row = node('div','','domain-test-row')
@@ -342,16 +359,18 @@ function dnNsProvider() {
   f.namedItem('hosts').required = custom
 }
 $('dn-ns-form').elements.namedItem('provider').addEventListener('change',dnNsProvider)
+$('dn-ns-open').addEventListener('click',() => { dnWhen('dn-ns-result',''); dnFillSettings() })
 async function dnChangeSettings(zone, change, message) {
+  const feedback = change.action === 'nameservers' ? 'dn-ns-result' : 'dn-settings-result'
   if (!await confirmAction(message,'Aplicar alteração') || !dnActive(zone,'settings')) return
-  dnWhen('dn-settings-result','Salvando na Spaceship…')
+  dnWhen(feedback,'Salvando na Spaceship…')
   try {
     const result = await api(dnApi(zone,'settings'),'POST',change,{timeoutMs:23000})
     if (!dnActive(zone,'settings')) return
     await openDomainsPage(dnSkip,zone,true)
-    if (dnActive(zone,'settings')) dnWhen('dn-settings-result',result.verified
+    if (dnActive(zone,'settings')) dnWhen(feedback,result.verified
       ? 'Alteração confirmada pela Spaceship.' : 'Solicitação aceita. Confira o estado antes de repetir.')
-  } catch (error) { if (dnActive(zone,'settings')) dnWhen('dn-settings-result',error.message,true) }
+  } catch (error) { if (dnActive(zone,'settings')) dnWhen(feedback,error.message,true) }
 }
 $('dn-renew-change').addEventListener('click', () => {
   if (typeof dnZone?.autoRenew !== 'boolean') return
@@ -365,7 +384,7 @@ $('dn-ns-form').addEventListener('submit', event => {
   const f = event.currentTarget.elements, provider = f.namedItem('provider').value, zone = dnZone.name
   const hosts = provider === 'basic' ? [] : f.namedItem('hosts').value.split(/[\s,]+/).filter(Boolean).map(s=>s.toLowerCase().replace(/\.$/,''))
   if (provider === 'custom' && (hosts.length < 2 || hosts.length > 12 || new Set(hosts).size !== hosts.length || hosts.some(h=>!dnFqdn.test(h)))) {
-    dnWhen('dn-settings-result','Informe de 2 a 12 hostnames válidos e distintos.',true)
+    dnWhen('dn-ns-result','Informe de 2 a 12 hostnames válidos e distintos.',true)
     return
   }
   const previous = dnZone.nameservers, value = { provider, hosts }

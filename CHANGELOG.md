@@ -1,3 +1,10 @@
+## 2.0.39 — Pop-ups de Domínios e diagnóstico compacto (17/11/2026)
+
+- Domínios abre DNS, apontamento, redirecionamentos e ajustes em janelas. Nova regra, edição, teste e servidores DNS também usam pop-ups.
+- Arquivos mostra a lista e a busca, com atualização e informações ao lado do título. A escrita temporária fica em Informações → Escrita temporária.
+- Aplicar permissão individual mantém Propriedades aberto, com confirmação e resultado. A ajuda informa por que um arquivo ou opção está bloqueado.
+- Diagnóstico usa resumo compacto e pop-ups para detalhes técnicos, domínios, teste HTTP e vistoria da produção.
+
 ## 2.0.38 — Navegação e espaço no celular (17/11/2026)
 
 - Domínios substitui Atualizar na barra inferior. Atualizar foi para Mais → Outros módulos.

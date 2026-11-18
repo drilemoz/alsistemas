@@ -1,3 +1,7 @@
+## Atualização 2.0.39 — Pop-ups e diagnóstico
+
+Atualize pelo menu **Mais → Atualizar → Arquivo ZIP** no celular. A escrita temporária fica em **Arquivos → Informações → Escrita temporária**. Não é necessário refazer configurações de DNS ou permissões.
+
 ## Atualização 2.0.38 — Navegação no celular
 
 Na 2.0.37, instale o ZIP em **Atualizar → Arquivo ZIP**. Na 2.0.38, as próximas atualizações ficam em **Mais → Atualizar** e Domínios ganha acesso direto na barra inferior.

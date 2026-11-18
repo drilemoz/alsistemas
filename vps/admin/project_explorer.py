@@ -110,16 +110,20 @@ def _item(name, st, parts, owner_id):
     kind = _kind(st)
     protected = _protected(parts)
     safe_owner = st.st_uid in (0, owner_id)
-    editable = (kind in ('directory', 'file') and safe_owner and
-                not protected and not (st.st_mode & 0o002) and
-                (kind != 'file' or st.st_nlink == 1))
+    mode_block = ('protected' if protected else 'symbolic_link' if kind == 'link' else
+                  'special' if kind not in ('directory', 'file') else 'owner' if not safe_owner else
+                  'public_write' if st.st_mode & 0o002 else 'hard_links' if kind == 'file' and st.st_nlink != 1 else
+                  'special_mode' if stat.S_IMODE(st.st_mode) > 0o777 else None)
+    editable = mode_block is None
     # Não podemos entrar em pasta que outros usuários podem modificar.
     enterable = kind == 'directory' and safe_owner and not (st.st_mode & 0o022) and not protected
     return {'name': name, 'path': '/'.join(parts), 'kind': kind,
             'mode': format(stat.S_IMODE(st.st_mode), '03o'), 'inode': str(st.st_ino),
             'owner': _owner(st.st_uid), 'group': _group(st.st_gid),
             'size': st.st_size if kind == 'file' else None,
-            'editable': bool(editable), 'enterable': bool(enterable),
+            'editable': editable, 'enterable': bool(enterable),
+            'modeBlockedReason': mode_block,
+            'navigationBlockedReason': 'shared_write' if kind == 'directory' and st.st_mode & 0o022 else None,
             'protected': bool(protected), 'modified': int(st.st_mtime)}
 
 

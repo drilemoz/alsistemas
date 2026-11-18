@@ -148,6 +148,7 @@ function showAppRoute(route) {
     for (const id of ['confirm-dialog', 'external-auth-dialog', 'project-tech-dialog']) {
       if ($(id).open) $(id).close()
     }
+    closePanelPopups()
   }
   currentAppRoute = route
   const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
@@ -409,45 +410,68 @@ async function openProjectSheet() {
     if (request === projectTechRequest && dialog.open) status.textContent = 'Não foi possível consultar a versão e o armazenamento. Feche e abra novamente para tentar.'
   }
 }
+let projectInsightsRequest = 0
+function insightRow(label, value) {
+  const row = node('div', '', 'insight-data-row')
+  row.append(node('dt', label), node('dd', String(value ?? 'Indisponível')))
+  return row
+}
 async function loadProjectInsights(name, { force = false } = {}) {
+  const request = ++projectInsightsRequest
+  const route = 'project/' + name + '/insights'
+  const active = () => currentAppRoute === route && request === projectInsightsRequest
   $('project-insights-aws').hidden = name !== 'iguatamaonline'
   $('project-insights-title').textContent = 'Diagnóstico · ' + name
   $('project-insights-back').textContent = '‹ ' + name
-  $('project-insights-status').textContent = 'Consultando projeto…'
-  $('project-probe-output').textContent = 'Teste opcional do Nginx local. Acesso público não verificado.'
+  $('project-insights-status').textContent = 'Consultando…'
+  $('project-insights-reload').disabled = true
+  $('project-insights-technical').disabled = true
+  $('project-insights-domains').disabled = true
+  $('project-probe-output').textContent = 'Pronto para testar.'
   $('project-insights-grid').replaceChildren()
   $('project-insights-sites').replaceChildren()
-  const route = `project/${name}/insights`
+  $('project-insights-details').replaceChildren()
   try {
     const info = await getProjectOverview(name, { force })
-    if (currentAppRoute !== route) return
-    const sizeNote = info.storage?.incomplete ? 'Leitura parcial; há limites de varredura ou itens indisponíveis' : 'Arquivos acessíveis contabilizados, sem ler conteúdo'
+    if (!active()) return
+    const size = projectReadableSize(info.storage?.bytes)
+    const nginx = projectNginx((info.sites || []).map(site => ({ enabled: site.nginxEnabled })), info.nginx?.enabled)
+    const storage = projectInfoField('Espaço observado', size)
+    if (info.storage?.incomplete) storage.append(node('span','Leitura parcial','pill insight-partial'))
+    $('project-insights-grid').replaceChildren(
+      projectInfoField('Versão', info.version || 'Não identificada'),
+      projectInfoField('Tecnologia', projectTechnology(info.type)),
+      storage,
+      projectInfoField('Nginx', nginx)
+    )
+    const count = value => Number.isFinite(value) ? projectNumber.format(value) : 'Indisponível'
     const entries = [
-      ['Tecnologia', projectTechnology(info.type)],
-      ['Versão do projeto', info.version || 'Não identificada'],
-      ['Arquivos encontrados', info.storage?.files ?? 'Indisponível', sizeNote],
-      ['Tamanho observado', projectReadableSize(info.storage?.bytes), sizeNote],
-      ['Pasta(s) observadas', info.storage?.directories ?? 'Indisponível'],
-      ['Disco disponível na VPS', projectReadableSize(info.diskFreeBytes), 'Espaço do volume, não cota específica do site'],
-      ['PHP (CLI)', info.php?.version || (info.type === 'php' ? 'Indisponível' : 'Não se aplica'), info.php?.source || ''],
-      ['Composer', info.composer?.present ? `${info.composer.dependencies} dependência(s) declarada(s)` : 'Não identificado', info.composer?.note || 'Não se aplica'],
-      ['MariaDB (VPS)', info.database?.mariadbService || 'Não identificado', 'Estado do serviço global, sem vincular bancos ao projeto'],
-      ['Nginx', projectNginx((info.sites || []).map(site => ({ enabled: site.nginxEnabled })), info.nginx?.enabled)],
+      ['Arquivos observados', count(info.storage?.files)],
+      ['Pastas observadas', count(info.storage?.directories)],
+      ['Disco livre na VPS', projectReadableSize(info.diskFreeBytes)],
+      ['PHP CLI', info.php?.version || (info.type === 'php' ? 'Indisponível' : 'Não se aplica')],
+      ['Composer', info.composer?.present ? info.composer.dependencies + ' dependência(s)' : 'Não identificado'],
+      ['MariaDB na VPS', info.database?.mariadbService || 'Não identificado'],
     ]
-    const grid = $('project-insights-grid')
-    grid.replaceChildren(...entries.map(([label, value, note]) => projectInfoField(label, value, note)))
+    $('project-insights-details').replaceChildren(...entries.map(([label,value]) => insightRow(label,value)))
     const sites = $('project-insights-sites')
-    if (!info.sites?.length) sites.append(node('p', 'Nenhum domínio vinculado foi identificado no Nginx.', 'small muted'))
+    if (!info.sites?.length) sites.append(node('p','Nenhum domínio vinculado foi identificado no Nginx.','small muted'))
     for (const site of info.sites || []) {
-      const card = projectInfoField(site.name, site.httpsConfigured ? 'HTTPS configurado' : site.httpConfigured ? 'HTTP configurado' : 'Protocolo não identificado', site.nginxEnabled ? 'Arquivo Nginx habilitado' : 'Configuração desabilitada ou não confirmada')
-      sites.append(card)
+      const row = node('div','','insight-site-row')
+      const content = node('div')
+      content.append(node('strong',site.name), node('span',site.httpsConfigured ? 'HTTPS configurado' : site.httpConfigured ? 'HTTP configurado' : 'Protocolo não identificado','small muted'))
+      row.append(content, node('span',site.nginxEnabled ? 'Habilitado' : 'Não confirmado','pill'))
+      sites.append(row)
     }
-    $('project-insights-status').textContent = 'Consulta local de ' + new Date(info.checkedAt).toLocaleString('pt-BR') + '. Nenhuma configuração alterada.'
-    $('project-insights-footer').textContent = (info.httpsNote || '') + ' ' + (info.database?.note || '')
+    const date = new Date(info.checkedAt)
+    $('project-insights-status').textContent = Number.isFinite(date.getTime()) ? 'Consulta de ' + date.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : 'Consulta local'
+    $('project-insights-technical').disabled = false
+    $('project-insights-domains').disabled = false
   } catch (error) {
-    if (currentAppRoute === route) $('project-insights-status').textContent = 'Falha no diagnóstico: ' + error.message
-  }
+    if (active()) $('project-insights-status').textContent = 'Falha no diagnóstico: ' + error.message
+  } finally { if (active()) $('project-insights-reload').disabled = false }
 }
+$('project-insights-aws').addEventListener('click', () => void reloadExternalInspection())
 let projectActivityReport = ''
 async function loadProjectActivity(name) {
   $('project-activity-aws').hidden = name !== 'iguatamaonline'
@@ -616,37 +640,80 @@ let explorerEntries = []
 let explorerRequest = 0
 let explorerCurrentItem = null
 let explorerHasActiveGrant = false
+let explorerGrantKnown = false
+let explorerModeBusy = false
+let explorerModeSession = 0
 function explorerModeText(value) { return value.toString(8).padStart(3, '0') }
 function explorerNewMode() {
   return [...document.querySelectorAll('#explorer-mode-table input[data-bit]:checked')]
     .reduce((bits, check) => bits | Number(check.dataset.bit), 0)
 }
+function explorerModeReason(item) {
+  if (item.editable) {
+    if (generalBusy) return 'Uma operação de escrita temporária está em andamento.'
+    if (!explorerGrantKnown) return 'A escrita temporária do projeto ainda não foi confirmada. Atualize a pasta antes de alterar permissões.'
+    if (explorerHasActiveGrant) return 'Há escrita temporária ativa. Restaure-a em Informações → Escrita temporária antes de editar permissões individuais.'
+    return ''
+  }
+  const messages = {
+    protected: 'Este caminho é protegido pelo painel. Isso inclui arquivos ocultos, credenciais e algumas pastas do sistema.',
+    symbolic_link: 'Links simbólicos não podem ser alterados por aqui.',
+    special: 'Este tipo de item não aceita alteração de permissões pelo painel.',
+    owner: 'O proprietário não é o dono da pasta do projeto nem root, por isso a edição foi bloqueada.',
+    public_write: 'O item já permite escrita pública. Por segurança, o painel não altera esse tipo de item.',
+    hard_links: 'O arquivo tem outros nomes ligados ao mesmo conteúdo. A edição poderia afetar outros caminhos.',
+    special_mode: 'O item usa bits especiais de permissão. Esta tela só altera os modos comuns de leitura, escrita e execução.',
+  }
+  return messages[item.modeBlockedReason] || (item.protected ? messages.protected : item.kind === 'link' ? messages.symbolic_link : 'Este item é somente leitura na vistoria do servidor.')
+}
 function explorerUpdateModeControls() {
   const value = explorerNewMode()
-  $('explorer-mode-new').textContent = explorerModeText(value)
   const item = explorerCurrentItem
   const isDir = item?.kind === 'directory'
-  const valid = !Boolean(value & 0o002) && (!isDir || (!(value & 0o020) && (value & 0o500) === 0o500))
-  $('explorer-mode-save').disabled = !item?.editable || explorerHasActiveGrant || !valid || value === parseInt(item.mode, 8)
+  const blocked = !item?.editable || !explorerGrantKnown || explorerHasActiveGrant || generalBusy
+  $('explorer-mode-new').textContent = explorerModeText(value)
+  for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) {
+    const bit = Number(check.dataset.bit)
+    check.disabled = blocked || explorerModeBusy || bit === 2 || (isDir && ((bit === 16 && !check.checked) || ((bit === 256 || bit === 64) && check.checked)))
+  }
+  const valid = !(value & 0o002) && (!isDir || (!(value & 0o020) && (value & 0o500) === 0o500))
+  $('explorer-mode-save').disabled = blocked || explorerModeBusy || !valid || value === parseInt(item?.mode, 8)
+  if (item) {
+    const details = [explorerModeReason(item)]
+    if (!blocked) {
+      details.push('Escrita para outros não é permitida.')
+      if (isDir) details.push('Em pastas, o dono precisa manter leitura e entrada, e o grupo não pode ter escrita.')
+    }
+    if (isDir && !item.enterable && item.navigationBlockedReason === 'shared_write') details.push('Esta pasta não pode ser aberta enquanto permitir escrita para grupo ou outros.')
+    $('explorer-mode-warning').textContent = details.filter(Boolean).join(' ')
+  }
+}
+function explorerSetChecked(item) {
+  const mode = parseInt(item.mode, 8)
+  $('explorer-mode-current').textContent = item.mode
+  for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) {
+    check.checked = Boolean(mode & Number(check.dataset.bit))
+  }
+  explorerUpdateModeControls()
 }
 function explorerOpenMode(item) {
   explorerCurrentItem = item
+  explorerModeBusy = false
+  explorerModeSession++
   $('explorer-mode-title').textContent = item.name
   $('explorer-mode-meta').textContent = `${item.path} · ${item.owner}:${item.group} · ${item.kind === 'directory' ? 'pasta' : item.kind === 'file' ? 'arquivo' : 'link ou item especial'}`
-  $('explorer-mode-current').textContent = item.mode
-  for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) {
-    const bit = Number(check.dataset.bit)
-    check.checked = Boolean(parseInt(item.mode, 8) & bit)
-    check.disabled = !item.editable || explorerHasActiveGrant || bit === 2 || (item.kind === 'directory' && (bit === 16 || bit === 256 || bit === 64))
-  }
-  $('explorer-mode-warning').textContent = explorerHasActiveGrant
-    ? 'Há escrita temporária do PHP ativa. Restaure-a antes de alterar modos manualmente.'
-    : !item.editable ? 'Este item é protegido, simbólico ou não pode ser alterado com segurança.'
-      : item.kind === 'directory'
-        ? 'O dono deve manter leitura e entrada na pasta. Escrita de grupo ou pública não é permitida; o proprietário e o grupo não serão modificados.'
-        : 'Atenção: permissões incorretas podem interromper o site. Não há escrita pública nem troca de proprietário.'
-  explorerUpdateModeControls()
+  $('explorer-mode-inline').textContent = ''
+  explorerSetChecked(item)
   $('explorer-mode-dialog').showModal()
+  if (!explorerGrantKnown) void refreshGeneralPermissions(explorerProject)
+}
+function explorerModeFeedback(message, error = false) {
+  const inline = $('explorer-mode-inline')
+  inline.textContent = message
+  inline.className = error ? 'small bad' : 'small good'
+  $('explorer-mode-result-title').textContent = error ? 'Não foi possível aplicar' : 'Permissões atualizadas'
+  $('explorer-mode-result-message').textContent = message
+  $('explorer-mode-result-dialog').showModal()
 }
 function explorerRenderEntries() {
   const search = $('explorer-search').value.trim().toLocaleLowerCase('pt-BR')
@@ -656,7 +723,6 @@ function explorerRenderEntries() {
   if (!matching.length) container.append(node('p', search ? 'Nenhum item encontrado nesta pasta.' : 'Esta pasta está vazia.', 'explorer-empty small muted'))
   for (const item of matching) {
     const row = node('div', '', 'explorer-entry')
-    const eligible = item.kind === 'file' && generalCatalogPaths.has(item.path)
     const glyph = node('span', '', 'explorer-entry-glyph ' + (item.kind === 'directory' ? 'is-folder' : item.kind === 'link' ? 'is-link' : 'is-file'))
     glyph.append(iconGraphic(item.kind === 'directory' ? 'folder' : item.kind === 'file' ? 'file' : 'lock'))
     const main = node('button', '', 'explorer-entry-main')
@@ -672,24 +738,6 @@ function explorerRenderEntries() {
     action.append(iconGraphic(item.editable ? 'shield' : 'lock'), node('span', 'Propriedades'))
     action.addEventListener('click', () => explorerOpenMode(item))
     row.append(action)
-    if (eligible) {
-      const wrapper = node('label', '', 'explorer-file-select')
-      const check = node('input', '')
-      check.type = 'checkbox'
-      check.value = item.path
-      check.checked = generalSelectedPaths.has(item.path)
-      check.disabled = generalActive || (generalSelectedPaths.size >= 12 && !check.checked)
-      check.setAttribute('aria-label', `Selecionar ${item.path} para escrita temporária`)
-      check.addEventListener('change', () => {
-        if (generalActive) { check.checked = generalSelectedPaths.has(item.path); return }
-        if (check.checked && generalSelectedPaths.size >= 12) { check.checked = false; return }
-        if (check.checked) generalSelectedPaths.add(item.path)
-        else generalSelectedPaths.delete(item.path)
-        updatePermissionSelection()
-      })
-      wrapper.append(check)
-      row.append(wrapper)
-    }
     container.append(row)
   }
 }
@@ -724,6 +772,7 @@ async function explorerBrowse(directory = '', offset = 0) {
     explorerEntries = []
     $('explorer-search').value = ''
     $('explorer-items').replaceChildren(node('p', 'Abrindo pasta…', 'small muted explorer-empty'))
+    $('explorer-note').hidden = true
     explorerCrumbs()
   }
   $('explorer-more').disabled = true
@@ -733,8 +782,9 @@ async function explorerBrowse(directory = '', offset = 0) {
     explorerDir = directory
     explorerOffset = result.nextOffset
     explorerEntries = offset ? [...explorerEntries, ...(result.items || [])] : (result.items || [])
-    $('explorer-summary').textContent = `${result.total} item(ns) nesta pasta`
-    $('explorer-note').textContent = result.limited ? 'Listagem limitada a 4.000 itens por pasta.' : 'Marque os arquivos elegíveis. Toque em uma pasta para abrir.'
+    $('explorer-summary').textContent = result.total === 1 ? '1 item' : result.total + ' itens'
+    $('explorer-note').textContent = result.limited ? 'Esta lista mostra até 4.000 itens.' : ''
+    $('explorer-note').hidden = !result.limited
     $('explorer-more').hidden = result.nextOffset == null
     $('explorer-more').disabled = false
     explorerCrumbs()
@@ -746,28 +796,50 @@ async function explorerBrowse(directory = '', offset = 0) {
     $('explorer-more').hidden = true
   }
 }
-$('explorer-refresh').addEventListener('click', () => void explorerBrowse(explorerDir))
+$('explorer-refresh').addEventListener('click', () => {
+  void explorerBrowse(explorerDir)
+  if (explorerProject) void refreshGeneralPermissions(explorerProject)
+})
 $('explorer-search').addEventListener('input', explorerRenderEntries)
 $('explorer-more').addEventListener('click', () => { if (explorerOffset != null) void explorerBrowse(explorerDir, explorerOffset) })
 for (const check of document.querySelectorAll('#explorer-mode-table input[data-bit]')) check.addEventListener('change', explorerUpdateModeControls)
+$('explorer-mode-dialog').addEventListener('close', () => {
+  if (!$('explorer-mode-dialog').open) explorerCurrentItem = null
+})
 $('explorer-mode-save').addEventListener('click', async () => {
-  const item = explorerCurrentItem
-  if (!item?.editable) return
+  const item = explorerCurrentItem, name = explorerProject, session = explorerModeSession
+  const dialog = $('explorer-mode-dialog')
+  const sameItem = () => dialog.open && session === explorerModeSession && explorerCurrentItem === item && currentAppRoute === 'project/' + name + '/permissions'
+  if (!item?.editable || !sameItem() || $('explorer-mode-save').disabled) return
   const newMode = explorerNewMode()
   const expectedMode = parseInt(item.mode, 8)
-  if (newMode === expectedMode) return
-  const label = `Alterar ${item.path} de ${item.mode} para ${explorerModeText(newMode)}? Isso pode mudar o funcionamento do site.`
-  $('explorer-mode-dialog').close()
-  if (!await confirmAction(label, 'Aplicar permissões')) return
+  const label = `Alterar ${item.path} de ${item.mode} para ${explorerModeText(newMode)}?`
+  if (!await confirmAction(label, 'Aplicar permissões') || !sameItem() || !explorerGrantKnown || explorerHasActiveGrant || generalBusy) return
+  explorerModeBusy = true
+  explorerUpdateModeControls()
   try {
-    await api(`/api/projects/${encodeURIComponent(explorerProject)}/files/mode`, 'POST', {
+    const result = await api('/api/projects/' + encodeURIComponent(name) + '/files/mode', 'POST', {
       path: item.path, inode: item.inode, newMode, expectedMode
     })
-    await explorerBrowse(explorerDir)
-    $('explorer-summary').textContent = `Permissões alteradas: ${item.path} (${explorerModeText(newMode)})`
-  } catch (error) { notice(error.message, true); await explorerBrowse(explorerDir) }
+    item.mode = typeof result.mode === 'string' && /^[0-7]{3}$/.test(result.mode) ? result.mode : explorerModeText(newMode)
+    if (item.kind === 'directory' && item.navigationBlockedReason === 'shared_write') {
+      item.enterable = true
+      item.navigationBlockedReason = null
+    }
+    if (name === explorerProject && currentAppRoute === 'project/' + name + '/permissions') explorerRenderEntries()
+    if (!sameItem()) return
+    explorerSetChecked(item)
+    explorerModeFeedback('Novo modo: ' + item.mode + '. Dono e grupo não foram alterados.')
+  } catch (error) { if (sameItem()) explorerModeFeedback(error.message, true) }
+  finally {
+    if (session === explorerModeSession) {
+      explorerModeBusy = false
+      explorerUpdateModeControls()
+    }
+  }
 })
-// 2.0.32: um único explorador para selecionar arquivos e liberar/restaurar escrita.
+
+// Escrita temporária no pop-up de ajuda. As operações do servidor permanecem as mesmas.
 let generalPermissionsName = ''
 let generalCatalogPaths = new Set()
 let generalSelectedPaths = new Set()
@@ -775,137 +847,155 @@ let generalSavedPaths = new Set()
 let generalSavedPhpUser = ''
 let generalActive = false
 let generalReady = false
+let generalCatalogReady = false
 let generalBusy = false
 let generalLoadId = 0
 function updatePermissionSelection() {
   const count = generalSelectedPaths.size
-  $('general-permissions-count').textContent = `${count} de 12 arquivos selecionados`
+  $('general-permissions-count').textContent = generalCatalogReady && !generalActive ? 'Selecionados: ' + count + '/12' : ''
   const phpUser = $('general-permissions-php').value
-  $('general-permissions-allow').disabled = generalBusy || !generalReady || generalActive || !phpUser || count < 1 || count > 12
+  const allEligible = [...generalSelectedPaths].every(path => generalCatalogPaths.has(path))
+  $('general-permissions-allow').disabled = generalBusy || !generalReady || !generalCatalogReady || generalActive || !phpUser || !allEligible || count < 1 || count > 12
   $('general-permissions-restore').disabled = generalBusy || !generalReady || !generalActive
-  $('general-permissions-php').disabled = !generalReady || generalBusy || generalActive
-  $('general-permissions-clear').hidden = !count || generalActive
-  $('general-permissions-clear').disabled = generalBusy
-  const chips = $('general-permissions-selected')
-  chips.replaceChildren()
-  for (const path of generalSelectedPaths) {
-    const chip = node('span', '', 'explorer-selected-chip')
-    chip.append(node('span', path))
-    if (!generalActive && !generalBusy) {
-      const remove = node('button', '×', 'explorer-selected-remove')
-      remove.type = 'button'
-      remove.title = `Remover ${path} da seleção`
-      remove.setAttribute('aria-label', `Remover ${path} da seleção`)
-      remove.addEventListener('click', () => { generalSelectedPaths.delete(path); updatePermissionSelection() })
-      chip.append(remove)
-    }
-    chips.append(chip)
-  }
-  for (const checkbox of document.querySelectorAll('.explorer-file-select input[type=checkbox]')) {
+  $('general-permissions-php').disabled = !generalCatalogReady || !generalReady || generalBusy || generalActive
+  for (const checkbox of document.querySelectorAll('#general-permissions-selected input[type=checkbox]')) {
     checkbox.checked = generalSelectedPaths.has(checkbox.value)
-    checkbox.disabled = generalActive || generalBusy || !generalReady || (count >= 12 && !checkbox.checked)
+    checkbox.disabled = generalActive || generalBusy || !generalReady || !generalCatalogReady || (count >= 12 && !checkbox.checked) || (!generalCatalogPaths.has(checkbox.value) && !checkbox.checked)
   }
 }
-function renderPermissionCatalog(catalog, config) {
-  generalCatalogPaths = new Set((catalog.files || []).map(file => file.path))
-  generalSavedPaths = new Set((config.files || []).map(file => file.path))
-  generalSelectedPaths = new Set(generalSavedPaths)
-  generalSavedPhpUser = config.phpUser || ''
-  generalActive = !!config.active
-  explorerHasActiveGrant = generalActive
-  generalReady = true
-  const select = $('general-permissions-php')
-  select.replaceChildren(new Option('Escolha o usuário PHP', ''))
-  for (const user of catalog.phpUsers || []) select.append(new Option(user, user))
-  if (generalSavedPhpUser && !(catalog.phpUsers || []).includes(generalSavedPhpUser)) {
-    select.add(new Option(`${generalSavedPhpUser} (não disponível)`, generalSavedPhpUser))
+function renderWritableChoices() {
+  const target = $('general-permissions-selected')
+  target.replaceChildren()
+  const query = $('general-permissions-match').value.trim().toLocaleLowerCase('pt-BR')
+  const paths = new Set([...generalSavedPaths, ...generalCatalogPaths])
+  if (!generalCatalogReady && !generalReady) return
+  for (const path of paths) {
+    if (query && !path.toLocaleLowerCase('pt-BR').includes(query)) continue
+    const row = node('label', '', 'grant-file-option')
+    const input = node('input')
+    input.type = 'checkbox'
+    input.value = path
+    input.setAttribute('aria-label', 'Selecionar ' + path)
+    input.addEventListener('change', () => {
+      if (input.checked) generalSelectedPaths.add(path)
+      else generalSelectedPaths.delete(path)
+      updatePermissionSelection()
+    })
+    const copy = node('span', path + (!generalCatalogPaths.has(path) && !generalActive ? ' (fora da lista atual)' : ''))
+    row.append(input, copy)
+    target.append(row)
   }
-  select.value = generalSavedPhpUser
-  const label = generalActive ? `Escrita liberada temporariamente em ${generalSavedPaths.size} arquivo(s). Restaure ao terminar.`
-    : config.configured ? 'Sem escrita temporária ativa. Selecione os arquivos para liberar.'
-      : 'Sem escrita temporária ativa.'
-  $('general-permissions-status').textContent = label
-  $('general-permissions-status').classList.toggle('active', generalActive)
-  explorerRenderEntries()
-  updatePermissionSelection()
+  if (!target.childElementCount && generalCatalogReady) target.append(node('p', query ? 'Nenhum resultado.' : 'Nenhum arquivo elegível disponível.', 'small muted'))
 }
-async function loadGeneralPermissions(name, {keepDirectory = false} = {}) {
+async function refreshGeneralPermissions(name, { catalog = false } = {}) {
   const loadId = ++generalLoadId
+  const active = () => loadId === generalLoadId && generalPermissionsName === name && currentAppRoute === 'project/' + name + '/permissions'
+  generalReady = false
+  generalCatalogReady = false
+  explorerGrantKnown = false
+  if (catalog) $('general-permissions-status').textContent = 'Consultando permissões…'
+  updatePermissionSelection()
+  if ($('explorer-mode-dialog').open) explorerUpdateModeControls()
+  try {
+    const [data, listing] = await Promise.all([
+      api('/api/projects/' + encodeURIComponent(name) + '/permissions'),
+      catalog ? api('/api/projects/' + encodeURIComponent(name) + '/permissions/catalog').catch(error => ({error})) : null
+    ])
+    if (!active()) return
+    generalCatalogReady = !!listing && !listing.error
+    generalCatalogPaths = new Set((listing?.files || []).map(file => file.path))
+    generalSavedPaths = new Set((data.files || []).map(file => file.path))
+    generalSelectedPaths = new Set(generalSavedPaths)
+    generalSavedPhpUser = data.phpUser || ''
+    generalActive = !!data.active
+    explorerHasActiveGrant = generalActive
+    explorerGrantKnown = true
+    generalReady = true
+    const select = $('general-permissions-php')
+    select.replaceChildren(new Option('Escolha o usuário PHP', ''))
+    for (const user of listing?.phpUsers || []) select.append(new Option(user, user))
+    if (generalSavedPhpUser && ![...select.options].some(opt => opt.value === generalSavedPhpUser)) {
+      const previous = new Option(generalSavedPhpUser, generalSavedPhpUser)
+      previous.disabled = !generalActive
+      select.append(previous)
+    }
+    select.value = generalSavedPhpUser
+    if (catalog) {
+      $('general-permissions-status').textContent = listing.error
+        ? generalActive ? 'A lista está indisponível, mas você pode restaurar a escrita agora.' : 'Lista de arquivos indisponível: ' + listing.error.message
+        : generalActive ? 'Escrita ativa. Restaure as permissões ao terminar.' : listing.limited ? 'Parte dos arquivos foi listada pelo servidor.' : 'Escolha somente os arquivos que precisam da liberação.'
+      renderWritableChoices()
+    }
+  } catch (error) {
+    if (active()) $('general-permissions-status').textContent = 'Não foi possível consultar as permissões: ' + error.message
+  } finally {
+    if (active()) {
+      updatePermissionSelection()
+      if ($('explorer-mode-dialog').open) explorerUpdateModeControls()
+    }
+  }
+}
+function loadGeneralPermissions(name) {
   generalPermissionsName = name
   explorerProject = name
-  generalReady = false
   generalBusy = false
-  explorerHasActiveGrant = true // Bloqueia chmod enquanto consultamos se há liberação temporária.
   $('general-project-permissions-title').textContent = 'Arquivos · ' + name
   $('general-permissions-back').textContent = '‹ ' + (history.state?.fromRoute === 'project/iguatamaonline/aws' ? 'Manutenção AWS' : name)
   $('general-permissions-result').textContent = ''
-  $('general-permissions-result').classList.remove('error')
-  $('general-permissions-status').textContent = 'Consultando permissões…'
-  $('general-permissions-php').disabled = true
-  $('general-permissions-php').replaceChildren(new Option('Carregando usuários…', ''))
-  $('general-permissions-allow').disabled = true
-  $('general-permissions-restore').disabled = true
-  generalSelectedPaths = new Set()
-  generalCatalogPaths = new Set()
-  explorerEntries = []
-  void explorerBrowse(keepDirectory ? explorerDir : '')
-  try {
-    const [data, catalogResult] = await Promise.all([
-      api(`/api/projects/${encodeURIComponent(name)}/permissions`),
-      api(`/api/projects/${encodeURIComponent(name)}/permissions/catalog`).then(catalog => ({catalog}), error => ({error}))
-    ])
-    if (loadId !== generalLoadId || generalPermissionsName !== name || currentAppRoute !== `project/${name}/permissions`) return
-    if (catalogResult.error) {
-      // Mesmo sem o catálogo, uma liberação já ativa precisa continuar restaurável.
-      if (!data.active) throw catalogResult.error
-      renderPermissionCatalog({ files: [], phpUsers: [] }, data)
-      $('general-permissions-status').textContent += ' Lista de arquivos indisponível: restaure a escrita antes de tentar novamente.'
-      $('general-permissions-allow').disabled = true
-    } else renderPermissionCatalog(catalogResult.catalog, data)
-  } catch (error) {
-    if (loadId !== generalLoadId) return
-    generalReady = false
-    $('general-permissions-status').textContent = 'Não foi possível carregar: ' + error.message
-    $('general-permissions-allow').disabled = true
-    $('general-permissions-restore').disabled = true
-  }
+  $('general-permissions-selected').replaceChildren()
+  void explorerBrowse('')
+  void refreshGeneralPermissions(name)
 }
 async function changeGeneralPermissions(mode) {
   const name = generalPermissionsName
-  if (!name || currentAppRoute !== `project/${name}/permissions` || generalBusy || !generalReady) return
+  if (!name || currentAppRoute !== 'project/' + name + '/permissions' || generalBusy || !generalReady) return
   const files = [...generalSelectedPaths].sort()
   const phpUser = $('general-permissions-php').value
-  if (mode === 'allow' && (generalActive || !phpUser || !files.length || files.length > 12)) return
+  if (mode === 'allow' && $('general-permissions-allow').disabled) return
   if (mode === 'restore' && !generalActive) return
   const detail = mode === 'allow'
-    ? `Liberar escrita temporária em ${files.length} arquivo(s) para ${phpUser} no projeto ${name}? A seleção será salva automaticamente. Restaure ao terminar, pois um PHP comprometido poderá alterar esses arquivos enquanto a escrita estiver ativa.`
-    : `Restaurar os modos e grupos anteriores dos ${generalSavedPaths.size} arquivo(s) do projeto ${name}?`
+    ? `Liberar escrita temporária em ${files.length} arquivo(s) para ${phpUser}? Restaure depois da manutenção.`
+    : 'Restaurar os grupos e modos anteriores dos arquivos selecionados?'
   if (!await confirmAction(detail, mode === 'allow' ? 'Liberar escrita' : 'Restaurar escrita')) return
-  if (name !== generalPermissionsName || currentAppRoute !== `project/${name}/permissions`) return
+  if (name !== generalPermissionsName || currentAppRoute !== 'project/' + name + '/permissions' || !$('general-permissions-write-dialog').open) return
   generalBusy = true
   updatePermissionSelection()
-  $('general-permissions-result').classList.remove('error')
-  $('general-permissions-result').textContent = 'Executando…'
+  const resultView = $('general-permissions-result')
+  resultView.classList.remove('bad')
+  resultView.textContent = 'Executando…'
+  const endpoint = '/api/projects/' + encodeURIComponent(name) + '/permissions'
   try {
     if (mode === 'allow') {
       const isSameProfile = generalSavedPhpUser === phpUser && files.length === generalSavedPaths.size && files.every(file => generalSavedPaths.has(file))
-      if (!isSameProfile) await api(`/api/projects/${encodeURIComponent(name)}/permissions/profile`, 'POST', { files, phpUser })
+      if (!isSameProfile) await api(endpoint + '/profile', 'POST', { files, phpUser })
     }
-    const result = await api(`/api/projects/${encodeURIComponent(name)}/permissions`, 'POST', { mode })
-    await loadGeneralPermissions(name, {keepDirectory: true})
-    $('general-permissions-result').textContent = result.warning || (mode === 'allow' ? 'Escrita liberada temporariamente.' : 'Permissões anteriores restauradas.')
+    await api(endpoint, 'POST', { mode })
+    if (name === generalPermissionsName && currentAppRoute === 'project/' + name + '/permissions') {
+      await refreshGeneralPermissions(name, { catalog:true })
+      if (name === generalPermissionsName && currentAppRoute === 'project/' + name + '/permissions') {
+        if ($('general-permissions-write-dialog').open) resultView.textContent = mode === 'allow' ? 'Escrita liberada.' : 'Permissões anteriores restauradas.'
+        void explorerBrowse(explorerDir)
+      }
+    }
   } catch (error) {
-    // Mantém a seleção no navegador para que o usuário possa tentar novamente após investigar a falha.
-    $('general-permissions-result').textContent = error.message
-    $('general-permissions-result').classList.add('error')
+    if (name === generalPermissionsName && currentAppRoute === 'project/' + name + '/permissions') {
+      resultView.textContent = error.message
+      resultView.classList.add('bad')
+    }
   } finally {
-    generalBusy = false
-    updatePermissionSelection()
+    if (name === generalPermissionsName) { generalBusy = false; updatePermissionSelection() }
   }
 }
-$('general-permissions-back').addEventListener('click', () => projectBack(`project/${generalPermissionsName}`, generalPermissionsName === 'iguatamaonline' ? ['project/iguatamaonline', 'project/iguatamaonline/aws', 'project/iguatamaonline/aws/permissions'] : [`project/${generalPermissionsName}`]))
+$('general-permissions-back').addEventListener('click', () => projectBack('project/' + generalPermissionsName, generalPermissionsName === 'iguatamaonline' ? ['project/iguatamaonline', 'project/iguatamaonline/aws', 'project/iguatamaonline/aws/permissions'] : ['project/' + generalPermissionsName]))
+$('general-permissions-write-open').addEventListener('click', () => {
+  if ($('general-permissions-info-dialog').open) $('general-permissions-info-dialog').close()
+  $('general-permissions-match').value = ''
+  $('general-permissions-result').textContent = ''
+  $('general-permissions-selected').replaceChildren()
+  void refreshGeneralPermissions(generalPermissionsName, { catalog:true })
+})
+$('general-permissions-match').addEventListener('input', () => { renderWritableChoices(); updatePermissionSelection() })
 $('general-permissions-php').addEventListener('change', updatePermissionSelection)
-$('general-permissions-clear').addEventListener('click', () => { if (!generalActive && !generalBusy) { generalSelectedPaths.clear(); updatePermissionSelection() } })
 $('general-permissions-allow').addEventListener('click', () => changeGeneralPermissions('allow'))
 $('general-permissions-restore').addEventListener('click', () => changeGeneralPermissions('restore'))
 let externalPoll = null
@@ -923,60 +1013,63 @@ function diagnosticCard(icon, title, description, tone = '') {
   const card = node('div', '', 'diagnostic-card ' + tone)
   const glyph = node('span', '', 'diagnostic-card-icon'); glyph.append(iconGraphic(icon))
   const text = node('div', '', 'diagnostic-card-body')
-  text.append(node('strong', title), node('span', description, 'small muted'))
+  text.append(node('strong', title))
+  if (description) text.append(node('span', description, 'small muted'))
   card.append(glyph, text)
   return card
 }
+let externalInspectionRequest = 0
 async function reloadExternalInspection() {
-  const area = $('external-diagnosis')
-  area.replaceChildren(node('p', 'Analisando arquivos…', 'small muted'))
+  const request = ++externalInspectionRequest
+  const targets = [$('external-diagnosis'), $('project-insights-aws-content')]
+  const detailButtons = [$('external-diagnostic-files-open'), $('insights-aws-files-open')]
+  for (const area of targets) area.replaceChildren(node('p','Analisando arquivos…','small muted'))
+  for (const button of detailButtons) button.disabled = true
   try {
     const data = await api(externalRoot + '/maintenance')
-    area.replaceChildren()
+    if (request !== externalInspectionRequest) return
     $('external-current-version').textContent = data.version || 'Não identificada'
-    const files = data.files || []
-    const valid = files.filter(f => f.safePath).length
+    const files = Array.isArray(data.files) ? data.files : []
+    const checked = files.filter(file => file.safePath).length
     const danger = data.permissionsGrantActive
     const blocked = data.mutationAllowed === false && !data.panelPermissionsAvailable
-    area.append(diagnosticCard(danger ? 'alert' : blocked ? 'lock' : 'success',
-      danger ? 'Escrita temporária ativa' : blocked ? 'Alterações bloqueadas' : 'Verificação concluída',
-      danger ? 'Restaure as permissões assim que terminar.' : blocked ? 'A propriedade do projeto precisa ser revisada antes de liberar escrita.' : 'O painel conseguiu inspecionar o projeto.',
-      danger || blocked ? 'diagnostic-warning' : 'diagnostic-good'))
-    if (data.panelPermissionsAvailable) area.append(diagnosticCard('file', 'Permissões pelo painel',
-      `Proprietário: ${data.rootOwner || 'não identificado'}. Use Manutenção na AWS → Permissões para escolher arquivos e liberar escrita.`, 'diagnostic-good'))
-    const counters = node('div', '', 'diagnostic-overview')
-    const ver = node('div'); ver.append(node('span', 'Versão', 'small muted'), node('strong', data.version || 'Desconhecida'))
-    const found = node('div'); found.append(node('span', 'Arquivos verificados', 'small muted'), node('strong', `${valid} de ${files.length}`))
-    counters.append(ver, found); area.append(counters)
-    if (blocked) {
-      const caution = node('div', '', 'diagnostic-alert')
-      caution.append(iconGraphic('alert'))
-      const text = node('div'); text.append(node('strong', 'Por que está bloqueado?'))
-      text.append(node('span', `Proprietário da pasta: ${data.rootOwner || 'desconhecido'}. A política de segurança atual não autoriza esse proprietário.`, 'small muted'))
-      caution.append(text); area.append(caution)
+    const state = danger ? 'Escrita temporária ativa' : blocked ? 'Alterações bloqueadas' : 'Vistoria concluída'
+    const description = danger ? 'Restaure as permissões em Arquivos quando terminar.' : blocked
+      ? 'A política de propriedade bloqueou alterações nesta pasta.' : ''
+    for (const area of targets) {
+      const counters = node('div', '', 'diagnostic-overview')
+      counters.append(projectInfoField('Versão',data.version || 'Não identificada'), projectInfoField('Arquivos verificados',checked + ' de ' + files.length))
+      const status = diagnosticCard(danger ? 'alert' : blocked ? 'lock' : 'success', state, description, danger || blocked ? 'diagnostic-warning' : 'diagnostic-good')
+      area.replaceChildren(status,counters)
     }
-    area.append(node('h3', 'Arquivos protegidos', 'diagnostic-subtitle'))
+    const list = $('external-diagnostics-files')
+    list.replaceChildren()
+    if (blocked) list.append(node('p','Proprietário da pasta: ' + (data.rootOwner || 'não identificado') + '.','small muted'))
+    if (!files.length) list.append(node('p','Nenhum arquivo retornado.','small muted'))
     for (const item of files) {
-      const canWrite = item.phpWritableEstimate
-      const main = diagnosticCard(item.safePath ? 'file' : 'alert', item.path,
-        !item.safePath ? 'Não foi possível validar este arquivo.' :
-          canWrite === true ? 'O PHP provavelmente pode escrever.' :
-          canWrite === false ? 'Sem escrita pelo PHP (estimativa).' : 'Permissão de escrita desconhecida.',
-        !item.safePath ? 'diagnostic-warning' : '')
-      const footer = node('span', '', 'diagnostic-file-state ' + (item.safePath ? 'diagnostic-file-ok' : 'diagnostic-file-error'))
-      footer.textContent = item.safePath ? '✓ Arquivo encontrado' : '⚠ Verificação incompleta'
-      main.append(footer)
-      area.append(main)
+      const row = node('div','','insight-site-row')
+      const body = node('div')
+      body.append(node('strong',item.path),node('span',
+        !item.safePath ? 'Não foi possível validar o arquivo.' :
+          item.phpWritableEstimate === true ? 'Escrita PHP provável' :
+          item.phpWritableEstimate === false ? 'Sem escrita PHP na estimativa' : 'Escrita PHP não identificada',
+        'small muted'))
+      row.append(body)
+      list.append(row)
     }
-    if (files.length === 0) area.append(node('p', 'Nenhum arquivo retornado pelo diagnóstico.', 'muted'))
+    for (const button of detailButtons) button.disabled = false
     const select = $('external-backups')
     const previousBackup = select.value
     select.replaceChildren(new Option('Escolha um backup', ''))
     for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}`, item.id))
     if ([...select.options].some(item => item.value === previousBackup)) select.value = previousBackup
     $('external-restore-code').disabled = !select.value
-  } catch (error) { area.replaceChildren(diagnosticCard('alert', 'Não foi possível verificar', error.message, 'diagnostic-warning')) }
+  } catch (error) {
+    if (request !== externalInspectionRequest) return
+    for (const area of targets) area.replaceChildren(diagnosticCard('alert','Não foi possível verificar',error.message,'diagnostic-warning'))
+  }
 }
+
 function stopExternalPolling() {
   if (externalPoll) clearInterval(externalPoll)
   externalPoll = null
@@ -1403,6 +1496,15 @@ $('theme-open').addEventListener('click', () => $('theme-dialog').showModal())
 for (const button of document.querySelectorAll('[data-theme-choice]')) {
   button.addEventListener('click', () => { changeTheme(button.dataset.themeChoice); $('theme-dialog').close() })
 }
+function closePanelPopups() {
+  for (const dialog of [...document.querySelectorAll('dialog[data-panel-popup][open]')].reverse()) dialog.close()
+}
+for (const button of document.querySelectorAll('[data-open-panel]')) {
+  button.addEventListener('click', () => {
+    const dialog = $(button.dataset.openPanel)
+    if (!button.disabled && !dialog.open) dialog.showModal()
+  })
+}
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close())
 }
@@ -1458,8 +1560,6 @@ $('project-tech-diagnostics').addEventListener('click', () => {
   }
 })
 $('project-directory-open').addEventListener('click', () => $('project-directory-dialog').showModal())
-$('project-diagnostics-info-open').addEventListener('click', () => $('project-diagnostics-info-dialog').showModal())
-$('general-permissions-info-open').addEventListener('click', () => $('general-permissions-info-dialog').showModal())
 $('project-directory-copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('project-directory-path').textContent); notice('Caminho copiado.') }
   catch { notice('Copie o caminho exibido na janela.', true) }
@@ -1526,6 +1626,7 @@ $('logout').addEventListener('click', async () => {
     await api('/api/logout', 'POST')
     csrf = ''
     projectCatalogSession++
+    closePanelPopups()
     resetDomainsPage()
     projectCatalogRequest = null
     projectCatalogLoaded = false

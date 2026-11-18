@@ -75,6 +75,23 @@ class Explorer(unittest.TestCase):
         with self.assertRaises(exp.ProfileError):
             exp.update_mode('site-a','public/index.php',0o600,'999',0o644,root_base=self.base,backup_base=self.saved,require_root=False)
         with self.assertRaises(exp.ProfileError):self.list('iguatama-teste')
+    def test_reason_codes_explain_read_only_and_navigation(self):
+        (self.dir/'.env').touch()
+        (self.dir/'shortcut').symlink_to('index.php')
+        (self.dir/'shared').mkdir()
+        (self.dir/'shared').chmod(0o775)
+        (self.dir/'special-mode.txt').touch()
+        (self.dir/'special-mode.txt').chmod(0o4644)
+        (self.dir/'world.txt').touch()
+        (self.dir/'world.txt').chmod(0o666)
+        by_name={item['name']:item for item in self.list('public')['items']}
+        for path,reason in [('.env','protected'),('shortcut','symbolic_link'),('special-mode.txt','special_mode'),('world.txt','public_write')]:
+            with self.subTest(path=path):
+                self.assertFalse(by_name[path]['editable'])
+                self.assertEqual(by_name[path]['modeBlockedReason'],reason)
+        self.assertFalse(by_name['shared']['enterable'])
+        self.assertTrue(by_name['shared']['editable'])
+        self.assertEqual(by_name['shared']['navigationBlockedReason'],'shared_write')
     def test_paginated_and_no_outside(self):
         for i in range(130): (self.dir/f'file-{i:03}.php').write_text('ok')
         first=self.list('public');self.assertEqual(len(first['items']),120)

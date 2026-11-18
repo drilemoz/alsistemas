@@ -18,7 +18,7 @@ import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } fro
 
 import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePointer, domainHost, redirectSource, redirectDiagnostics } from './domains.js'
 
-const VERSION = '2.0.38'
+const VERSION = '2.0.39'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -172,7 +172,7 @@ function runTask(task) {
     let output = ''; let error = ''
     const deadline = task.action.endsWith('_domain_redirect') ? 60000 : task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
     const timer = setTimeout(() => { killSubprocessGroup(); reject(new Error('Tarefa excedeu limite de execução')) }, deadline)
-    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
+    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'project_file_explorer' ? 262144 : task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
     proc.stderr.on('data', c => { error += c; if (error.length > 8192) killSubprocessGroup() })
     proc.on('error', err => { clearTimeout(timer); reject(err) })
     proc.on('close', code => {
