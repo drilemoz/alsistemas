@@ -1,9 +1,9 @@
 d694a4e4b4fa489d610ffafb520470621cfa53ec5888fbb330cbad7c9c6fc530  ./.github/workflows/vps-signed-release.yml
 79110675a9640f5e22638842adde07a153b64e4f6842209cb658d84f0b9832fd  ./.github/workflows/vps-tests.yml
-f3508862f757ebc3b02bcfccce8936270b24a18ef9e8db9edbe9663bb9316a96  ./CHANGELOG.md
-e04bec17b3bfc743a8585487936f45934cf75830ef846929206cd4ecf51ef2ee  ./DEPLOY.md
-3b0c199258abd17f199b0a8ae6ac8d5ffca833efe685795190b9a720d8561ddb  ./README.md
-4144cd8733ad994c616b5c08f1d873861fc5fb3318593fea2eb63db499d73b91  ./VERSION
+f58d5f670915c2eeb299e7324a739c13062f919fddbd345f0196131014a52980  ./CHANGELOG.md
+ebce95b9235c117c40b888c00ef58cef77982c0911ca56fa6078df3ceefa10fb  ./DEPLOY.md
+394eb621cf77d42471abaa3538b2d22342dd26d6db23b9d99f820c73052b21bc  ./README.md
+d7ca31e52ee440ff6f1c4e82af7cbce9d41a8a3643685d8c4dddee94f96034dd  ./VERSION
 d9c36069a332840fdffe65f88ae5c6c2581c54c9728945eafa933472717448d3  ./alsistemas/.env.example
 6cc613ea214c2381ec172e0712d1dccb696c0b75f17e9a18204d7214bd14b5cf  ./alsistemas/.gitignore
 23d2a4b0c32f3dd46080e12248264484c3b962afd46213a11f5267e6cd9df3eb  ./alsistemas/.npmrc
@@ -20,8 +20,8 @@ ed03ce64012171c2bb4fe9cc31264b52bfb09670e08826b0fa305e4627b5d04b  ./alsistemas/b
 c4ae9798c9eb71e8e0ecf5272f8d46b9202cdc72a85834f13ce8cad6e671a33c  ./alsistemas/capacitor.config.ts
 db9dc681a2e31d4b320efd411e701c6276988ffa3c190bdc2e0f86e529c2c4c9  ./alsistemas/eslint.config.js
 3929cb168ab160a3dd83a310bcf1c2324fc8f8ea1878be5529ffd4c039f7b927  ./alsistemas/index.html
-768950f4f805aaeb1f05a04e2fbf2b009db6770a34588043f567316e38db2b17  ./alsistemas/package-lock.json
-359668906b3ff09bb889bf5c067994527f8414903b62eb4262674defd8491e8b  ./alsistemas/package.json
+444ce632f8c1b8b5d8e4d8724342f48128ffdfe1d27c3cd9f8da9fad35ccadb8  ./alsistemas/package-lock.json
+b12ed1efc6ce031f894a6bd77542e57350b9c96fbbb623564f1eabc59f150de9  ./alsistemas/package.json
 f291af35aed970d241227c61b79861d3ff8f08705babd56649fd8fe8776c360b  ./alsistemas/postcss.config.js
 9365eb30fe434ae40dc388b7a9213563904680496b8a93b96823166200b137bf  ./alsistemas/public/favicon.svg
 e67f6f34293a865d420f17c6f216c026be6e4ca7a908c1c4d1c89d3bc50f84a9  ./alsistemas/public/icons/icon-192.png
@@ -162,7 +162,7 @@ ed7a9bb1f14a20049d77a71123f6b24904043137118e4c44617b1ca23016c780  ./alsistemas/s
 38e1cc1749ac25233d2423347c2beee3ff144859cd38fe5eaaafcf3dbae96d8b  ./alsistemas/tailwind.config.js
 ff86dd9cf027cf2131104d46806ab076e06585793cb8bcdc0856435c0aece254  ./alsistemas/vercel.json
 41ef095c45e006678023e2b2457a26fcf75d7fb73231fb046c5eb2548ab7f9d6  ./alsistemas/vite.config.js
-d49aa46cd8806719965b74751a176d161741cc36f1562ebd3ba7b3c8057d21b8  ./app_identity.json
+6b6baefcfc194bf30717b4b20e78ee6c5793306fa8b74d88f930a4c7ac16ac42  ./app_identity.json
 b3efc94a53573f8ed1cf57059dd158ec797ab91179b9c8d8a33f02e30654892c  ./atualizar-vps.sh
 550cd48fd583baf130bc21c6d9a0608ede2bfa276c55bc94e6e896da136fd617  ./backend/.env.example
 4ad2dd72b5b8511335b75e7b4dac1a8c92c576a7735f1e275b58c26ef1a1bef2  ./backend/.gitignore
@@ -176,8 +176,8 @@ e064e86d211064cc958ce01b0ea88d39ae909895811edcc1f059fa39ac38baac  ./backend/jest
 5b459ce3bd37a7ed612a519750369a027935abf7c66fb07ac473fca03bffdc55  ./backend/migrate-mongo-config.cjs
 2130c7dc18a6e8dc5e6cef6a41fe715ae0d767fa15a250648a628d7039415281  ./backend/migrations/20240101000000-indices-compostos.cjs
 5a2a5a42d9bfa9edcde03a75fa371b00351f5ff6e59a6ba9aca66977f26f90b6  ./backend/migrations/20240101000001-noticia-views-galeria.cjs
-40da68859cdfa1ec155d0e7902d55bc625d3cd234ed67e75ee9ee024b9248f5a  ./backend/package-lock.json
-108dd8e8e1cb0543942a2600fd88548b1864f2aa62583d9a0c370b1a50c23316  ./backend/package.json
+91ee487bb1d8205e85c3bb7895c621a295cfcc3c6a091e3a88765ca740c58363  ./backend/package-lock.json
+702a4a9bda0702659dccbd43da7b7f29048de164b5565acae832414621e3e57d  ./backend/package.json
 ce1985371e176ba63c3f38ef65bd1e8a251e5c1d5d4955bc3f9b84655d1bed87  ./backend/seed.js
 16f980a5cb9a4bfc7abeab7ba4b43768e8a0fe769f3ccabcb8a30ad56e004b99  ./backend/src/__tests__/auditLog.test.js
 f272d43322ffaad541f774a58719131be9a96652cf5c0070a41efba4a5565256  ./backend/src/__tests__/auth.test.js
@@ -252,9 +252,9 @@ a4926641ad3ca6e688ac1a398385476284ec938794e9655f9bea413347df4629  ./backend/src/
 7ff9e5b4ca20aeef511e6b060bdd3d922446654f9ff90d58fb2debec41334e44  ./bootstrap-vps.sh
 791e10eb55f4ce74a7ba9cf0eace5f884dbc7666d7c3e132bef01cddca562d5a  ./dashboard-mobile-preview.png
 d9ba6f23832ec674a358722e36608b2b1002f5ca8902a4b4a1db06340fb5e7c8  ./dependencies-mobile-preview.png
-d49aa46cd8806719965b74751a176d161741cc36f1562ebd3ba7b3c8057d21b8  ./github-manager.json
+6b6baefcfc194bf30717b4b20e78ee6c5793306fa8b74d88f930a4c7ac16ac42  ./github-manager.json
 a43bf9ee601d9a6ad6d470aefe4c14ea39e34a5b626e04aa3ce477fd70b7ad7f  ./inicio-termux.sh
-648148bb21121644e64c26c179649c9d189b0ea856132f5c5195636206f59c05  ./instalar.sh
+9783b7c72638ddddf590a0ad720ef9ddea863dcf8cb772c02ad3be1265f46733  ./instalar.sh
 a2f3845ba586c395c47e9316e855693e07c194ac6c65cd00a11686dc735dad62  ./login-mobile-preview.png
 0508f4bc32407ef14d7f85797730321674316cbb87e46901fe8402e00468fc04  ./railway.toml
 8443013335ea9fe9abb4c296aeb17fd877f55708246a6905d1dfe90cd9765d32  ./tutorial-instalacao.html
@@ -307,6 +307,7 @@ aecf1a55e5558d0a906bcc75f7353469014bca34d55b65b395895a2bae199f6f  ./vps/docs/ATU
 2416ef0852ce1e55acd4da6b9729dd37b93066121596ee02eb2f9944c4787f41  ./vps/docs/ATUALIZACAO-2.0.4.md
 6947f6fc270dcb70ae03ba0099e5a1e78fc40f2676ad083cdbf0eb6b337ba5f0  ./vps/docs/ATUALIZACAO-2.0.40.md
 5716c29e3831f176a24bb110e5343a10243c28f66a166fb6c50dbdfc08d0ab8a  ./vps/docs/ATUALIZACAO-2.0.41.md
+958b0c4f521bc4fe78574f75ed1150d968377e4be555c7c82b827beddc3fba7a  ./vps/docs/ATUALIZACAO-2.0.42.md
 06724be02963b9c58061bf5b81d2397c0a11ef99f8369c34eb36992afdb219e2  ./vps/docs/ATUALIZACAO-2.0.5.md
 54156a18493044d806ffe15cbdc9582fe7497d516c6ec240c49ea3066c1722f4  ./vps/docs/ATUALIZACAO-2.0.6.md
 59303df22a7e4611d6d504fc93c564c38f3a89db3c9c977e6f25b38233c55066  ./vps/docs/ATUALIZACAO-2.0.7.md
@@ -324,13 +325,13 @@ e9c8d3b39c8f6eb31158ae03a495879ac37ed91703e611ff56009d66871693ce  ./vps/docs/VAL
 025e58d0dbe8473226352d77c87c69d3603ac4e4979dadefe48bc3179ed5e8c7  ./vps/docs/VALIDACAO-2.0.17.md
 141402a4730b97d3ccffc5952bb7e9bcccb012dd3f08afb190747f954aba179a  ./vps/docs/VALIDACAO.md
 0ca5487223bd842e3258ad4abca9d221632853e3e370e2fc7dbfeb0b46265773  ./vps/examples/README.md
-37ec1f0a9c3c08bba7455b9619e588cd5c7cc5bf84875bfdb1975e17e765e63f  ./vps/package.json
-0d0551b8d1dfde576776a92067eb7d9f7bef14008c07622cacc6cdecb8ac944e  ./vps/public/app.js
+6faddeff3462025ab22c4665a0130553f47b13296e4f275d49459febf0bb4e5d  ./vps/package.json
+038c5c6c66c366816c8164b2aeff590774fdd3156b9531b1e5ca9da7a6ad556c  ./vps/public/app.js
 27c5b23c168f4250eed8cded82930e5d6622695af952b827843cae9dd9d33c1f  ./vps/public/domains.js
-dce3d2f71f2aa225eaf8ff575baa3c6f68368568e4d1e7e1f4f4a97f286c5965  ./vps/public/hosting.js
-03d2c93d7168d447c03749be61e8e76e8355eb41d0d2fa5788a79f50abc4f865  ./vps/public/index.html
+779cfd19ea6a0ecacbe00326f84d88df9f476a33e44c3fb638b55a94511a699d  ./vps/public/hosting.js
+dbbc1969dbf95ca309da169c93532960fdf2b16d4dc7c7221194f1ea9d670510  ./vps/public/index.html
 d2a6dad2403312ef079473e5a69675b22f3627b6d1aed0b62eb5d857f74e4e53  ./vps/public/integrations.js
-95171e3f38f5917f94e29cb76c78cb5ec8b0ff04190787dbfa36d6ea32e694fa  ./vps/public/style.css
+a88ab66054be7b6f7af8919758f303b170f9e22ae2d67669ccf7a998186dafd1  ./vps/public/style.css
 8443013335ea9fe9abb4c296aeb17fd877f55708246a6905d1dfe90cd9765d32  ./vps/public/tutorial-instalacao.html
 5216d8f22d452d0146db35bf555d91ed5c5835dde68996ac4202c86250b6eba3  ./vps/src/dependencies.js
 5cba61ff27a73e4a64a4e0e7c58af77ecd6a3dfaa31d212359a68f05cd447b7d  ./vps/src/dns_diagnostics.js
@@ -343,7 +344,7 @@ c6852ac3a6adf7fb836457ced6e1a6028055ee68999158272bfb35cc74fc0b5b  ./vps/src/pack
 0b0e85d0ef3fe1f410c2fb73b7b1872376d257ff6b86e0f2b22f7e6f91783897  ./vps/src/project_logs.js
 e3a90cac7aa3dc0361fc2f32ff68c047a04a24c714ab235f2843c1360b496ed7  ./vps/src/project_overview.js
 2d8e8d051acc79bc6db4e81a5bfb2097d40f7abf1dcfd331d062228e2423d750  ./vps/src/security.js
-f873b305c544801cf4d1d43fc25ffdbc89924c35ecacb74529116b4decabe1e5  ./vps/src/server.js
+1eb58e7e9964194b4e57e6510808b302800554740315537b690e0f8ce13f00d1  ./vps/src/server.js
 545289caedcedfcdb0b10ee599f61966a54a867330d03aa787a5ea557157b78d  ./vps/src/store.js
 cc4a3c0fc25b326ed9a7dcaadb7df5cc54c14bf4e42607d04669b1833b39f191  ./vps/src/trusted.js
 15a6ac498c2382ba33f31c5f3b9ac53cee8602104437f8c1ccec86e78e519241  ./vps/src/updates.js
@@ -356,6 +357,7 @@ b026267687d17238ec560e47ca963c0196ebadd2f430b7c572f4ddab6f9ab992  ./vps/tests/de
 e532d4177cb5ae6e4bc1af664dd211db0ab9d80632560fdaf685c431591afbbc  ./vps/tests/dns-write-216.test.js
 02a4a7088bcc51310ec5be80fa2f57f7acbda04cbef24d75c1988d07324e1201  ./vps/tests/domains-237.test.js
 336d1cc1d019b7542eb5b8d397c5fe85b6c3ad6cd2bacd94f2b3465a7da9cf96  ./vps/tests/hosting-240.test.js
+bf24aae6790cb9ee197069e7ae3eaea1faa7999deb82a01a5103764c7cb88bb2  ./vps/tests/hosting-ui-242.test.js
 88e0f6c82c677c1b01dbdd7f076f3aab6f5973fb6feb8d1f4506f9158182225f  ./vps/tests/improvements-213.test.js
 a5643798aed4c4c09d00aba531b75f2a51c2a31f783c365a036bc349b7a2a631  ./vps/tests/improvements-214.test.js
 5ec796422b282af31074a8a5b3b07a1ebde334e95c3e34d3b61454108e04ec13  ./vps/tests/integrations.test.js
@@ -364,7 +366,7 @@ a5643798aed4c4c09d00aba531b75f2a51c2a31f783c365a036bc349b7a2a631  ./vps/tests/im
 3f413ecd980536ab658369079027d64f77829bc4d8fc2a4b1d3e754bce138473  ./vps/tests/no-stepup-225.test.js
 b782ebd73ce5f87a93c3a01d0febec98924b7492b12f7c771a29938a7ff281b2  ./vps/tests/other-project-228.test.js
 12463023ffea4aa7ce24f4b5ac0c650ab445768bc71f9500119eca17a52d970c  ./vps/tests/panel-permissions-229.test.js
-5c205774b78ee650c3d1b99e01bc352ebb0103f37d2470b0c9a5582954bbf92d  ./vps/tests/popups-239.test.js
+b08021e38317bd2f4ff7ebee4ec5b6935f57527732c3b7de0023fb4e34f891fd  ./vps/tests/popups-239.test.js
 f3ea4ec4dab1889c166ed37d1b1865c59983bfd010b0f9e80616406698b52f69  ./vps/tests/project-explorer-231.test.js
 f7d52cb62346831b7634045e13fdaa3e0d6156ea59b07d2afbae5cd8167663dd  ./vps/tests/project-files-232.test.js
 12014e8dfc199d6e8931d15ea91577d2a4990929575b4fdaca59f0671f93d85c  ./vps/tests/project-logs-234.test.js
@@ -384,7 +386,7 @@ fff337ceaddf640d61dcdb3daa683cd1ad279f3c18620f4afc2642628bc944f2  ./vps/tests/te
 67e040f83a36dde13b2cc8eeae4eb7071615c5906f5a1a3d3146535a55f6c3a4  ./vps/tests/test_core_switch_221.py
 c9ec30e63a3df30f15a08cbf624fff38617044e3eabcf72c144950e4741e60ef  ./vps/tests/test_domain_redirects_237.py
 2ab7f0c8260e6bcc13f268fce3e29b2e98ac873c1e02b5a06533d3d41b2bce27  ./vps/tests/test_helper.py
-0b5be5ebf10441583898658b810b51de3d719f571a9249fabb01ad2eaa360584  ./vps/tests/test_identity.py
+c3923de02a825238b6c85c2c509d4272167fcb8d6df37f113a9161bf55162a0b  ./vps/tests/test_identity.py
 7baa2276ccdcfafe784b41b3f6d3fa957e600b53b0558b7d0dc60d1c79688759  ./vps/tests/test_inbox_223.py
 00772fe29e0fa854dc2ec753870dd8c998b6c1ca900b38b9cd29e8812461d248  ./vps/tests/test_managed_hosting_240.py
 f19f57e8a1577ef8d48fc50b4eb57ac974a421a5c3b2c0339ec22f62a507f930  ./vps/tests/test_nginx_upload_219.py
@@ -398,7 +400,7 @@ a760a9281cece62999209b83d6f544126180ae23872914720c7d8b57bae8d8fc  ./vps/tests/te
 15dcefbb19100f1ccafba8ff7fb6061b2b7dd091f14a13b506dd131c8371112b  ./vps/tests/test_updater.py
 3336dc7a923bba6ce543f277853a31e485cfb62d41d763dc323330f4ac5e68d0  ./vps/tests/trusted.test.js
 8ecd4507679472ff9b60966bb6d3b5baafd07e9b0d85a96f88aa6e58c0f91d12  ./vps/tests/ui-dns-216.test.js
-2981b4fd4705de69eb5779bf1b37e0d05a442322a19a7c5696248ccc3f6985ce  ./vps/tests/ui.test.js
+00dfe1ab270a14a5fb61151e1f61e6aed3c38202712740316e3852e6d2c3b7ec  ./vps/tests/ui.test.js
 e1f0e9b8f31b3c70135e60e289809262644425688b321ed3eab63549377d9c6d  ./vps/tests/update-api.test.js
 c4982db5e1fd4d3feafb1c78e578eabc08b264be8c4c7e8e21a41081fa89fd34  ./vps/tests/update-error-223.test.js
 1a454b4314d305bf004489258db33da72033ba9dca0f5e56d5131ab51fa334c2  ./vps/tests/update-reconnect-227.test.js
@@ -406,4 +408,4 @@ c4982db5e1fd4d3feafb1c78e578eabc08b264be8c4c7e8e21a41081fa89fd34  ./vps/tests/up
 b6768b02798bb889e002cdf7ceda410f0613cfd1004d26724879edf686e8646f  ./vps/tests/update-ui-219.test.js
 4dbbf17d43117a67dde1f0b56b65a57243656dced3546177911357fad65a1613  ./vps/tests/update-upload-217.test.js
 f74ad5f7bd243f3bc8129f407c16f1de635cfe67d41e0ebe1f5767c6307e36bb  ./vps/tests/updates.test.js
-00637d508dfd03cf3cd38c5ce8ce9b0cc3cd0aec241a6fc603804d9dce108521  ./vps/tests/version.test.js
+fc2512fcd190abe1c11fb4f69a204382d67e41fbd72286d71eff37c54f715803  ./vps/tests/version.test.js

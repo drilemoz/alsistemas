@@ -1,3 +1,7 @@
+## Atualização 2.0.42 — Publicação em uma janela
+
+Atualize em **Mais → Atualizar → Arquivo ZIP**. Para publicar conteúdo, use **Projetos → Publicação e domínio → Adicionar ZIP**. O ZIP do site não deve ser enviado ao atualizador do painel. Confira o [novo fluxo](vps/docs/ATUALIZACAO-2.0.42.md).
+
 ## Atualização 2.0.41 — Dependências
 
 Atualize em **Mais → Atualizar → Arquivo ZIP**. Depois, abra **Mais → Dependências**. Atualizar o painel não instala os pacotes do catálogo. Cada instalação exige confirmação. Consulte o [guia de dependências](vps/docs/ATUALIZACAO-2.0.41.md).

@@ -150,9 +150,13 @@
   <p class="small muted">Sua sessão autenticada autoriza a operação. Confira os detalhes antes de confirmar.</p><div class="dialog-actions"><button type="button" class="outline" id="external-auth-cancel">Cancelar</button><button type="submit" id="external-auth-confirm">Confirmar</button></div>
 </form></dialog>
 
-<dialog aria-labelledby="project-title" id="project-dialog" class="panel-popup domain-popup" data-panel-popup><div class="dialog-body">
-<header class="modal-heading"><div><p class="eyebrow">HOSPEDAGEM</p><h2 id="project-title">Novo projeto</h2></div><button type="button" class="outline icon-button modal-x" data-close="project-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
-<div class="popup-scroll"><form class="hosting-form" id="create">
+<dialog aria-labelledby="project-title" id="project-dialog" class="panel-popup hosting-dialog" data-panel-popup><div class="dialog-body">
+<header class="modal-heading hosting-header">
+  <div><p class="eyebrow">HOSPEDAGEM</p><h2 id="project-title" tabindex="-1">Novo projeto</h2><p class="small muted break-text popup-zone" id="hosting-site" hidden></p></div>
+  <button type="button" class="outline icon-button modal-x" data-close="project-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
+</header>
+<div class="popup-scroll" id="hosting-scroll">
+<section id="hosting-wizard"><form class="hosting-form hosting-new-form" id="create">
   <label>Nome de exibição<input name="displayName" maxlength="70" placeholder="Uai Cortes" autocomplete="off" required/></label>
   <div class="hosting-pair"><label>Pasta do projeto<input name="name" pattern="[a-z][a-z0-9\-]{1,39}" placeholder="uaicortes" maxlength="40" required/></label>
   <label>Tipo<select name="type"><option value="static">Estático</option><option value="php">PHP 8.3</option></select></label></div>
@@ -164,11 +168,54 @@
   <label id="hosting-ip-field" hidden>IPv4 público fixo da VPS<input name="publicIp" inputmode="decimal" autocomplete="off" maxlength="15" placeholder="IPv4 público da VPS"/></label>
   <p class="small muted" id="hosting-ip-note" hidden></p>
   <div class="hosting-address" id="hosting-preview" hidden><small class="muted">Endereço do projeto</small><strong id="hosting-preview-host" class="break-text"></strong></div>
-  <p class="small domain-feedback" id="task-note" role="status">Você poderá enviar os arquivos depois de criar o projeto.</p>
-</form></div><div class="dialog-actions"><button type="button" class="outline" data-close="project-dialog">Cancelar</button><button form="create" type="submit" id="hosting-create-button">Revisar e criar</button></div>
+  <p class="small domain-feedback" id="task-note" role="status">Crie o projeto e publique os arquivos nesta mesma janela.</p>
+</form></section>
+<section id="hosting-review" hidden>
+  <p class="small muted">Confira os dados antes de criar. O envio de arquivos continua nesta mesma janela.</p>
+  <dl class="hosting-review-data" id="hosting-review-data"></dl>
+  <p class="small muted" id="hosting-review-note"></p>
+  <p class="hosting-feedback" id="hosting-create-feedback" role="status" hidden></p>
+</section>
+<section id="hosting-publish" hidden>
+  <div id="hosting-stages" class="hosting-status-grid" aria-label="Status do projeto"></div>
+  <p class="small muted hosting-connection" id="hosting-connection" hidden></p>
+  <p class="hosting-feedback" id="hosting-status-feedback" role="status" hidden></p>
+  <section class="hosting-files" aria-labelledby="hosting-file-title">
+    <h3 id="hosting-file-title">Arquivos do site</h3>
+    <p class="small muted" id="hosting-release-info"></p>
+    <div id="hosting-upload-result" class="hosting-feedback" role="status" hidden></div>
+    <progress id="hosting-upload-progress" aria-label="Progresso do envio ZIP" max="100" hidden></progress>
+    <div class="hosting-file-card" id="hosting-selection" hidden>
+      <span class="hosting-file-icon"><svg class="icon" aria-hidden="true"><use href="#i-file"></use></svg></span>
+      <div><strong id="hosting-file-name" class="break-text"></strong><small id="hosting-file-size" class="muted"></small></div>
+      <button type="button" class="outline icon-button" id="hosting-clear-file" aria-label="Remover ZIP selecionado"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
+    </div>
+    <div class="hosting-upload-controls">
+      <input type="file" id="hosting-file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+      <button type="button" id="hosting-open-upload" class="outline hosting-file-picker"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"></use></svg><span>Adicionar ZIP</span></button>
+      <p class="small muted" id="hosting-file-note">Até 32 MiB. Use o arquivo de entrada na raiz do ZIP ou em public/.</p>
+    </div>
+  </section>
+  <details class="hosting-domain-details" id="hosting-domain-details">
+    <summary>DNS e HTTPS</summary>
+    <div class="hosting-domain-body">
+      <div id="hosting-domain-info" class="hosting-domain-info"></div>
+      <div class="hosting-actions"><button type="button" class="outline button-small" id="hosting-dns">Testar DNS</button><button type="button" class="outline button-small" id="hosting-retry">Retomar DNS e HTTPS</button></div>
+      <div class="hosting-inline-review" id="hosting-retry-review" hidden><p class="small muted" id="hosting-retry-note"></p><div class="hosting-actions"><button type="button" class="outline button-small" id="hosting-retry-cancel">Cancelar</button><button type="button" class="button-small" id="hosting-retry-confirm">Confirmar retomada</button></div></div>
+      <div class="hosting-dns-results" id="hosting-dns-results" role="status" hidden></div>
+    </div>
+  </details>
+</section>
+</div>
+<div class="dialog-actions hosting-footer">
+  <button type="button" class="outline" data-close="project-dialog" id="hosting-close">Cancelar</button>
+  <button type="button" class="outline" id="hosting-review-back" hidden>Voltar</button>
+  <button form="create" type="submit" id="hosting-create-button">Revisar projeto</button>
+  <button type="button" id="hosting-create-confirm" hidden>Criar projeto</button>
+  <button type="button" id="hosting-upload-submit" hidden>Publicar ZIP</button>
+  <a class="button-link" id="hosting-open-site" target="_blank" rel="noopener noreferrer" hidden>Ver site</a>
+</div>
 </div></dialog>
-<dialog id="managed-hosting-dialog" class="panel-popup domain-popup" data-panel-popup aria-labelledby="managed-hosting-dialog-title"><div class="dialog-body"><header class="modal-heading"><div><p class="eyebrow">PROJETOS</p><h2 id="managed-hosting-dialog-title">Publicação</h2></div><button type="button" class="outline icon-button modal-x" data-close="managed-hosting-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header><div class="popup-scroll"><p class="muted small break-text" id="hosting-site"></p><div id="hosting-stages" class="hosting-stages" role="status"></div><div class="hosting-actions">
-<button type="button" class="outline" id="hosting-dns">Testar DNS</button><button type="button" class="outline" id="hosting-retry">Tentar DNS e HTTPS novamente</button><a class="button outline" id="hosting-open-site" target="_blank" rel="noopener noreferrer" hidden>Abrir site</a></div></div><div class="dialog-actions"><button type="button" id="hosting-open-upload">Enviar ZIP</button><button type="button" class="outline" data-close="managed-hosting-dialog">Fechar</button></div></div></dialog><dialog id="managed-upload-dialog" class="panel-popup domain-popup" data-panel-popup aria-labelledby="managed-upload-dialog-title"><div class="dialog-body"><header class="modal-heading"><div><p class="eyebrow">PUBLICAÇÃO</p><h2 id="managed-upload-dialog-title">Enviar arquivos</h2></div><button type="button" class="outline icon-button modal-x" data-close="managed-upload-dialog" aria-label="Fechar"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></header><div class="popup-scroll"><form id="hosting-upload" class="hosting-form"><label>Arquivo ZIP<input type="file" name="archive" accept=".zip,application/zip" required/></label><p class="small muted">Até 32 MiB. Inclua o index na raiz do ZIP ou em public/. O envio substitui somente a pasta public/ e preserva a versão anterior fora do site.</p><progress id="hosting-upload-progress" max="100" hidden></progress><p id="hosting-upload-result" class="small domain-feedback" role="status"></p></form></div><div class="dialog-actions"><button type="submit" form="hosting-upload" id="hosting-upload-submit">Revisar envio</button><button type="button" class="outline" data-close="managed-upload-dialog">Fechar</button></div></div></dialog>
 <section class="tab-page hidden" id="page-services"><p class="eyebrow">DIAGNÓSTICO</p><h1>Serviços</h1><p class="muted">Estado atual, sem reinícios automáticos.</p><section class="panel"><div class="heading"><h2>Serviços instalados</h2><button class="outline button-small action-quiet" id="nginx-test" type="button"><svg aria-hidden="true" class="icon" focusable="false"><use href="#i-check"></use></svg>Testar Nginx</button></div><div class="stack" id="services"></div><p aria-live="polite" class="small muted" id="nginx-diagnostic">O teste executa nginx -t sem alterar a configuração.</p></section></section>
 <section class="tab-page hidden" id="page-dependencies">
 <header class="heading"><div><p class="eyebrow">AMBIENTE</p><h1>Dependências</h1><p class="muted">Versões instaladas e pacotes disponíveis na VPS.</p></div>

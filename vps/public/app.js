@@ -142,13 +142,13 @@ function validAppRoute(route) {
   const found = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})(?:\/(aws)(?:\/([a-z]+))?)?$/.exec(route)
   return !!found && (!found[2] || (found[1] === 'iguatamaonline' && (!found[3] || projectSections.has(found[3]))))
 }
-function showAppRoute(route) {
+function showAppRoute(route, { keepPopup = null } = {}) {
   if (!validAppRoute(route)) route = 'projects'
   if (currentAppRoute !== route) {
     for (const id of ['confirm-dialog', 'external-auth-dialog', 'project-tech-dialog']) {
       if ($(id).open) $(id).close()
     }
-    closePanelPopups()
+    closePanelPopups(keepPopup)
   }
   currentAppRoute = route
   const genericPermissions = /^project\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/permissions$/.exec(route)
@@ -189,13 +189,13 @@ function showAppRoute(route) {
   if (route === 'security') loadTrustedDevices().catch(e => notice(e.message, true))
   window.scrollTo({ top: 0, behavior: 'instant' })
 }
-function navigateApp(route, { replace = false } = {}) {
+function navigateApp(route, { replace = false, keepPopup = null } = {}) {
   if (!validAppRoute(route)) route = 'projects'
   const url = '#' + encodeURI(route)
   if (replace) history.replaceState({ alRoute: route }, '', url)
   else if (location.hash !== url) history.pushState({ alRoute: route, fromRoute: currentAppRoute }, '', url)
   clearNotice()
-  showAppRoute(route)
+  showAppRoute(route, { keepPopup })
 }
 window.addEventListener('popstate', () => showAppRoute(appRouteFromUrl()))
 window.addEventListener('hashchange', () => { if (appRouteFromUrl() !== currentAppRoute) showAppRoute(appRouteFromUrl()) })
@@ -1501,8 +1501,8 @@ $('theme-open').addEventListener('click', () => $('theme-dialog').showModal())
 for (const button of document.querySelectorAll('[data-theme-choice]')) {
   button.addEventListener('click', () => { changeTheme(button.dataset.themeChoice); $('theme-dialog').close() })
 }
-function closePanelPopups() {
-  for (const dialog of [...document.querySelectorAll('dialog[data-panel-popup][open]')].reverse()) dialog.close()
+function closePanelPopups(except = null) {
+  for (const dialog of [...document.querySelectorAll('dialog[data-panel-popup][open]')].reverse()) if (dialog.id !== except) dialog.close()
 }
 for (const button of document.querySelectorAll('[data-open-panel]')) {
   button.addEventListener('click', () => {
@@ -1613,16 +1613,6 @@ $('login-form').addEventListener('submit', e => {
     e.target.reset()
     enterDashboard(sess)
   })
-})
-$('create').addEventListener('submit', async event => {
-  event.preventDefault()
-  const result = await submitManagedHosting(event.currentTarget)
-  if (!result) return
-  $('project-dialog').close()
-  await loadProjectCatalog({ force: true })
-  navigateApp('project/' + result.name)
-  const created = knownProjects.get(result.name)
-  if (created?.capabilities?.hosting) openManagedHosting(created)
 })
 $('refresh').addEventListener('click', () => { clearNotice(); void loadDashboardOverview() })
 $('logout').addEventListener('click', async () => {
@@ -1968,9 +1958,8 @@ $('more-nav').addEventListener('click', () => {
 $('more-dialog').addEventListener('close', () => $('more-nav').setAttribute('aria-expanded', 'false'))
 $('more-close').addEventListener('click', () => $('more-dialog').close())
 $('new-project').addEventListener('click', () => {
-  $('create').reset()
-  $('project-dialog').showModal()
   resetManagedWizard()
+  if (!$('project-dialog').open) $('project-dialog').showModal()
   $('create').elements.displayName.focus()
 })
 $('repo-settings').addEventListener('click', async () => {

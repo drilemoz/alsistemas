@@ -800,3 +800,50 @@ button.dependency-category:hover,button.dependency-category:focus-visible{border
 @media(max-width:650px){.dependency-groups{grid-template-columns:1fr}}
 
 .package-state[hidden]{display:none}
+
+/* A publicação acompanha um projeto inteiro sem empilhar janelas. */
+.hosting-dialog .popup-scroll{overflow-x:hidden}
+.hosting-dialog .hosting-header{align-items:flex-start}
+.hosting-dialog .hosting-header h2{font-size:clamp(1.12rem,4vw,1.45rem);outline:none}
+.hosting-dialog .hosting-new-form label{margin:0}
+.hosting-dialog .hosting-new-form input,.hosting-dialog .hosting-new-form select{font-size:16px}
+.hosting-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.36rem}
+.hosting-status-tile{display:grid;gap:.18rem;background:var(--bg);border:1px solid var(--border);border-radius:.62rem;padding:.44rem .45rem;min-width:0;overflow-wrap:anywhere;line-height:1.26}
+.hosting-status-tile small{font-size:.7rem}
+.hosting-status-tile strong{font-size:clamp(.71rem,2.6vw,.88rem)}
+.hosting-files{margin:.72rem 0;padding:.72rem;border:1px solid var(--border);border-radius:.78rem}
+.hosting-files>h3{margin:0 0 .18rem;font-size:.98rem}
+.hosting-files>p{margin:0 0 .56rem}
+.hosting-connection{margin:.52rem 0 0}
+.hosting-dialog .hosting-feedback{display:grid;gap:.2rem;margin:.54rem 0;padding:.62rem .72rem;border:1px solid var(--border);background:var(--bg);border-radius:.63rem}
+.hosting-feedback[data-state=success]{border-color:color-mix(in srgb,var(--success) 40%,var(--border));background:color-mix(in srgb,var(--success) 8%,var(--surface));color:var(--success)}
+.hosting-feedback[data-state=failed]{border-color:color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 8%,var(--surface));color:var(--danger)}
+.hosting-feedback[data-state=working]{color:var(--accent)}
+.hosting-feedback small{font-size:.8rem}
+.hosting-file-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.48rem;padding:.45rem;border:1px solid var(--border);background:var(--bg);border-radius:.59rem;margin-bottom:.51rem}
+.hosting-file-card strong,.hosting-file-card small{display:block;font-size:.82rem}
+.hosting-file-card>button{width:33px;min-height:33px}
+.hosting-file-icon{display:grid;place-items:center;width:29px;height:31px;color:var(--accent)}
+.hosting-file-picker{width:100%;min-height:43px;border-style:dashed;color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+.hosting-file-picker .icon{width:16px;height:16px}
+.hosting-upload-controls p{margin:.42rem 0 0}
+.hosting-files progress{display:block;width:100%;height:.6rem;margin:.45rem 0 .6rem;accent-color:var(--accent)}
+.hosting-footer{padding-top:.65rem}
+.hosting-footer button,.hosting-footer .button-link{min-height:42px;min-width:0;flex:1;text-align:center}
+.hosting-footer a{text-decoration:none}
+.hosting-domain-details{border:1px solid var(--border);border-radius:.65rem}
+.hosting-domain-details summary{padding:.58rem .72rem;cursor:pointer;font-weight:650;font-size:.85rem}
+.hosting-domain-body{padding:0 .72rem .65rem;min-width:0}
+.hosting-domain-info p{margin:.2rem 0}
+.hosting-domain-body .hosting-actions{margin:.45rem 0 0}
+.hosting-domain-body button{white-space:normal}
+.hosting-inline-review,.hosting-dns-results{padding:.54rem .6rem;margin:.5rem 0 0;background:var(--bg);border-radius:.55rem}
+.hosting-inline-review p,.hosting-dns-results p{margin:0}
+.hosting-dns-results{display:grid;gap:.35rem}
+.hosting-dns-row{display:flex;justify-content:space-between;align-items:flex-start;gap:.38rem;border-bottom:1px solid var(--border);padding-bottom:.35rem}
+.hosting-dns-row>span{min-width:0;display:grid;gap:.1rem}
+.hosting-dns-row .pill{white-space:normal;text-align:center}
+.hosting-review-data{margin:0 0 .55rem;background:var(--bg);border:1px solid var(--border);border-radius:.65rem;padding:.18rem .66rem}
+.hosting-review-row{display:grid;grid-template-columns:minmax(0,80px) minmax(0,1fr);gap:.4rem;padding:.52rem 0;border-bottom:1px solid var(--border);font-size:.82rem}
+.hosting-review-row:last-child{border:0}
+.hosting-review-row dd{margin:0;font-weight:650}

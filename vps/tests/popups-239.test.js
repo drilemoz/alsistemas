@@ -11,7 +11,7 @@ test('todas as opções de Domínios abrem janelas e ajustes avançados não exp
   assert.match(html,new RegExp('data-domain-pane="' + p + '"[^>]+aria-haspopup="dialog"'))
  }
  for (const p of ['rule','test','ns']) assert.match(dialog('dn-'+p+'-dialog'), /data-panel-popup/)
- assert.doesNotMatch(html,/<details\b/)
+ assert.doesNotMatch(html.replace(/<details [^>]*id="hosting-domain-details"[^>]*>[\s\S]*?<\/details>/, ''),/<details\b/)
  assert.match(domains,/dialog\.showModal\(\)/)
  assert.match(domains,/pane === 'dns'\) void dnLoadDns\(\)/)
 })

@@ -1,3 +1,10 @@
+## 2.0.42 — Criação e publicação em uma janela (17/11/2026)
+
+- Revisão, criação e publicação sem janelas empilhadas.
+- Seletor ZIP com botão do painel, nome e tamanho do arquivo e publicação em uma ação.
+- Envio e validação têm estados distintos. O sucesso mostra a confirmação e o botão Ver site quando o endereço estiver disponível.
+- Resumo compacto com Arquivos, DNS e HTTPS. Diagnóstico e retomada aparecem como detalhes na mesma janela.
+
 ## 2.0.41 — Dependências organizadas e inventário Node/npm (17/11/2026)
 
 - Dependências foi dividida em Node.js e npm, PHP e Composer, Banco de dados e Ferramentas da VPS, com pop-ups por categoria.
