@@ -1,0 +1,30 @@
+.adm-detail-dialog {
+  width: min(660px, calc(100% - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  overflow: hidden;
+  color: var(--adm-text);
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-radius: 14px;
+  box-shadow: var(--adm-shadow-md);
+}
+.adm-detail-dialog::backdrop { background: rgb(12 22 34 / 55%); }
+.adm-detail-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100dvh - 26px);
+}
+.adm-detail-shell > header, .adm-detail-shell > footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.adm-detail-shell > header { justify-content: space-between; border-bottom: 1px solid var(--adm-border); }
+.adm-detail-shell > footer { justify-content: flex-end; flex-wrap: wrap; border-top: 1px solid var(--adm-border); }
+.adm-detail-shell h2 { margin: 0; font-size: 1.04rem; overflow-wrap: anywhere; }
+.adm-detail-shell > header button { min-height: 44px; flex: none; }
+.adm-detail-content { min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 14px; overflow-wrap: anywhere; }
+.adm-detail-table { max-width: 100%; overflow-x: auto; }

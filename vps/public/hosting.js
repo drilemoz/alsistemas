@@ -2,7 +2,7 @@
 const hpForm = $('create')
 let hpZones = [], hpNext = null, hpZoneRequest = 0, hpHintRequest = 0, hpWizard = 0
 let hpName = '', hpStatus = null, hpTimer = null, hpRequest = 0
-let hpUploading = false, hpCreating = false, hpView = 'wizard'
+let hpUploading = false, hpCreating = false, hpView = 'wizard', hpPublishScroll = 0
 let hpPlan = null, hpFile = null, hpRelease = null, hpProject = null, hpBusyDns = false, hpRetrying = false
 const hpDialog = $('project-dialog')
 const hpSuggested = 'Crie o projeto e publique os arquivos nesta mesma janela.'
@@ -134,7 +134,12 @@ function hpFeedback(id, title = '', style = '', detail = '') {
   if (detail) target.append(node('small',detail,'break-text'))
 }
 function hpSetView(view) {
+  const detail = view === 'dns' || view === 'zip-help'
   hpView = view
+  $('hosting-domain-details').hidden = view !== 'dns'
+  $('hosting-zip-help').hidden = view !== 'zip-help'
+  $('hosting-detail-back').hidden = !detail
+  $(view === 'dns' ? 'hosting-domain-feedback-slot' : 'hosting-publish-feedback-slot').append($('hosting-status-feedback'))
   $('hosting-wizard').hidden = view !== 'wizard'
   if (view === 'wizard') $('hosting-more-zones').disabled = false
   $('hosting-review').hidden = view !== 'review'
@@ -142,14 +147,29 @@ function hpSetView(view) {
   $('hosting-review-back').hidden = view !== 'review'
   $('hosting-create-button').hidden = view !== 'wizard'
   $('hosting-create-confirm').hidden = view !== 'review'
-  $('hosting-close').hidden = view === 'review'
+  $('hosting-close').hidden = view === 'review' || detail
   $('hosting-close').textContent = view === 'publish' ? 'Fechar' : 'Cancelar'
-  $('project-title').textContent = view === 'publish' ? (hpProject?.displayName || hpName) : view === 'review' ? 'Revisar projeto' : 'Novo projeto'
-  $('hosting-site').hidden = view !== 'publish'
+  $('project-title').textContent = view === 'dns' ? 'DNS e HTTPS' : view === 'zip-help' ? 'Como preparar o ZIP' : view === 'publish' ? (hpProject?.displayName || hpName) : view === 'review' ? 'Revisar projeto' : 'Novo projeto'
+  $('hosting-site').hidden = view !== 'publish' && view !== 'dns'
   $('hosting-scroll').scrollTop = 0
   hpControls()
   if (hpDialog.open) $('project-title').focus({preventScroll:true})
 }
+const hpInPublication = () => ['publish','dns','zip-help'].includes(hpView)
+function hpOpenDetail(view) {
+  if (hpView !== 'publish' || hpUploading) return
+  hpPublishScroll = $('hosting-scroll').scrollTop
+  hpSetView(view)
+}
+function hpBackToPublish() {
+  const trigger = $(hpView === 'dns' ? 'hosting-domain-open' : 'hosting-zip-help-open')
+  hpSetView('publish')
+  $('hosting-scroll').scrollTop = hpPublishScroll
+  if (!trigger.hidden) trigger.focus({preventScroll:true})
+}
+$('hosting-domain-open').addEventListener('click', () => hpOpenDetail('dns'))
+$('hosting-zip-help-open').addEventListener('click', () => hpOpenDetail('zip-help'))
+$('hosting-detail-back').addEventListener('click', hpBackToPublish)
 function hpControls() {
   const busy = hpCreating || hpUploading
   hpDialog.querySelector('.modal-x').disabled = busy
@@ -165,6 +185,8 @@ function hpControls() {
   $('hosting-file').disabled = hpUploading
   $('hosting-open-upload').disabled = hpUploading
   $('hosting-clear-file').disabled = hpUploading
+  $('hosting-domain-open').disabled = hpUploading
+  $('hosting-zip-help-open').disabled = hpUploading
   $('hosting-open-upload').querySelector('span').textContent = hpFile ? 'Trocar ZIP' : hpRelease ? 'Publicar outro ZIP' : 'Adicionar ZIP'
   const link = $('hosting-open-site')
   const {plan,dns,tls,enabled} = hpStatus || {}
@@ -183,6 +205,7 @@ function hpControls() {
 hpDialog.addEventListener('cancel',event => {
   if (hpCreating || hpUploading) event.preventDefault()
   else if (hpView === 'review') { event.preventDefault(); hpSetView('wizard') }
+  else if (hpView === 'dns' || hpView === 'zip-help') { event.preventDefault(); hpBackToPublish() }
 })
 hpDialog.addEventListener('close',() => {
   if (hpDialog.open) return
@@ -279,7 +302,7 @@ function hpPaintStatus() {
   $('hosting-release-info').textContent = hpRelease ? hpFileCount(hpRelease.files) +
     (Number.isFinite(timestamp) ? ' · ' + new Date(timestamp).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '')
     : 'Nenhum ZIP publicado ainda.'
-  $('hosting-domain-details').hidden = !domain
+  $('hosting-domain-open').hidden = !domain
   $('hosting-domain-info').replaceChildren()
   if (domain) {
     const rows = [
@@ -301,14 +324,14 @@ async function hpRefresh() {
   clearTimeout(hpTimer)
   try {
     const result = await api(hpApi(name))
-    if (request !== hpRequest || !hpDialog.open || hpView !== 'publish') return
+    if (request !== hpRequest || !hpDialog.open || !hpInPublication()) return
     hpStatus = result
     if (result.release && (!hpRelease || Date.parse(result.release.publishedAt) >= Date.parse(hpRelease.publishedAt))) hpRelease = result.release
     hpFeedback('hosting-status-feedback')
     hpPaintStatus()
     if (result.working) hpTimer = setTimeout(hpRefresh,3500)
   } catch (error) {
-    if (request !== hpRequest || !hpDialog.open || hpView !== 'publish') return
+    if (request !== hpRequest || !hpDialog.open || !hpInPublication()) return
     hpFeedback('hosting-status-feedback','Não foi possível consultar o site','failed',error.message)
     if (hpStatus?.working) hpTimer = setTimeout(hpRefresh,6500)
   }
@@ -325,9 +348,9 @@ function openManagedHosting(project) {
   hpUploading = hpBusyDns = hpRetrying = false
   $('hosting-file').value = ''
   $('hosting-file-name').textContent = ''
-  $('hosting-file-note').textContent = 'Até 32 MiB. Use o arquivo de entrada na raiz do ZIP ou em public/.'
+  $('hosting-file-note').textContent = 'Até 32 MiB.'
   $('hosting-upload-progress').hidden = true
-  $('hosting-domain-details').open = false
+  hpPublishScroll = 0
   $('hosting-retry-review').hidden = true
   $('hosting-dns-results').hidden = true
   $('hosting-dns-results').replaceChildren()
@@ -397,7 +420,7 @@ function hpChooseFile(file) {
   hpFile = null
   $('hosting-upload-progress').hidden = true
   if (!/\.zip$/i.test(file.name) || file.size < 22 || file.size > 32*1024*1024) {
-    $('hosting-file-note').textContent = 'Até 32 MiB. Use o arquivo de entrada na raiz do ZIP ou em public/.'
+    $('hosting-file-note').textContent = 'Até 32 MiB.'
     hpFeedback('hosting-upload-result','Arquivo não selecionado','failed','Escolha um ZIP válido de até 32 MiB.')
     hpControls()
     return
@@ -416,7 +439,7 @@ $('hosting-file').addEventListener('change',event => {
 })
 $('hosting-clear-file').addEventListener('click',() => {
   hpFile = null
-  $('hosting-file-note').textContent = 'Até 32 MiB. Use o arquivo de entrada na raiz do ZIP ou em public/.'
+  $('hosting-file-note').textContent = 'Até 32 MiB.'
   hpFeedback('hosting-upload-result')
   hpControls()
   $('hosting-open-upload').focus()

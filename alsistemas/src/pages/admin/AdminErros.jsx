@@ -16,6 +16,7 @@ import toast from 'react-hot-toast'
 import { formatarDataRelativa } from '../../utils/formatters'
 import { T as C, SPACE, RADIUS, FONT } from '../../themes/tokens'
 import { DSBadge } from '../../components/admin/ui/DS'
+import DetailDialog from '../../components/admin/ui/DetailDialog'
 
 // ─── Constantes ──────────────────────────────────────────────
 const TIPO_META = {
@@ -217,9 +218,9 @@ function BulkToolbar({ selected, onBulkStatus, onBulkDelete, onClear }) {
   )
 }
 
-// ─── Row expandível ───────────────────────────────────────────
+// ─── Linha de erro e janela de detalhes ───────────────────────────────────────────
 function ErroRow({ erro, onAtualizarStatus, onExcluir, selected, onToggleSelect }) {
-  const [expandido, setExpandido] = useState(false)
+  const [detalheAberto, setDetalheAberto] = useState(false)
   const [uaExpand,  setUaExpand]  = useState(false)
   const ua    = parsearUA(erro.user_agent)
   const frame = extrairFramePrincipal(erro.stack)
@@ -246,16 +247,16 @@ function ErroRow({ erro, onAtualizarStatus, onExcluir, selected, onToggleSelect 
         <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px`, width: 16 }} onClick={e => e.stopPropagation()}>
           <input type="checkbox" checked={selected} onChange={() => onToggleSelect(id)} style={{ width: 14, height: 14, cursor: 'pointer' }} />
         </td>
-        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xs}px`, width: 12 }} onClick={() => setExpandido(e => !e)}>
+        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xs}px`, width: 12 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: erro.status === 'novo' ? C.red : 'transparent', border: erro.status !== 'novo' ? `1.5px solid var(--adm-border2)` : 'none' }} />
         </td>
-        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px` }} onClick={() => setExpandido(e => !e)}>
+        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px` }}>
           <TipoBadge tipo={erro.tipo} />
         </td>
-        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px` }} onClick={() => setExpandido(e => !e)}>
+        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px` }}>
           <StatusBadge status={erro.status || 'novo'} />
         </td>
-        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xl}px`, maxWidth: 300, cursor: 'pointer' }} onClick={() => setExpandido(e => !e)}>
+        <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xl}px`, maxWidth: 300 }}>
           <div style={{ fontSize: FONT.md, fontWeight: 500, color: 'var(--adm-text)', wordBreak: 'break-word' }}>{erro.mensagem}</div>
           <div style={{ display: 'flex', gap: SPACE.md, marginTop: 2, flexWrap: 'wrap' }}>
             {frame && <span style={{ fontSize: FONT.sm, color: '#fcd34d', opacity: .8 }}>{frame.arquivo.split('/').pop()}:{frame.linha}</span>}
@@ -274,13 +275,13 @@ function ErroRow({ erro, onAtualizarStatus, onExcluir, selected, onToggleSelect 
             <button onClick={() => onExcluir(id)} className="adm-btn adm-btn-ghost adm-btn-icon adm-btn-sm" title="Excluir">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>
             </button>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12" style={{ color: 'var(--adm-muted)', transform: expandido ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} onClick={() => setExpandido(e => !e)}><path d="M6 9l6 6 6-6"/></svg>
+            <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" aria-haspopup="dialog" onClick={() => { setUaExpand(false); setDetalheAberto(true) }}>Detalhes</button>
           </div>
         </td>
       </tr>
-      {expandido && (
-        <tr style={{ background: 'rgba(0,0,0,.15)' }}>
-          <td colSpan={6} style={{ padding: `0 ${SPACE.xl}px ${SPACE.xl}px` }}>
+      <DetailDialog title="Detalhes do erro" open={detalheAberto} onClose={() => setDetalheAberto(false)}
+        footer={<button type="button" className="adm-btn adm-btn-ghost" onClick={copiarMarkdown}>Copiar relatório</button>}>
+            <p style={{ margin: 0, fontWeight: 600 }}>{erro.mensagem}</p>
             <div style={{ paddingTop: SPACE.lg, display: 'flex', flexDirection: 'column', gap: SPACE.lg }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px,1fr))', gap: SPACE.md }}>
                 <MetaItem label="🕐 Data/hora"        value={new Date(erro.criado_em).toLocaleString('pt-BR')} />
@@ -309,23 +310,21 @@ function ErroRow({ erro, onAtualizarStatus, onExcluir, selected, onToggleSelect 
                 </div>
               )}
             </div>
-          </td>
-        </tr>
-      )}
+      </DetailDialog>
     </>
   )
 }
 
 // ─── GrupoRow ─────────────────────────────────────────────────
 function GrupoRow({ grupo }) {
-  const [expandido, setExpandido] = useState(false)
+  const [detalheAberto, setDetalheAberto] = useState(false)
   const primeiro = grupo.exemplos[0]
   const frame    = extrairFramePrincipal(primeiro.stack)
   const ua       = parsearUA(primeiro.user_agent)
 
   return (
     <>
-      <tr style={{ cursor: 'pointer' }} onClick={() => setExpandido(e => !e)}>
+      <tr>
         <td style={{ padding: `${SPACE.md + 2}px ${SPACE.md}px`, width: 40 }}>
           <DSBadge variant="red">{grupo.count}</DSBadge>
         </td>
@@ -339,16 +338,12 @@ function GrupoRow({ grupo }) {
         </td>
         <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xl}px`, fontSize: FONT.sm, color: 'var(--adm-muted)' }}>{ua.browser} / {ua.os}</td>
         <td style={{ padding: `${SPACE.md + 2}px ${SPACE.xl}px` }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"
-            style={{ color: 'var(--adm-muted)', transform: expandido ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-            <path d="M6 9l6 6 6-6"/>
-          </svg>
+          <button type="button" className="adm-btn adm-btn-ghost adm-btn-sm" aria-haspopup="dialog" onClick={() => setDetalheAberto(true)}>Ocorrências</button>
         </td>
       </tr>
-      {expandido && (
-        <tr style={{ background: 'rgba(0,0,0,.1)' }}>
-          <td colSpan={5} style={{ padding: `0 ${SPACE.xl}px ${SPACE.xl}px` }}>
-            <div style={{ paddingTop: SPACE.lg }}>
+      <DetailDialog title="Ocorrências do erro" open={detalheAberto} onClose={() => setDetalheAberto(false)}>
+            <p style={{ margin: '0 0 10px', fontWeight: 600 }}>{primeiro.mensagem}</p>
+            <div className="adm-detail-table">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -369,9 +364,7 @@ function GrupoRow({ grupo }) {
                 </tbody>
               </table>
             </div>
-          </td>
-        </tr>
-      )}
+      </DetailDialog>
     </>
   )
 }

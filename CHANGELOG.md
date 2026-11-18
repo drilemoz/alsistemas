@@ -1,3 +1,10 @@
+## 2.0.46 — Ajuda contextual e detalhes no celular (18/11/2026)
+
+- Dados da VPS em uma janela própria e explicações sob demanda, sem retirar alertas e métricas da Visão geral.
+- Publicação com etapas internas de DNS/HTTPS e ajuda do ZIP, preservando seleção e status ao voltar.
+- Ajuda em Backups, Dependências, Serviços, Atualizações, Integrações, Segurança, Logs, Arquivos e Domínios.
+- No legado, detalhes de erros, ficha de projetos e índices do MongoDB em janelas dedicadas.
+
 ## 2.0.45 — Visão geral da VPS e reinício local (18/11/2026)
 
 - CPU percentual por amostra e barras para RAM, disco e swap, com horário da leitura.

@@ -24,6 +24,7 @@ import {
 } from '../../components/admin/ui/DS'
 import AdminIcon         from '../../components/admin/ui/AdminIcon'
 import ProjetoSyncModal  from './ProjetoSyncModal.jsx'
+import DetailDialog from '../../components/admin/ui/DetailDialog'
 import toast from 'react-hot-toast'
 
 /* ── Cores por status ────────────────────────────────────────── */
@@ -139,20 +140,20 @@ function GitHubSyncBadge({ syncStatus, loading }) {
 
 /* ── Card de projeto ─────────────────────────────────────────── */
 function ProjetoCard({ projeto, onOpenSync }) {
-  const [expandido, setExpandido] = useState(false)
+  const [detalheAberto, setDetalheAberto] = useState(false)
 
   const [syncStatus,    setSyncStatus]    = useState(null)
   const [loadingSync,   setLoadingSync]   = useState(false)
   const [syncCarregado, setSyncCarregado] = useState(false)
 
   useEffect(() => {
-    if (!expandido || syncCarregado) return
+    if (!detalheAberto || syncCarregado) return
     setLoadingSync(true)
     projetosService.syncStatus(projeto.nome)
       .then(data  => { setSyncStatus(data); setSyncCarregado(true) })
       .catch(()   => { setSyncStatus({ vinculado: false }); setSyncCarregado(true) })
       .finally(() => setLoadingSync(false))
-  }, [expandido, syncCarregado, projeto.nome])
+  }, [detalheAberto, syncCarregado, projeto.nome])
 
   function handleSynced() {
     setSyncCarregado(false)
@@ -171,7 +172,7 @@ function ProjetoCard({ projeto, onOpenSync }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap', marginBottom: 3 }}>
             <span style={{ fontSize: FONT.md, fontWeight: 700, color: C.text }}>{projeto.nome}</span>
             <StatusBadge status={projeto.status} />
-            {expandido && <GitHubSyncBadge syncStatus={syncStatus} loading={loadingSync} />}
+            {syncCarregado && <GitHubSyncBadge syncStatus={syncStatus} loading={loadingSync} />}
           </div>
           <div style={{ fontSize: FONT.sm, color: C.muted, lineHeight: 1.4 }}>
             {projeto.descricao !== '—'
@@ -184,8 +185,8 @@ function ProjetoCard({ projeto, onOpenSync }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.sm, flexShrink: 0 }}>
-          {/* Link GitHub — só quando expandido e vinculado */}
-          {expandido && syncStatus?.vinculado && syncStatus?.url && (
+          {/* Link GitHub — quando o vínculo tiver sido consultado */}
+          {syncStatus?.vinculado && syncStatus?.url && (
             <a
               href={syncStatus.url}
               target="_blank"
@@ -214,9 +215,9 @@ function ProjetoCard({ projeto, onOpenSync }) {
           </DSBtn>
 
           {/* ✅ DSBtn substitui <button style={{ background:'none', border:'none', ... }}> */}
-          <DSBtn size="icon" variant="ghost" onClick={() => setExpandido(v => !v)}
-            title={expandido ? 'Recolher' : 'Ver detalhes'}>
-            <AdminIcon name={expandido ? 'chevUp' : 'chevDown'} size={14} />
+          <DSBtn size="icon" variant="ghost" onClick={() => setDetalheAberto(true)}
+            title="Ficha técnica" aria-label="Ficha técnica" aria-haspopup="dialog">
+            <AdminIcon name="eye" size={14} />
           </DSBtn>
         </div>
       </div>
@@ -319,9 +320,10 @@ function ProjetoCard({ projeto, onOpenSync }) {
         )
       })()}
 
-      {/* ── Detalhes expandidos ──────────────────────────── */}
-      {expandido && (
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: SPACE.sm }}>
+      {/* ── Ficha técnica ──────────────────────────── */}
+      <DetailDialog open={detalheAberto} onClose={() => setDetalheAberto(false)} title={`Ficha técnica · ${projeto.nome}`}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: SPACE.sm }}>
+          <GitHubSyncBadge syncStatus={syncStatus} loading={loadingSync} />
           <div style={{ fontSize: FONT.sm, color: C.muted }}>
             <span style={{ color: C.subtle }}>Caminho:</span>{' '}
             {/* ✅ C.surf2 → C.surface2 */}
@@ -357,13 +359,13 @@ function ProjetoCard({ projeto, onOpenSync }) {
                 )}
               </div>
               {/* ✅ DSBtn substitui <button style={{ fontSize:FONT.xs, fontWeight:700, color:C.blue, ... }}> */}
-              <DSBtn size="sm" variant="ghost" onClick={() => onOpenSync(projeto)}>
+              <DSBtn size="sm" variant="ghost" onClick={() => { setDetalheAberto(false); onOpenSync(projeto) }}>
                 Gerenciar
               </DSBtn>
             </div>
           )}
         </div>
-      )}
+      </DetailDialog>
     </div>
   )
 }
@@ -957,7 +959,7 @@ function CodeViewer({ arquivo, nomeProjeto }) {
 
 /* ── Card de projeto GridFS ──────────────────────────────────── */
 function CardGridFS({ projeto, onAbrir, onDeletar, onCommit, onUpload, onDownload }) {
-  const [expandido, setExpandido] = useState(false)
+  const [detalheAberto, setDetalheAberto] = useState(false)
   const ghOwner = projeto.metadados?.githubOwner
   const ghRepo  = projeto.metadados?.githubRepo
   const repoUrl = ghOwner && ghRepo ? `https://github.com/${ghOwner}/${ghRepo}` : null
@@ -996,9 +998,9 @@ function CardGridFS({ projeto, onAbrir, onDeletar, onCommit, onUpload, onDownloa
             </svg>
             <span style={{ fontSize: 10, fontWeight: 600 }}>Commit</span>
           </DSBtn>
-          <DSBtn size="icon" variant="ghost" onClick={() => setExpandido(v => !v)}
-            title={expandido ? 'Recolher' : 'Ver detalhes'}>
-            <AdminIcon name={expandido ? 'chevUp' : 'chevDown'} size={14} />
+          <DSBtn size="icon" variant="ghost" onClick={() => setDetalheAberto(true)}
+            title="Ficha técnica" aria-label="Ficha técnica" aria-haspopup="dialog">
+            <AdminIcon name="eye" size={14} />
           </DSBtn>
         </div>
       </div>
@@ -1014,9 +1016,9 @@ function CardGridFS({ projeto, onAbrir, onDeletar, onCommit, onUpload, onDownloa
         )}
       </div>
 
-      {/* ── Detalhes expandidos ───────────────────────────── */}
-      {expandido && (
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: SPACE.sm }}>
+      {/* ── Ficha técnica ───────────────────────────── */}
+      <DetailDialog open={detalheAberto} onClose={() => setDetalheAberto(false)} title={`Ficha técnica · ${projeto.nome}`}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: SPACE.sm }}>
           <div style={{ fontSize: FONT.sm, color: C.muted }}>
             <span style={{ color: C.subtle }}>Armazenamento:</span>{' '}
             <code style={{ fontSize: 10, background: C.surface2, padding: '1px 5px', borderRadius: 3, color: C.text }}>
@@ -1024,7 +1026,7 @@ function CardGridFS({ projeto, onAbrir, onDeletar, onCommit, onUpload, onDownloa
             </code>
           </div>
           <div style={{ display: 'flex', gap: SPACE.sm, flexWrap: 'wrap', marginTop: 4 }}>
-            <DSBtn variant="ghost" style={{ flex: 1 }} onClick={() => onAbrir(projeto)}>
+            <DSBtn variant="ghost" style={{ flex: 1 }} onClick={() => { setDetalheAberto(false); onAbrir(projeto) }}>
               <AdminIcon name="eye" size={13} /> Explorar
             </DSBtn>
             <DSBtn variant="ghost" style={{ flex: 1 }} onClick={() => onDownload(projeto)}
@@ -1035,15 +1037,15 @@ function CardGridFS({ projeto, onAbrir, onDeletar, onCommit, onUpload, onDownloa
               </svg>
               Baixar .zip
             </DSBtn>
-            <DSBtn variant="ghost" style={{ flex: 1 }} onClick={() => onUpload(projeto)}>
+            <DSBtn variant="ghost" style={{ flex: 1 }} onClick={() => { setDetalheAberto(false); onUpload(projeto) }}>
               <AdminIcon name="save" size={13} /> Upload
             </DSBtn>
-            <DSBtn variant="ghost" onClick={() => onDeletar(projeto)}>
+            <DSBtn variant="ghost" onClick={() => { setDetalheAberto(false); onDeletar(projeto) }}>
               <AdminIcon name="trash" size={13} />
             </DSBtn>
           </div>
         </div>
-      )}
+      </DetailDialog>
     </div>
   )
 }

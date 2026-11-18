@@ -1670,6 +1670,31 @@ for (const button of document.querySelectorAll('[data-open-panel]')) {
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close())
 }
+const contextHelp = new Map([...document.querySelectorAll('template[data-help-topic]')]
+  .map(template => [template.dataset.helpTopic, template]))
+for (const button of document.querySelectorAll('[data-context-help]')) {
+  button.addEventListener('click', () => {
+    const topic = contextHelp.get(button.dataset.contextHelp)
+    const dialog = $('context-help-dialog')
+    if (!topic || dialog.open || button.closest('dialog')) return
+    $('context-help-title').textContent = topic.dataset.helpTitle
+    $('context-help-content').replaceChildren(topic.content.cloneNode(true))
+    $('context-help-content').scrollTop = 0
+    dialog.showModal()
+  })
+}
+for (const button of document.querySelectorAll('[data-context-inline]')) {
+  const topic = contextHelp.get(button.dataset.contextInline)
+  const panel = $(button.getAttribute('aria-controls'))
+  if (!topic || !panel) continue
+  panel.append(node('strong', topic.dataset.helpTitle), topic.content.cloneNode(true))
+  const setExpanded = expanded => {
+    panel.hidden = !expanded
+    button.setAttribute('aria-expanded', String(expanded))
+  }
+  button.addEventListener('click', () => setExpanded(panel.hidden))
+  button.closest('dialog')?.addEventListener('close', () => setExpanded(false))
+}
 for (const button of document.querySelectorAll('[data-project-help]')) {
   button.addEventListener('click', () => $(button.dataset.projectHelp).showModal())
 }
@@ -1770,11 +1795,6 @@ $('login-form').addEventListener('submit', e => {
     e.target.reset()
     enterDashboard(sess)
   })
-})
-$('overview-details-toggle').addEventListener('click',()=>{
-  const content=$('overview-details')
-  content.hidden=!content.hidden
-  $('overview-details-toggle').setAttribute('aria-expanded',String(!content.hidden))
 })
 $('host-logs-open').addEventListener('click',async()=>{
   const dialog=$('host-logs-dialog'), list=$('host-log-list')
@@ -2018,9 +2038,8 @@ function paintServices() {
   const totalActive = services.filter(item=>item.active==='active').length
   $('services-manager-status').textContent = inventoryAvailable ? totalActive + ' ativos · ' + services.length + ' conhecidos · ' + rows.length + ' neste filtro' : 'Systemd indisponível para consulta.'
   const mailInfo = $('services-mail-info')
-  mailInfo.hidden = filter!=='mail'
-  mailInfo.textContent = 'Portas locais de e-mail: ' + (mail?.length ? mail.join(', ') : mail ? 'nenhuma detectada' : 'consulta indisponível') +
-    '. Isso não confirma entrega externa nem configuração de uma conta. Mutt e msmtp ficam em Dependências.'
+  $('services-mail-row').hidden = filter!=='mail'
+  mailInfo.textContent = 'Portas locais de e-mail: ' + (mail?.length ? mail.join(', ') : mail ? 'nenhuma detectada' : 'consulta indisponível')
   $('services-more').hidden = rows.length<=serviceLimit
   $('services').replaceChildren(...rows.slice(0,serviceLimit).map(item=>{
     const button=node('button','','service-manager-row outline')

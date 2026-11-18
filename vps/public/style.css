@@ -831,9 +831,8 @@ button.dependency-category:hover,button.dependency-category:focus-visible{border
 .hosting-footer{padding-top:.65rem}
 .hosting-footer button,.hosting-footer .button-link{min-height:42px;min-width:0;flex:1;text-align:center}
 .hosting-footer a{text-decoration:none}
-.hosting-domain-details{border:1px solid var(--border);border-radius:.65rem}
-.hosting-domain-details summary{padding:.58rem .72rem;cursor:pointer;font-weight:650;font-size:.85rem}
-.hosting-domain-body{padding:0 .72rem .65rem;min-width:0}
+.hosting-domain-link{width:100%;justify-content:space-between;text-align:left;min-height:44px}
+.hosting-domain-body{min-width:0}
 .hosting-domain-info p{margin:.2rem 0}
 .hosting-domain-body .hosting-actions{margin:.45rem 0 0}
 .hosting-domain-body button{white-space:normal}
@@ -923,9 +922,21 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .host-details{padding:.55rem}
 .host-detail-toggle{border:0;width:100%;justify-content:space-between;text-align:left;min-height:42px;gap:.42rem}
 .host-detail-toggle .icon{width:15px;height:15px}
-.host-detail-toggle[aria-expanded=true] .icon{transform:rotate(90deg)}
 .host-system-info{padding:.25rem .45rem}
 .host-system-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.24rem .72rem;padding:.29rem 0}
 .host-system-row strong{min-width:0}
 .host-log-button{justify-content:flex-start;text-align:left}
 #host-reboot-confirm{font-size:16px}
+
+/* Ajuda no contexto: ícone discreto, área de toque ampla, uma janela por vez. */
+.context-heading{display:flex;align-items:center;gap:.38rem;min-width:0;flex-wrap:wrap}
+.context-heading>h1,.context-heading>h2,.context-heading>h3,.context-heading>p{margin:0;min-width:0;overflow-wrap:anywhere}
+.context-help-button.outline{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;background:transparent;border-color:transparent;color:var(--accent);flex:none}
+.context-help-button .icon{width:18px;height:18px}
+.context-help-button.outline:hover,.context-help-button.outline[aria-expanded=true]{background:var(--bg);border-color:var(--border)}
+.context-help-dialog{width:min(440px,calc(100% - 24px))}
+.context-help-copy{line-height:1.52;overflow-wrap:anywhere}
+.context-help-copy p{margin:.4rem 0 .65rem}
+.context-help-copy p:last-child{margin-bottom:0}
+.context-help-inline{margin:0 0 .4rem}
+.context-help-inline>.context-help-copy{background:var(--bg);border:1px solid var(--border);border-radius:.65rem;padding:.65rem .8rem}

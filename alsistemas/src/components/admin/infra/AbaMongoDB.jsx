@@ -9,6 +9,7 @@ import {
   PageCard, SectionTitle, Badge, Btn, ModalConfirm,
 } from './InfraBase'
 import { DSModal, DSBtn } from '../ui/DS'
+import DetailDialog from '../ui/DetailDialog'
 
 export default function AbaMongoDB() {
   const [status,     setStatus]     = useState(null)
@@ -25,6 +26,7 @@ export default function AbaMongoDB() {
   const [stats,      setStats]      = useState(null)
   const [carregandoStats,   setCarregandoStats]   = useState(false)
   const [indices,    setIndices]    = useState([])
+  const [indicesAbertos, setIndicesAbertos] = useState(false)
   const [carregandoIndices, setCarregandoIndices] = useState(false)
   const [novoIndice, setNovoIndice] = useState({ campo: '', valor: 1, unique: false })
   const [criandoIndice,   setCriandoIndice]   = useState(false)
@@ -58,7 +60,7 @@ export default function AbaMongoDB() {
   }, [])
 
   function selecionarColecao(nome) {
-    setColSel(nome); setPage(1); setBusca(''); setDocs(null); setStats(null); setIndices([])
+    setIndicesAbertos(false); setColSel(nome); setPage(1); setBusca(''); setDocs(null); setStats(null); setIndices([])
     carregarDocs(nome, 1, ''); carregarStatsEIndices(nome)
   }
 
@@ -183,15 +185,15 @@ export default function AbaMongoDB() {
                 )}
 
               {/* Gerenciar índices */}
-              <details style={{ marginBottom: 16 }}>
-                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.text, padding: '6px 0', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {Ico.index} Gerenciar índices
-                </summary>
-                <div style={{ marginTop: 12, background: C.surf2, borderRadius: 8, padding: '10px 12px' }}>
+              <DSBtn variant="ghost" aria-haspopup="dialog" onClick={() => setIndicesAbertos(true)} style={{ marginBottom: 16 }}>
+                {Ico.index} Gerenciar índices
+              </DSBtn>
+              <DetailDialog open={indicesAbertos} onClose={() => setIndicesAbertos(false)} title={`Índices · ${colSel}`}>
+                <div style={{ background: C.surf2, borderRadius: 8, padding: '10px 12px' }}>
                   {carregandoIndices ? <Spin size={16} /> : indices.length === 0 ? (
                     <p style={{ fontSize: 12, color: C.muted }}>Nenhum índice além do _id_</p>
                   ) : (
-                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <div className="adm-detail-table"><table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                           <th style={{ textAlign: 'left', padding: '5px 0' }}>Nome</th>
@@ -208,7 +210,7 @@ export default function AbaMongoDB() {
                             <td style={{ padding: '6px 0', textAlign: 'center' }}>{idx.unique ? '✅' : '❌'}</td>
                             <td style={{ padding: '6px 0', textAlign: 'right' }}>
                               {idx.name !== '_id_' && (
-                                <button onClick={() => removerIndice(idx.name)} disabled={removendoIndice === idx.name}
+                                <button type="button" aria-label={`Remover índice ${idx.name}`} onClick={() => removerIndice(idx.name)} disabled={removendoIndice === idx.name}
                                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: 11 }}>
                                   {removendoIndice === idx.name ? <Spin size={12} /> : '🗑️'}
                                 </button>
@@ -217,16 +219,16 @@ export default function AbaMongoDB() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   )}
                   <div style={{ marginTop: 12, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
                     <p style={{ fontSize: 12, marginBottom: 6 }}>Criar novo índice</p>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <input type="text" placeholder="campo" value={novoIndice.campo}
+                      <input aria-label="Campo do índice" type="text" placeholder="campo" value={novoIndice.campo}
                         onChange={e => setNovoIndice(i => ({ ...i, campo: e.target.value }))}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, padding: '5px 8px', borderRadius: 6, fontSize: 12, color: C.text, width: 120 }}
                       />
-                      <select value={novoIndice.valor} onChange={e => setNovoIndice(i => ({ ...i, valor: e.target.value }))}
+                      <select aria-label="Ordem do índice" value={novoIndice.valor} onChange={e => setNovoIndice(i => ({ ...i, valor: e.target.value }))}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, padding: '5px 8px', borderRadius: 6, fontSize: 12, color: C.text }}>
                         <option value="1">Asc (1)</option>
                         <option value="-1">Desc (-1)</option>
@@ -239,7 +241,7 @@ export default function AbaMongoDB() {
                     </div>
                   </div>
                 </div>
-              </details>
+              </DetailDialog>
 
               {/* Tabela de documentos */}
               {loadDocs ? (

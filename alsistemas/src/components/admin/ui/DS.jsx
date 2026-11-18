@@ -169,6 +169,8 @@ export function DSBtn({
   style,
   className = '',
   title,
+  "aria-label": ariaLabel,
+  "aria-haspopup": ariaHasPopup,
 }) {
   const variantClass = {
     primary:   'adm-btn-primary',
@@ -187,6 +189,8 @@ export function DSBtn({
       className={`adm-btn ${variantClass}${sizeClass} ${className}`}
       style={style}
       title={title}
+      aria-label={ariaLabel}
+      aria-haspopup={ariaHasPopup}
     >
       {loading
         ? <><AdminIcon name="spinSm" size={14} /> {children}</>
