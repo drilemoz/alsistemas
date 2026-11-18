@@ -198,3 +198,26 @@ export async function redirectDiagnostics(rule, ip, { resolver = new Resolver({t
   const [plain,secure] = await Promise.all([check(host,expectedIp,false,rule),check(host,expectedIp,true,rule)])
   return { dns, http:plain, https:secure }
 }
+
+export async function ensureProjectPointer(zone, host, ip, { dryRun = false, ...options } = {}) {
+  const source = redirectSource(zone,host,options.panelHost)
+  if (!net.isIPv4(ip)) throw domainError('IPv4 inválido.')
+  return lock('dns:' + source.domain, async () => {
+    const account = await getDomain(source.domain, options)
+    if (account.nameservers?.provider !== 'basic') return {state:'manual', message:'Adicione o registro A no provedor de DNS ativo.'}
+    async function find() {
+      const listing = await listSpaceshipDns(source.domain,options)
+      if (listing.items.length !== listing.total) throw domainError('Não foi possível conferir todos os registros da zona.',409)
+      const current = listing.items.filter(item => String(item?.name).toLowerCase() === source.relative)
+      if (current.length === 1 && current[0].type === 'A' && current[0].address === ip) return true
+      if (current.length) throw domainError('Já existem registros para esse subdomínio. Nenhum registro será substituído.',409)
+      return false
+    }
+    if (await find()) return {state:'saved',message:'O registro A já está configurado na Spaceship.'}
+    if (dryRun) return {state:'ready'}
+    try { await changeSpaceshipDns(source.domain,{ action:'create', record:{type:'A',name:source.relative,value:ip,ttl:300} },options) }
+    catch (error) { if (!await find()) throw error }
+    return await find() ? {state:'saved',message:'Registro A confirmado na Spaceship.'}
+      : {state:'pending',message:'A Spaceship aceitou a solicitação. O registro ainda não foi relido.'}
+  })
+}

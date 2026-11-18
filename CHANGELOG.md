@@ -1,3 +1,11 @@
+## 2.0.40 — Hospedagem de projetos e verificação de DNS (17/11/2026)
+
+- Novo assistente com nome de exibição, pasta, tipo, domínio existente, subdomínio Spaceship ou criação sem domínio.
+- Cria e valida Nginx sem sobrescrever sites. Apontamento A, verificação de DNS, HTTPS e publicação passam a ter estados separados.
+- Publicação de ZIP nos novos projetos gerenciados, com validação do arquivo, troca atômica de public/ e cópia da versão anterior fora do site.
+- Servidores DNS separa a configuração da conta, delegação pública e destino do site. Registros compactos têm filtro, detalhes, copiar e testar.
+- Nenhuma integração AWS adicionada. O IPv4 fixo é confirmado no assistente.
+
 ## 2.0.39 — Pop-ups de Domínios e diagnóstico compacto (17/11/2026)
 
 - Domínios abre DNS, apontamento, redirecionamentos e ajustes em janelas. Nova regra, edição, teste e servidores DNS também usam pop-ups.

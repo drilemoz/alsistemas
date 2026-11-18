@@ -26,6 +26,7 @@ ALLOWED = {
     'php-gd': 'php8.3-gd',
     'php-intl': 'php8.3-intl',
     'composer': 'composer',
+    'certbot': 'certbot',
 }
 
 

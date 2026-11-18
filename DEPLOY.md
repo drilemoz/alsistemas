@@ -1,3 +1,7 @@
+## Atualização 2.0.40 — Assistente de hospedagem e DNS
+
+Instale em **Mais → Atualizar → Arquivo ZIP**. Configure a chave Spaceship com leitura de domínios e leitura/escrita de DNS. Em **Projetos → Novo projeto**, confirme o IPv4 público fixo no formulário. O painel não muda automaticamente o domínio raiz, nameservers ou projetos existentes. Consulte o [guia de publicação](vps/docs/ATUALIZACAO-2.0.40.md).
+
 ## Atualização 2.0.39 — Pop-ups e diagnóstico
 
 Atualize pelo menu **Mais → Atualizar → Arquivo ZIP** no celular. A escrita temporária fica em **Arquivos → Informações → Escrita temporária**. Não é necessário refazer configurações de DNS ou permissões.

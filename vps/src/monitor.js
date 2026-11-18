@@ -57,6 +57,7 @@ export function projects(dir = root, { nginx, withDomains = true } = {}) {
           else if (fs.existsSync(path.join(folder, 'public', 'index.html')) || fs.existsSync(path.join(folder, 'index.html'))) type = 'static'
         } catch { /* sem acesso ao conteúdo: exibir como desconhecido */ }
         let managed = false, managedDomain = null, enabled = null, backupEligible = false
+        let displayName = null, hosting = false, hostingDomain = null, release = null
         // Metadados opcionais para projetos criados sem domínio; não autorizam operações.
         try {
           const metadata = path.join(folder, '.alsistemas.json')
@@ -68,6 +69,19 @@ export function projects(dir = root, { nginx, withDomains = true } = {}) {
               const folderStat = fs.statSync(folder)
               const pubPath = path.join(folder, 'public')
               const pubStat = fs.statSync(pubPath)
+              hosting = managed && info.hosting === true && ['php','static'].includes(info.type) && folderStat.uid === 0 && !(folderStat.mode & 0o022) && stat.uid === 0
+              if (hosting) {
+                hostingDomain = typeof info.domain === 'string' && /^[a-z0-9.-]+$/.test(info.domain) ? info.domain : null
+                displayName = typeof info.displayName === 'string' ? info.displayName.slice(0,70) : null
+                try {
+                  const releaseFile = path.join(folder,'.als-release.json')
+                  const rs = fs.lstatSync(releaseFile)
+                  if (rs.isFile() && rs.uid === 0 && !(rs.mode & 0o022) && rs.size < 4096) {
+                    const current = JSON.parse(fs.readFileSync(releaseFile,'utf8'))
+                    if (Number.isInteger(current.files) && Number.isFinite(Date.parse(current.publishedAt))) release = { files:current.files, publishedAt:current.publishedAt }
+                  }
+                } catch { /* ainda não publicado */ }
+              }
               backupEligible = managed && ['php', 'static'].includes(info.type) &&
                 folderStat.uid === 0 && !(folderStat.mode & 0o022) &&
                 pubStat.isDirectory() && !fs.lstatSync(pubPath).isSymbolicLink() && !(pubStat.mode & 0o022)
@@ -97,14 +111,14 @@ export function projects(dir = root, { nginx, withDomains = true } = {}) {
         const protectedProject = ['iguatama-teste', 'alsistemas'].includes(entry.name)
         const supportsFiles = !protectedProject && /^[a-z][a-z0-9-]{1,39}$/.test(entry.name) && !entry.name.includes('--')
         const capabilities = {
-          files: supportsFiles, diagnostics: !protectedProject,
+          files: supportsFiles, diagnostics: !protectedProject, hosting: supportsFiles && hosting,
           backups: !protectedProject && (entry.name === 'iguatamaonline' || (supportsFiles && backupEligible)),
           updates: entry.name === 'iguatamaonline',
           siteState: supportsFiles && managed && !!managedDomain && typeof enabled === 'boolean',
         }
         return {
-          name: entry.name, type, path: folder, managed, backupEligible, protected: protectedProject,
-          capabilities, domain: sites[0]?.name || null, domains: sites.map(site => site.name),
+          name: entry.name, displayName, hostingDomain, release, type, path: folder, managed, backupEligible, protected: protectedProject,
+          capabilities, domain: sites[0]?.name || hostingDomain || null, domains: sites.map(site => site.name),
           sites, enabled,
         }
       }).filter(Boolean)

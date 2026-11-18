@@ -9,6 +9,8 @@ import tempfile
 
 ANCHOR = " client_max_body_size 64k;\n location / {"
 ENDPOINTS = ("/api/updates/upload", "/api/projects/iguatamaonline/update/upload")
+HOSTING_PATTERN = r"/api/projects/[a-z][a-z0-9-]+/hosting/upload$"
+HOSTING_LOCATION = "location ~ ^" + HOSTING_PATTERN + " {"
 
 
 def new_config(original):
@@ -16,15 +18,17 @@ def new_config(original):
         raise ValueError('Configuração não pertence ao painel')
     if ' listen 443 ssl;' not in original or 'proxy_pass http://127.0.0.1:8181;' not in original:
         raise ValueError('Vhost HTTPS desconhecido')
-    if all(f'location = {e} {{' in original for e in ENDPOINTS):
+    existing = [e for e in ENDPOINTS if f'location = {e} {{' in original]
+    if len(existing) == len(ENDPOINTS) and HOSTING_LOCATION in original:
         return original
-    if any(f'location = {e} {{' in original for e in ENDPOINTS):
+    if len(existing) not in (0,len(ENDPOINTS)) or HOSTING_LOCATION in original:
         raise ValueError('Vhost parcialmente alterado; revisão manual necessária')
-    if original.count(ANCHOR) != 1:
+    last_endpoint = ' location = ' + ENDPOINTS[-1] + ' {'
+    if original.count(ANCHOR) != 1 and (not existing or original.count(last_endpoint) != 1):
         raise ValueError('Modelo de vhost incompatível')
     blocks = []
-    for endpoint in ENDPOINTS:
-        blocks.append(f""" location = {endpoint} {{
+    for location in [*('location = ' + e + ' {' for e in ENDPOINTS if not existing), HOSTING_LOCATION]:
+        blocks.append(f""" {location}
    client_max_body_size 32m;
    proxy_pass http://127.0.0.1:8181;
    proxy_set_header Host $host;
@@ -32,6 +36,8 @@ def new_config(original):
    proxy_set_header X-Forwarded-Proto https;
    proxy_read_timeout 120s;
  }}""")
+    if existing:
+        return original.replace(last_endpoint, blocks[0] + '\n' + last_endpoint, 1)
     return original.replace(ANCHOR, ' client_max_body_size 64k;\n' + '\n'.join(blocks) + '\n location / {', 1)
 
 

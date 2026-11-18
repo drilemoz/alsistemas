@@ -755,3 +755,28 @@ label{font-size:.82rem;margin-bottom:11px}
 .insight-site-row div{display:grid;gap:2px}
 .insight-site-row .pill{flex-shrink:0}
 @media(max-width:360px){.insight-site-row .pill{font-size:.62rem}.panel-popup .dialog-body{padding:13px}}
+
+/* Hospedagem e DNS com linhas compactas, rolagem interna e ações acessíveis. */
+.hosting-form,.hosting-stages{display:grid;gap:.68rem}
+.hosting-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.65rem}
+.hosting-form label,.hosting-pair>*{min-width:0}
+.hosting-address{display:grid;gap:.2rem;padding:.7rem .85rem;background:var(--bg);border:1px solid var(--border);border-radius:.72rem;min-width:0}
+.hosting-stages>h3{margin:.55rem 0 .03rem;font-size:1rem}.hosting-stages>p{margin:.1rem 0}
+.hosting-stage{display:grid;gap:.23rem;padding:.55rem .72rem;border:1px solid var(--border);border-radius:.72rem;min-width:0}
+.hosting-stage-caption{display:flex;justify-content:space-between;align-items:center;gap:.42rem;font-size:.9rem;flex-wrap:wrap}
+.hosting-stage-caption .pill{white-space:normal}
+.hosting-actions{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.85rem}
+.hosting-form progress{width:100%}
+.dns-compact-list{display:grid;border:1px solid var(--border);border-radius:.75rem;overflow:hidden}
+.dns-compact-list:empty{display:none}
+.dns-filter{display:flex;align-items:center;justify-content:space-between;gap:.45rem;margin:.4rem 0 .66rem}
+.dns-filter select{width:auto;max-width:78%;min-height:2.35rem;padding-block:.35rem}
+button.dns-compact-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.6rem;width:100%;padding:.62rem .72rem;color:var(--text);background:var(--surface);border:0;border-radius:0;text-align:left;min-height:3.35rem}
+button.dns-compact-row+button.dns-compact-row{border-top:1px solid var(--border)}
+.dns-compact-row:hover,.dns-compact-row:focus-visible{background:var(--bg)}
+.dns-compact-copy{display:grid;gap:.17rem;line-height:1.23;min-width:0}
+.dns-clamp{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#dn-record-meta strong{white-space:pre-wrap;overflow-wrap:anywhere}
+#dn-ns-edit-open{margin-top:.65rem}
+#dn-ns-public{margin-top:.55rem}
+@media(max-width:350px){.hosting-pair{gap:.4rem}.hosting-pair label{font-size:.83rem}.hosting-pair input,.hosting-pair select{padding-inline:.55rem}.hosting-actions>*{max-width:100%}}

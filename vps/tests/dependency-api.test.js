@@ -36,7 +36,7 @@ test('API de pacotes exige sessão, CSRF e allowlist, sem reautenticação', asy
     const csrf=login.body.csrf
     const inv=await call('/api/dependencies','GET',undefined,cookie)
     assert.equal(inv.status,200)
-    assert.equal(inv.body.packages.length,8)
+    assert.equal(inv.body.packages.length,9)
     assert.equal((await call('/api/dependencies/install','POST',{package:'composer'},cookie)).status,403)
     assert.equal((await call('/api/dependencies/install','POST',{package:'curl; rm -rf /'},cookie,csrf)).status,400)
     assert.equal((await call('/api/dependencies/install','POST',{package:'composer',cmd:'id'},cookie,csrf)).status,400)

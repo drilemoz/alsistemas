@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.39: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.40: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -71,7 +71,7 @@ if (( CORE_UPGRADE )); then
   /usr/bin/node -e 'if(Number(process.versions.node.split(".")[0])<22) process.exit(1)' || fail 'Node.js >=22 necessário.'
 else
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg nginx python3 sudo openssl unzip
+apt-get install -y ca-certificates curl gnupg nginx python3 sudo openssl unzip certbot
 node_major=0
 if [[ -x /usr/bin/node ]]; then node_major="$(/usr/bin/node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; fi
 if ((node_major < 22)); then
@@ -149,7 +149,7 @@ fi
 [[ ! -L /usr/local/libexec/alsistemas-helper ]] || fail 'Helper existente é um link simbólico; operação recusada.'
 install -o root -g root -m 0700 "$BASE/vps/admin/helper.py" /usr/local/libexec/alsistemas-helper
 # Rotinas isoladas de manutenção de projetos externos; somente o helper fixo usa sudo.
-for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py; do
+for candidate in project_maintenance.py project_updater.py other_project_permissions.py project_explorer.py domain_redirects.py managed_hosting.py; do
   [[ ! -L "/usr/local/libexec/$candidate" ]] || fail 'Script de projeto existente é link simbólico.'
   install -o root -g root -m 0700 "$BASE/vps/admin/$candidate" "/usr/local/libexec/$candidate"
 done
@@ -208,7 +208,7 @@ RestartSec=5
 UMask=0077
 ProtectSystem=strict
 ExecStartPre=+/usr/bin/install -d -o root -g root -m 0700 /run/alsistemas-vps
-ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps /var/log/nginx -/run/nginx.pid
+ReadWritePaths=/run/alsistemas-vps /var/lib/alsistemas /var/backups/alsistemas-vps /var/backups/alsistemas /var/www/projetos /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/alsistemas-vps /var/log/nginx -/run/nginx.pid -/etc/letsencrypt -/var/lib/letsencrypt -/var/log/letsencrypt
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
@@ -364,6 +364,12 @@ fi
 [[ ! -L /run/alsistemas-vps ]] || fail 'Diretório runtime é um link simbólico; recusado.'
 install -d -o root -g root -m 0700 /run/alsistemas-vps
 # Preserva a origem em upgrades de instalações HTTPS existentes.
+# Os caminhos já existentes do Certbot mantêm seus modos e donos.
+for acme_path in /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt; do
+  [[ ! -L "$acme_path" ]] || fail 'Diretório Certbot é link simbólico; recusado.'
+  [[ -d "$acme_path" ]] || install -d -o root -g root -m 0700 "$acme_path"
+done
+install -d -o root -g root -m 0755 /var/lib/letsencrypt
 sed -i "/^Environment=ALS_PORT=/a Environment=ALS_ORIGIN=$ORIGIN" /etc/systemd/system/alsistemas-vps.service
 # Troca por renomeação no mesmo filesystem, nunca por cp para a versão ativa.
 # Caso falhe a ativação, a rotina de estágio restaura o diretório anterior.
@@ -445,7 +451,7 @@ server {
  ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
  add_header Strict-Transport-Security "max-age=31536000" always;
  client_max_body_size 64k;
- # Somente os dois endpoints autenticados aceitam ZIPs de até 32 MiB.
+ # Somente os endpoints autenticados de upload aceitam ZIPs de até 32 MiB.
  location = /api/updates/upload {
    client_max_body_size 32m;
    proxy_pass http://127.0.0.1:8181;
@@ -455,6 +461,14 @@ server {
    proxy_read_timeout 120s;
  }
  location = /api/projects/iguatamaonline/update/upload {
+   client_max_body_size 32m;
+   proxy_pass http://127.0.0.1:8181;
+   proxy_set_header Host \$host;
+   proxy_set_header X-Real-IP \$remote_addr;
+   proxy_set_header X-Forwarded-Proto https;
+   proxy_read_timeout 120s;
+ }
+ location ~ ^/api/projects/[a-z][a-z0-9-]+/hosting/upload$ {
    client_max_body_size 32m;
    proxy_pass http://127.0.0.1:8181;
    proxy_set_header Host \$host;
@@ -477,22 +491,23 @@ EOF
     sed -i "s|^Environment=ALS_ORIGIN=.*|Environment=ALS_ORIGIN=https://$DOMAIN|" /etc/systemd/system/alsistemas-vps.service
     systemctl daemon-reload
     systemctl restart alsistemas-vps
-    install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
-    HOOK_PATH='/etc/letsencrypt/renewal-hooks/deploy/alsistemas-nginx'
-    [[ ! -L "$HOOK_PATH" ]] || fail 'Hook de renovação é link simbólico; recusado.'
-    if [[ -e "$HOOK_PATH" ]]; then
-      grep -Fqx '/usr/sbin/nginx -t' "$HOOK_PATH" && grep -Fqx '/bin/systemctl reload nginx' "$HOOK_PATH" || fail 'Hook de renovação existente não pertence ao painel.'
-    fi
-    cat > "$HOOK_PATH" <<'HOOK'
+    log "Acesso HTTPS previsto: https://$DOMAIN (confirme DNS e portas no provedor)."
+  fi
+fi
+# Reinicia o Nginx apenas após a renovação validada de um certificado.
+install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+HOOK_PATH='/etc/letsencrypt/renewal-hooks/deploy/alsistemas-nginx'
+[[ ! -L "$HOOK_PATH" ]] || fail 'Hook de renovação é link simbólico; recusado.'
+if [[ -e "$HOOK_PATH" ]]; then
+  grep -Fqx '/usr/sbin/nginx -t' "$HOOK_PATH" && grep -Fqx '/bin/systemctl reload nginx' "$HOOK_PATH" || fail 'Hook de renovação existente não pertence ao painel.'
+fi
+cat > "$HOOK_PATH" <<'HOOK'
 #!/bin/sh
 set -e
 /usr/sbin/nginx -t
 /bin/systemctl reload nginx
 HOOK
-    chmod 0755 "$HOOK_PATH"
-    log "Acesso HTTPS previsto: https://$DOMAIN (confirme DNS e portas no provedor)."
-  fi
-fi
+chmod 0755 "$HOOK_PATH"
 # Atualizações do núcleo normalmente não repetem --domain; migrar apenas o vhost
 # com marcador do AL Sistemas. Nenhum vhost de terceiros será editado.
 if ((CORE_UPGRADE)) && [[ -z "$DOMAIN" ]]; then

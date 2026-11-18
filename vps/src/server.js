@@ -18,7 +18,10 @@ import { spaceshipStatus, saveSpaceship, removeSpaceship, listSpaceshipDns } fro
 
 import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePointer, domainHost, redirectSource, redirectDiagnostics } from './domains.js'
 
-const VERSION = '2.0.39'
+import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
+import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
+
+const VERSION = '2.0.40'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -105,12 +108,12 @@ async function body(req) {
     return value
   } catch { throw Object.assign(new Error('JSON inválido'), { status: 400 }) }
 }
-async function uploadZip(req, onPercent = () => {}) {
+async function uploadZip(req, onPercent = () => {}, min = 512) {
   // Content-Length conhecido, tamanho rígido e fluxo sem carregar dezenas de MB na RAM.
   const maximum = 32 * 1024 * 1024
   const length = Number(req.headers['content-length'])
-  if (!Number.isSafeInteger(length) || length < 512 || length > maximum)
-    throw Object.assign(new Error('ZIP precisa ter entre 512 bytes e 32 MiB, com Content-Length'), { status: 413 })
+  if (!Number.isSafeInteger(length) || length < min || length > maximum)
+    throw Object.assign(new Error('ZIP vazio ou acima do limite de 32 MiB'), { status: 413 })
   if (req.headers['content-type'] !== 'application/zip' && req.headers['content-type'] !== 'application/octet-stream')
     throw Object.assign(new Error('Tipo de arquivo inválido; selecione um ZIP'), { status: 415 })
   const name = `upload-${crypto.randomBytes(12).toString('hex')}.zip`
@@ -156,7 +159,7 @@ function acceptedOrigin(req) {
 }
 function serveUi(req, res) {
   const pathname = new URL(req.url, 'http://localhost').pathname
-  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/domains.js': ['domains.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
+  const paths = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/integrations.js': ['integrations.js', 'text/javascript; charset=utf-8'], '/domains.js': ['domains.js', 'text/javascript; charset=utf-8'], '/hosting.js': ['hosting.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/tutorial-instalacao.html': ['tutorial-instalacao.html', 'text/html; charset=utf-8'] }
   const asset = paths[pathname]
   if (!asset) return fail(res, 404, 'Não encontrado')
   const source = path.join(publicDir, asset[0])
@@ -170,7 +173,7 @@ function runTask(task) {
     const proc = spawn('/usr/bin/sudo', ['-n', '/usr/local/libexec/alsistemas-helper'], { stdio: ['pipe', 'pipe', 'pipe'], shell: false, detached: true })
     const killSubprocessGroup = () => { try { process.kill(-proc.pid, 'SIGKILL') } catch { proc.kill('SIGKILL') } }
     let output = ''; let error = ''
-    const deadline = task.action.endsWith('_domain_redirect') ? 60000 : task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
+    const deadline = task.action === 'enable_project_tls' ? 130000 : task.action.endsWith('_domain_redirect') ? 60000 : task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
     const timer = setTimeout(() => { killSubprocessGroup(); reject(new Error('Tarefa excedeu limite de execução')) }, deadline)
     proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'project_file_explorer' ? 262144 : task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
     proc.stderr.on('data', c => { error += c; if (error.length > 8192) killSubprocessGroup() })
@@ -187,7 +190,10 @@ function runTask(task) {
   })
 }
 
-export function createServer({ taskRunner = runTask, spaceshipOptions } = {}) {
+export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
+  hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay } = {}) {
+  const hostingProvider = { ...spaceshipOptions, panelHost }
+  const hosting = hostingWorkflow({runner:taskRunner, provider:hostingProvider, diagnosticOptions, catalog:hostingCatalog, note:audit, retryDelay})
   return http.createServer(async (req, res) => {
     res.setHeader('x-content-type-options', 'nosniff')
     res.setHeader('referrer-policy', 'no-referrer')
@@ -327,17 +333,27 @@ export function createServer({ taskRunner = runTask, spaceshipOptions } = {}) {
             (query.has('skip') && !/^\d{1,5}$/.test(query.get('skip')))) return fail(res, 400, 'Página inválida.')
         return json(res, 200, await listDomains(Number(query.get('skip') ?? 0), spaceshipOptions))
       }
-      const domainRoute = /^\/api\/domains\/([a-z0-9.-]{4,253})\/(dns|settings|pointer|redirects|redirect-check)$/.exec(path)
+      const domainRoute = /^\/api\/domains\/([a-z0-9.-]{4,253})\/(dns|diagnose|settings|pointer|redirects|redirect-check)$/.exec(path)
       if (domainRoute) {
         const zone = domainHost(domainRoute[1])
         const resource = domainRoute[2]
-        const allowed = { dns:['GET'], settings:['POST'], pointer:['POST'], redirects:['GET','POST','DELETE'], 'redirect-check':['POST'] }
+        const allowed = { dns:['GET'], diagnose:['GET'], settings:['POST'], pointer:['POST'], redirects:['GET','POST','DELETE'], 'redirect-check':['POST'] }
         if (!allowed[resource].includes(req.method)) return fail(res, 405, 'Método não permitido.')
         if (!limit(ip, 'domains_' + resource + '_' + req.method, req.method === 'GET' ? 30 : 8))
           return fail(res, 429, 'Muitas operações de domínio.')
         const provider = { ...spaceshipOptions, panelHost }
         const listed = { action:'list_domain_redirects', zone }
         if (req.method === 'GET') {
+          if (resource === 'diagnose') {
+            const query = new URL(req.url,origin).searchParams
+            if ([...query.keys()].some(key => !['type','name','mode'].includes(key)) || [...query.keys()].some(key=>query.getAll(key).length !== 1))
+              return fail(res,400,'Consulta DNS inválida.')
+            await getDomain(zone,provider)
+            const servers = query.get('mode') === 'servers'
+            const host = servers ? zone : recordHost(zone,query.get('name') || '@')
+            const type = servers ? 'NS' : query.get('type') || 'A'
+            return json(res,200,await dnsDiagnostics(zone,{host,type,mode:servers ? 'servers' : 'record'},diagnosticOptions))
+          }
           if (resource === 'dns') return json(res, 200, { records:await listSpaceshipDns(zone, provider) })
           try { return json(res, 200, await taskRunner(listed)) } catch (error) { return fail(res, 422, error.message) }
         }
@@ -620,6 +636,45 @@ export function createServer({ taskRunner = runTask, spaceshipOptions } = {}) {
           audit('task_requested', { ip, action: 'start_project_update', name: 'iguatamaonline' })
           return json(res, 202, result)
         } finally { if (saved) fs.rmSync(dataPath(saved.name), { force: true }) }
+      }
+      if (path === '/api/hosting/ipv4' && req.method === 'GET') {
+        if (!limit(ip,'hosting-ipv4',30)) return fail(res,429,'Muitas consultas de IPv4.')
+        const zone = new URL(req.url,origin).searchParams.get('zone')
+        return json(res,200,await ipv4Hint(zone,hostingProvider))
+      }
+      if (path === '/api/hosting/projects' && req.method === 'POST') {
+        if (!limit(ip,'hosting-create',10)) return fail(res,429,'Muitas solicitações de criação.')
+        const plan = validateHosting(await body(req),panelHost)
+        return json(res,201,await hosting.create(plan,ip))
+      }
+      const managedHostingRoute = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/hosting(?:\/(dns|retry|upload))?$/.exec(path)
+      if (managedHostingRoute) {
+        const [,name,operation] = managedHostingRoute
+        if (name.includes('--') || !hosting.eligible(name)) return fail(res,404,'Projeto não disponível para publicação.')
+        if (!operation && req.method === 'GET') return json(res,200,hosting.status(name))
+        if (operation === 'dns' && req.method === 'GET') {
+          if (!limit(ip,'hosting-dns',20)) return fail(res,429,'Muitas consultas DNS.')
+          return json(res,200,await hosting.test(name))
+        }
+        if (operation === 'retry' && req.method === 'POST') {
+          if (!limit(ip,'hosting-retry',12)) return fail(res,429,'Muitas tentativas de publicação.')
+          if (Object.keys(await body(req)).length) return fail(res,400,'Parâmetros inválidos.')
+          return json(res,202,hosting.retry(name))
+        }
+        if (operation === 'upload' && req.method === 'POST') {
+          if (!limit(ip,'hosting-upload',12)) return fail(res,429,'Muitos envios de ZIP.')
+          let saved
+          try {
+            saved = await uploadZip(req,undefined,22)
+            const result = await taskRunner({action:'publish_project_zip',name,upload:saved.name,sha256:saved.sha256})
+            audit('project_files_published',{name,ip,success:true})
+            return json(res,200,result)
+          } catch (error) {
+            audit('project_files_published',{name,ip,success:false})
+            return fail(res,error.status || 422,error.message)
+          } finally { if (saved) fs.rmSync(dataPath(saved.name),{force:true}) }
+        }
+        return fail(res,405,'Método não permitido.')
       }
       if (path === '/api/projects' && req.method === 'GET') return json(res, 200, { projects: projects() })
       if (path === '/api/audit' && req.method === 'GET') return json(res, 200, { events: lastAudit() })

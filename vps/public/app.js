@@ -235,7 +235,7 @@ function projectTool(title, icon, path, detail = '') {
   const arrow = node('span', '›')
   arrow.setAttribute('aria-hidden', 'true')
   button.append(badge, label, arrow)
-  button.addEventListener('click', () => navigateApp(path))
+  button.addEventListener('click', () => typeof path === 'function' ? path() : navigateApp(path))
   return button
 }
 function renderProjectPage(name) {
@@ -254,7 +254,7 @@ function renderProjectPage(name) {
       : projectCatalogLoaded ? 'Projeto não encontrado.' : 'Carregando projeto…'
     return
   }
-  $('project-details-title').textContent = item.name
+  $('project-details-title').textContent = item.displayName || item.name
   $('project-detail-subtitle').textContent = [item.domain, projectAccess(item)].filter(Boolean).join(' · ')
   if (item.protected) {
     status.textContent = 'Projeto protegido. As ferramentas administrativas não estão disponíveis aqui.'
@@ -264,6 +264,10 @@ function renderProjectPage(name) {
   const route = 'project/' + item.name
   const capabilities = item.capabilities || {}
   if (capabilities.files) actions.append(projectTool('Arquivos', 'folder', route + '/permissions'))
+  if (capabilities.hosting) {
+    const publish = projectTool('Publicação e domínio','globe',() => openManagedHosting(item),'Enviar ZIP, testar DNS e acompanhar HTTPS')
+    actions.append(publish)
+  }
   if (capabilities.updates) actions.append(projectTool('Atualizar site', 'updates', route + '/aws/updates', 'ZIP ou GitHub'))
   if (capabilities.diagnostics) actions.append(
     projectTool('Diagnóstico', 'activity', route + '/insights'),
@@ -1320,18 +1324,18 @@ function renderProjectCatalog() {
   $('project-search-field').hidden = projects.length < 5
   if (projects.length < 5) search.value = ''
   const query = search.value.trim().toLocaleLowerCase('pt-BR')
-  const filtered = projects.filter(item => !query || [item.name, ...(item.domains || [])].join(' ').toLocaleLowerCase('pt-BR').includes(query))
+  const filtered = projects.filter(item => !query || [item.name, item.displayName, ...(item.domains || [])].join(' ').toLocaleLowerCase('pt-BR').includes(query))
   const rows = filtered.map(item => {
     const line = node('button', '', 'project-entry project-catalog-entry')
     line.type = 'button'
-    line.setAttribute('aria-label', 'Abrir projeto ' + item.name)
+    line.setAttribute('aria-label', 'Abrir projeto ' + (item.displayName || item.name))
     line.addEventListener('click', () => openProjectDetails(item))
     const emblem = node('span', '', 'project-emblem')
     emblem.append(iconGraphic(item.type === 'php' ? 'code' : item.type === 'node' ? 'server' : 'folder'))
     const info = node('span', '', 'project-catalog-info')
     const top = node('span', '', 'project-catalog-top')
-    top.append(node('strong', item.name), node('span', projectAccess(item), 'pill project-catalog-access'))
-    info.append(top, node('small', item.domain || 'Domínio não identificado', 'muted'))
+    top.append(node('strong', item.displayName || item.name), node('span', projectAccess(item), 'pill project-catalog-access'))
+    info.append(top, node('small', [item.domain || 'Sem domínio', item.capabilities?.hosting ? (item.release ? 'Arquivos publicados' : 'Sem arquivos publicados') : ''].filter(Boolean).join(' · '), 'muted'))
     const arrow = node('span', '›', 'project-entry-chevron')
     arrow.setAttribute('aria-hidden', 'true')
     line.append(emblem, info, arrow)
@@ -1609,16 +1613,15 @@ $('login-form').addEventListener('submit', e => {
     enterDashboard(sess)
   })
 })
-$('create').addEventListener('submit', e => {
-  e.preventDefault()
-  submit(e.currentTarget, async data => {
-    if (!await confirmAction(`Criar o novo projeto "${data.name}"? Nenhum projeto existente será substituído.`, 'Criar projeto')) return
-    const result = await api('/api/tasks', 'POST', { action: 'create_project', ...data })
-    e.target.reset()
-    $('project-dialog').close()
-    notice(`Projeto ${result.name} criado em ${result.path}. ${result.nginxConfigured ? 'Nginx configurado, HTTP somente. Falta HTTPS.' : 'Nenhum domínio foi publicado.'}`)
-    await loadProjectCatalog({ force: true })
-  })
+$('create').addEventListener('submit', async event => {
+  event.preventDefault()
+  const result = await submitManagedHosting(event.currentTarget)
+  if (!result) return
+  $('project-dialog').close()
+  await loadProjectCatalog({ force: true })
+  navigateApp('project/' + result.name)
+  const created = knownProjects.get(result.name)
+  if (created?.capabilities?.hosting) openManagedHosting(created)
 })
 $('refresh').addEventListener('click', () => { clearNotice(); void loadDashboardOverview() })
 $('logout').addEventListener('click', async () => {
@@ -1811,7 +1814,7 @@ async function refreshDependencies() {
   for (const pkg of info.packages) {
     const line = node('div', '', 'package-line')
     const label = node('div', '', 'package-info')
-    const helps = { 'php-curl': 'Requisições HTTP a serviços externos', 'php-mbstring': 'Strings e acentuação UTF-8', 'php-xml': 'Leitura e criação de XML', 'php-mysql': 'Conexão do PHP ao MariaDB', 'php-zip': 'Arquivos compactados ZIP', 'php-gd': 'Processamento de imagens', 'php-intl': 'Internacionalização e idiomas', composer: 'Dependências de projetos PHP' }
+    const helps = { 'php-curl': 'Requisições HTTP a serviços externos', 'php-mbstring': 'Strings e acentuação UTF-8', 'php-xml': 'Leitura e criação de XML', 'php-mysql': 'Conexão do PHP ao MariaDB', 'php-zip': 'Arquivos compactados ZIP', 'php-gd': 'Processamento de imagens', 'php-intl': 'Internacionalização e idiomas', composer: 'Dependências de projetos PHP', certbot: 'Certificados HTTPS dos sites gerenciados' }
     const iconWrap = node('span', '', 'package-icon')
     iconWrap.append(iconGraphic(pkg.id === 'composer' ? 'package' : pkg.id === 'php-mysql' ? 'database' : pkg.id === 'php-curl' ? 'globe' : 'code'))
     label.append(node('strong', pkg.label), node('div', helps[pkg.id] || 'Pacote do ambiente', 'small muted'), node('div', pkg.installed ? `Instalado · ${pkg.version}` : 'Não instalado', pkg.installed ? 'small good' : 'small muted'))
@@ -1859,7 +1862,8 @@ $('more-close').addEventListener('click', () => $('more-dialog').close())
 $('new-project').addEventListener('click', () => {
   $('create').reset()
   $('project-dialog').showModal()
-  $('create').elements.name.focus()
+  resetManagedWizard()
+  $('create').elements.displayName.focus()
 })
 $('repo-settings').addEventListener('click', async () => {
   try {

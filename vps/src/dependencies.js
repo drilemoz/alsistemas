@@ -9,7 +9,8 @@ export const PACKAGE_CATALOG = Object.freeze([
   { id: 'php-zip', label: 'PHP 8.3 · ZIP', apt: 'php8.3-zip' },
   { id: 'php-gd', label: 'PHP 8.3 · GD', apt: 'php8.3-gd' },
   { id: 'php-intl', label: 'PHP 8.3 · Intl', apt: 'php8.3-intl' },
-  { id: 'composer', label: 'Composer', apt: 'composer' }
+  { id: 'composer', label: 'Composer', apt: 'composer' },
+  { id: 'certbot', label: 'Certbot · HTTPS', apt: 'certbot' }
 ])
 
 export const validPackageId = value => typeof value === 'string' && PACKAGE_CATALOG.some(pkg => pkg.id === value)

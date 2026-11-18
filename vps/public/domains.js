@@ -127,48 +127,95 @@ for (const nav of document.querySelectorAll('[data-domain-pane]')) nav.addEventL
 
 function dnDnsValue(record) {
   const value = record.address ?? record.cname ?? record.value ?? record.exchange ?? record.target ?? record.host
-  return typeof value === 'string' ? value.slice(0, 512) : 'Valor não exibido'
+  return typeof value === 'string' ? value : 'Valor não exibido'
+}
+let dnRecordSelected = null
+const dnAddressTypes = new Set(['A','AAAA','CNAME'])
+const dnTestTypes = new Set(['A','AAAA','CNAME','NS','MX','TXT','SRV','CAA'])
+function dnRecordEditAllowed(record, name) {
+  return dnDnsComplete && ['A','CNAME'].includes(record.type) && record.group?.type === 'custom' && dnZone?.nameservers?.provider === 'basic' &&
+      name !== '@' && !name.split('.').some(part => dnLocalNames.has(part)) && dnFqdn.test(name + '.' + dnZone.name)
+}
+function dnOpenRecord(record) {
+  if (!dnZone) return
+  dnRecordSelected = {record,zone:dnZone.name}
+  const type = String(record.type || '?').toUpperCase(), name = String(record.name || '@')
+  $('dn-record-detail-title').textContent = type + ' · ' + (name === '@' ? dnZone.name : name)
+  $('dn-record-meta').replaceChildren(
+    projectInfoField('Destino ou valor',dnDnsValue(record)),
+    projectInfoField('TTL', (record.ttl ?? '—') + ' s')
+  )
+  $('dn-record-edit').hidden = !dnRecordEditAllowed(record,name.toLowerCase())
+  $('dn-record-test').hidden = !dnTestTypes.has(type)
+  dnWhen('dn-record-feedback','')
+  $('dn-record-detail').showModal()
 }
 function dnRenderDns() {
   const panel = $('dn-records')
-  const rows = dnRecords.slice(0,dnVisible).map(record => {
-    const row = node('div','','domain-record')
+  const filter = $('dn-record-filter').value
+  const shown = dnRecords.filter(record => filter === 'all' ||
+    (filter === 'web' ? dnAddressTypes.has(record.type) : !dnAddressTypes.has(record.type)))
+  const rows = shown.slice(0,dnVisible).map(record => {
+    const row = node('button','','dns-compact-row')
+    row.type = 'button'
     const type = String(record.type || '?').toUpperCase()
     const emblem = node('span','','dns-record-emblem domain-record-emblem')
     emblem.append(dnsSvg(dnsIconForType(type)))
-    const content = node('div')
-    content.append(node('strong', type + ' · ' + String(record.name || '?'), 'break-text'),
-      node('span', dnDnsValue(record), 'small muted break-text'),
-      node('span', 'TTL ' + (record.ttl ?? '—') + ' s', 'small muted'))
-    row.append(emblem, content)
-    const name = String(record.name || '').toLowerCase()
-    if (dnDnsComplete && ['A','CNAME'].includes(record.type) && record.group?.type === 'custom' && dnZone.nameservers?.provider === 'basic' &&
-      name !== '@' && !name.split('.').some(part => dnLocalNames.has(part)) && dnFqdn.test(name + '.' + dnZone.name)) {
-      row.append(dnButton('Trocar destino', () => {
-        dnResetPointer()
-        dnOldPointer = { ttl:record.ttl, value:dnDnsValue(record) }
-        const fields = $('dn-pointer-form').elements
-        fields.namedItem('name').value = name
-        fields.namedItem('name').readOnly = true
-        fields.namedItem('type').value = record.type
-        fields.namedItem('type').disabled = true
-        fields.namedItem('ttl').value = record.ttl
-        $('dn-pointer-title').textContent = 'Trocar destino'
-        $('dn-pointer-current').textContent = 'Destino atual: ' + dnOldPointer.value
-        dnPointerType()
-        dnShowPane('pointer')
-        fields.namedItem('value').focus()
-      }))
-    }
+    const content = node('span','','dns-compact-copy')
+    content.append(node('strong', type + ' · ' + (record.name === '@' ? 'Domínio principal' : String(record.name || '?')), 'dns-clamp'),
+      node('span', dnDnsValue(record), 'small muted dns-clamp'))
+    const chevron = node('span','›')
+    chevron.setAttribute('aria-hidden','true')
+    row.append(emblem, content, chevron)
+    row.addEventListener('click',()=>dnOpenRecord(record))
     return row
   })
+  if (shown.length === 0 && dnRecords.length) rows.push(node('p','Nenhum registro neste filtro.','small muted'))
   panel.replaceChildren(...rows)
-  $('dn-more-dns').hidden = dnVisible >= dnRecords.length
+  $('dn-more-dns').hidden = dnVisible >= shown.length
 }
+$('dn-record-filter').addEventListener('change',() => { dnVisible = 30; dnRenderDns() })
+$('dn-record-copy').addEventListener('click',async () => {
+  if (!dnRecordSelected) return
+  try { await navigator.clipboard.writeText(dnDnsValue(dnRecordSelected.record)); dnWhen('dn-record-feedback','Valor copiado.') }
+  catch { dnWhen('dn-record-feedback','Não foi possível copiar. Você pode selecionar o valor na tela.',true) }
+})
+$('dn-record-edit').addEventListener('click',() => {
+  if (!dnRecordSelected || dnZone?.name !== dnRecordSelected.zone) return
+  const {record} = dnRecordSelected
+  const name = String(record.name || '').toLowerCase()
+  if (!dnRecordEditAllowed(record,name)) return
+  $('dn-record-detail').close()
+  dnResetPointer()
+  dnOldPointer = { ttl:record.ttl, value:dnDnsValue(record) }
+  const fields = $('dn-pointer-form').elements
+  fields.namedItem('name').value = name
+  fields.namedItem('name').readOnly = true
+  fields.namedItem('type').value = record.type
+  fields.namedItem('type').disabled = true
+  fields.namedItem('ttl').value = record.ttl
+  $('dn-pointer-title').textContent = 'Trocar destino'
+  $('dn-pointer-current').textContent = 'Destino atual: ' + dnOldPointer.value
+  dnPointerType()
+  dnShowPane('pointer')
+  fields.namedItem('value').focus()
+})
+$('dn-record-test').addEventListener('click',() => {
+  if (!dnRecordSelected || dnZone?.name !== dnRecordSelected.zone) return
+  const {record,zone} = dnRecordSelected
+  const query = new URLSearchParams({name:record.name || '@',type:record.type})
+  const expected = dnDnsComplete && ['A','AAAA','CNAME','NS'].includes(record.type)
+    ? dnRecords.filter(other => other.type === record.type && String(other.name || '@').toLowerCase() === String(record.name || '@').toLowerCase()).map(dnDnsValue)
+    : []
+  void openDnsResult(dnApi(zone,'diagnose') + '?' + query,zone,expected)
+})
 async function dnLoadDns() {
   const zone = dnZone.name
   const request = ++dnPaneRequest
+  dnRecords = []
   $('dn-records').replaceChildren()
+  $('dn-record-filter').value = 'all'
+  $('dn-record-filter').disabled = true
   $('dn-more-dns').hidden = true
   dnWhen('dn-dns-status','Consultando zona na Spaceship…')
   if (dnZone.nameservers?.provider === 'custom') {
@@ -180,6 +227,7 @@ async function dnLoadDns() {
     if (request !== dnPaneRequest || !dnActive(zone,'dns')) return
     dnVisible = 30
     dnRecords = records.items
+    $('dn-record-filter').disabled = !dnRecords.length
     dnDnsComplete = records.total === records.items.length
     dnRenderDns()
     dnWhen('dn-dns-status', records.total > records.items.length
@@ -350,7 +398,11 @@ function dnFillSettings() {
   f.namedItem('provider').value = ns?.provider || 'basic'
   f.namedItem('hosts').value = ns?.hosts?.join('\n') || ''
   $('dn-ns-form').querySelector('[type=submit]').disabled = !ns
-  $('dn-nameservers-current').textContent = 'Atual: ' + dnDescribeNs(ns) + (ns?.hosts?.length ? ' · ' + ns.hosts.join(', ') : '')
+  $('dn-nameservers-current').replaceChildren(
+    node('small','Configurado na conta','muted'),node('strong',dnDescribeNs(ns)),
+    ...(ns?.hosts || []).map(host=>node('span',host,'small break-text'))
+  )
+  $('dn-ns-edit-open').disabled = !ns
   dnNsProvider()
 }
 function dnNsProvider() {
@@ -359,7 +411,9 @@ function dnNsProvider() {
   f.namedItem('hosts').required = custom
 }
 $('dn-ns-form').elements.namedItem('provider').addEventListener('change',dnNsProvider)
-$('dn-ns-open').addEventListener('click',() => { dnWhen('dn-ns-result',''); dnFillSettings() })
+$('dn-ns-open').addEventListener('click',() => { dnFillSettings(); void dnTestNs() })
+$('dn-ns-edit-open').addEventListener('click',() => { dnWhen('dn-ns-result',''); dnFillSettings() })
+$('dn-ns-test').addEventListener('click',() => void dnTestNs())
 async function dnChangeSettings(zone, change, message) {
   const feedback = change.action === 'nameservers' ? 'dn-ns-result' : 'dn-settings-result'
   if (!await confirmAction(message,'Aplicar alteração') || !dnActive(zone,'settings')) return
@@ -368,8 +422,10 @@ async function dnChangeSettings(zone, change, message) {
     const result = await api(dnApi(zone,'settings'),'POST',change,{timeoutMs:23000})
     if (!dnActive(zone,'settings')) return
     await openDomainsPage(dnSkip,zone,true)
-    if (dnActive(zone,'settings')) dnWhen(feedback,result.verified
-      ? 'Alteração confirmada pela Spaceship.' : 'Solicitação aceita. Confira o estado antes de repetir.')
+    if (dnActive(zone,'settings')) {
+      dnWhen(feedback,result.verified ? 'Alteração confirmada pela Spaceship.' : 'Solicitação aceita. Confira o estado antes de repetir.')
+      if (change.action === 'nameservers' && $('dn-ns-dialog').open) void dnTestNs()
+    }
   } catch (error) { if (dnActive(zone,'settings')) dnWhen(feedback,error.message,true) }
 }
 $('dn-renew-change').addEventListener('click', () => {
@@ -391,3 +447,59 @@ $('dn-ns-form').addEventListener('submit', event => {
   const summary = `${zone}\nAtual: ${dnDescribeNs(previous)} ${previous.hosts.join(', ')}\nNovo: ${dnDescribeNs(value)} ${hosts.join(', ')}\nEssa mudança pode afetar site e e-mail. Os registros não são copiados.`
   void dnChangeSettings(zone,{ action:'nameservers', previous, value },summary)
 })
+
+function dnResultRow(record, expected = []) {
+  const item = node('div','','hosting-stage')
+  const normalize = value => String(value).toLowerCase().replace(/\.$/,'')
+  const desired = [...new Set(expected.map(normalize))].sort()
+  const answer = [...new Set(record.values.map(normalize))].sort()
+  const state = record.state === 'answered'
+    ? (!desired.length ? 'Respondido' : desired.length === answer.length && desired.every((value,index)=>value === answer[index]) ? 'Igual ao esperado' : 'Resposta diferente')
+    : ({not_found:'Não encontrado',empty:'Sem registro deste tipo',unavailable:'Sem resposta'})[record.state] || 'Sem resposta'
+  const caption = node('div','','hosting-stage-caption')
+  caption.append(node('strong',record.label,'break-text'),node('small',state,'pill '+(state === 'Igual ao esperado' ? 'good' : 'muted')))
+  item.append(caption)
+  for (const value of record.values) item.append(node('small',value,'muted break-text'))
+  if (Number.isInteger(record.ttl)) item.append(node('small','TTL retornado: ' + record.ttl + ' s','muted'))
+  return item
+}
+let dnResultRequest = 0
+async function openDnsResult(url, host, expected = []) {
+  const dlg = $('public-dns-test'), content = $('public-dns-result')
+  const request = ++dnResultRequest
+  $('public-dns-test-title').textContent = 'Resultado do DNS'
+  content.textContent = 'Consultando DNS público…'
+  if (!dlg.open) dlg.showModal()
+  try {
+    const result = await api(url,'GET',undefined,{timeoutMs:24000})
+    if (request !== dnResultRequest || !dlg.open) return
+    $('public-dns-test-title').textContent = 'DNS · ' + result.type
+    content.replaceChildren(
+      node('strong',result.host || host,'break-text'),
+      ...result.sources.map(row=>dnResultRow(row,result.expected || expected)),
+      node('p','Consulta de ' + new Date(result.checkedAt).toLocaleString('pt-BR') + '. A amostra não confirma a propagação em todas as redes.','small muted')
+    )
+  } catch (error) { if (request === dnResultRequest && dlg.open) content.replaceChildren(node('p',error.message,'bad')) }
+}
+let dnNsRequest = 0
+async function dnTestNs() {
+  if (!dnZone || !$('dn-ns-dialog').open) return
+  const zone = dnZone.name, configured = dnZone.nameservers?.hosts || []
+  const request = ++dnNsRequest
+  const view = $('dn-ns-public'), button = $('dn-ns-test')
+  view.textContent = 'Consultando a delegação pública e o destino do site…'
+  button.disabled = true
+  try {
+    const result = await api(dnApi(zone,'diagnose') + '?mode=servers','GET',undefined,{timeoutMs:24000})
+    if (request !== dnNsRequest || dnZone?.name !== zone || !$('dn-ns-dialog').open) return
+    const parents = result.sources.filter(row=>row.id.startsWith('parent-'))
+    const resolvers = result.sources.filter(row=>!row.id.startsWith('parent-'))
+    view.replaceChildren(node('h3','Delegação pública'),
+      ...(!parents.length ? [node('p','Não foi possível identificar o registro pai nesta consulta.','small muted')] : parents.map(row=>dnResultRow(row,configured))),
+      node('h3','Resolutores consultados'),...resolvers.map(row=>dnResultRow(row,configured)),
+      node('h3','Destino do site'),...(result.website || []).map(row=>dnResultRow({...row,label:row.type + ' · ' + row.label})),
+      node('p','Consulta de ' + new Date(result.checkedAt).toLocaleString('pt-BR') + '.','small muted'))
+  } catch (error) { if (request === dnNsRequest && dnZone?.name === zone) view.replaceChildren(node('p',error.message,'bad')) }
+  finally { if (request === dnNsRequest) button.disabled = false }
+}
+$('dn-ns-dialog').addEventListener('close',() => { dnNsRequest++; $('dn-ns-test').disabled = false })

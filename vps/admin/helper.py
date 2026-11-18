@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import time
 import shutil
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 # Testes importam este arquivo diretamente por spec; em produção os módulos são root-owned no libexec.
@@ -24,6 +25,7 @@ from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, P
 from other_project_permissions import ProfileError, handle_permissions, configure_profile
 from project_explorer import browse_project, update_mode
 from domain_redirects import RedirectError, execute_redirect
+from managed_hosting import HostingError, deploy, read_hosting
 
 DATA = Path('/var/lib/alsistemas')
 PROJECTS = Path('/var/www/projetos')
@@ -35,7 +37,7 @@ MAX_SNAPSHOT_FILES = 1500
 MAX_SNAPSHOTS_PER_PROJECT = 5
 NAME = re.compile(r'^[a-z][a-z0-9-]{1,39}$', re.ASCII)
 DOMAIN = re.compile(r'^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$', re.ASCII)
-RESERVED = {'alsistemas', 'iguatamaonline'}
+RESERVED = {'alsistemas', 'iguatamaonline', 'iguatama-teste'}
 MANAGED_MARKERS = ('# AL-SISTEMAS-MANAGED-SITE', '# Gerenciado pelo AL Sistemas; não altera sites existentes.')
 
 class TaskError(Exception):
@@ -88,7 +90,7 @@ def domain_in_use(domain, available, extra=None):
     return False
 
 
-def nginx_config(name, domain, site_type, root=PROJECTS):
+def nginx_config(name, domain, site_type, root=PROJECTS, hosting=False, tls=False):
     public = root / name / 'public'
     if site_type == 'php':
         location = '''location / {
@@ -102,10 +104,16 @@ def nginx_config(name, domain, site_type, root=PROJECTS):
     else:
         location = '''location / { try_files $uri $uri/ =404; }
     location ~ /\\. { deny all; }'''
+    if hosting:
+        location = ('location ^~ /.well-known/acme-challenge/ { root /var/lib/letsencrypt/alsistemas-webroot; }\n    ' + location)
+        if site_type == 'static':
+            location += "\n    location ~* \\.(?:php[0-9]*|phtml|phar|cgi|pl|py|sh)(?:\\.|$) { deny all; }"
+    secure = ('\n    listen 443 ssl;\n    ssl_certificate /etc/letsencrypt/live/' + domain +
+              '/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/' + domain + '/privkey.pem;') if tls else ''
     return f'''# AL-SISTEMAS-MANAGED-SITE
 # Gerenciado pelo AL Sistemas; não altera sites existentes.
 server {{
-    listen 80;
+    listen 80;{secure}
     server_name {domain};
     root {public};
     index {'index.php index.html' if site_type == 'php' else 'index.html'};
@@ -118,13 +126,18 @@ server {{
 
 
 def create_project(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_ENABLED, runner=subprocess.run):
-    if set(task) - {'action', 'name', 'type', 'domain'}:
+    if set(task) - {'action', 'name', 'type', 'domain', 'displayName'}:
         raise TaskError('Campos desconhecidos na tarefa.')
     name = valid_name(task.get('name'))
     site_type = task.get('type')
     if site_type not in ('static', 'php'):
         raise TaskError('Tipo não permitido. Apenas static e php nesta versão.')
     domain = valid_domain(task.get('domain'))
+    hosting = 'displayName' in task
+    display = task.get('displayName')
+    if hosting and (not isinstance(display,str) or not 1 <= len(display) <= 70 or display != display.strip()
+                    or any(ord(c) < 32 or ord(c) == 127 for c in display)):
+        raise TaskError('Nome de exibição inválido.')
     ensure_safe_root(root)
     target = root / name
     if target.exists() or target.is_symlink():
@@ -155,12 +168,12 @@ def create_project(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES
         index.chmod(0o644)
         # Metadados somente de origem, nunca executáveis e nunca usados como autorização root.
         info = target / '.alsistemas.json'
-        info.write_text(json.dumps({'managedBy': 'AL Sistemas', 'type': site_type, 'domain': domain}, ensure_ascii=False) + '\n', encoding='utf-8')
+        info.write_text(json.dumps({'managedBy': 'AL Sistemas', 'type': site_type, 'domain': domain, **({'hosting': True, 'displayName': display} if hosting else {})}, ensure_ascii=False) + '\n', encoding='utf-8')
         info.chmod(0o644)
         if domain:
             fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
             with os.fdopen(fd, 'w', encoding='utf-8') as out:
-                out.write(nginx_config(name, domain, site_type, root))
+                out.write(nginx_config(name, domain, site_type, root, hosting=hosting))
             created_config = True
             enabled_path.symlink_to(config_path)
             created_link = True
@@ -583,6 +596,65 @@ def ensure_project_worker_idle():
         raise TaskError('Atualização do IguatamaOnline em andamento; tente depois.')
 
 
+def tls_config(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_ENABLED):
+    if set(task) != {'action','name','domain'}:
+        raise TaskError('Tarefa HTTPS inválida.')
+    name, domain = valid_name(task['name']), valid_domain(task['domain'])
+    ensure_safe_root(root)
+    info = read_hosting(root / name)
+    conf, current = managed_site_config(name,available,root)
+    link = enabled / conf.name
+    if not domain or current != domain or info.get('domain') != domain or not link.is_symlink() or link.resolve() != conf:
+        raise TaskError('O endereço do projeto mudou ou o site está desativado.')
+    original = conf.read_text(encoding='utf-8')
+    plain = nginx_config(name,domain,info['type'],root,hosting=True)
+    secure = nginx_config(name,domain,info['type'],root,hosting=True,tls=True)
+    if original not in (plain,secure) or domain_in_use(domain,Path('/etc/nginx/conf.d'),[]):
+        raise TaskError('A configuração saiu do modelo do painel. Nenhum arquivo foi alterado.')
+    return domain, conf, original, secure
+
+
+def atomic_config(conf, value):
+    fd, temp = tempfile.mkstemp(prefix='.als-site-',dir=conf.parent)
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8') as out:
+            out.write(value)
+            os.fchmod(out.fileno(),0o644)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temp,conf)
+    finally:
+        if os.path.exists(temp): os.unlink(temp)
+
+
+def enable_project_tls(task, lock, runner=subprocess.run):
+    with lock():
+        domain, _, before, after = tls_config(task)
+        if before == after: return {'ok': True, 'httpsConfigured':True}
+    certbot = Path('/usr/bin/certbot')
+    if not certbot.is_file():
+        raise TaskError('Certbot não está instalado. Abra Dependências, instale Certbot e tente novamente.')
+    certificates = Path('/etc/letsencrypt/live') / domain
+    result = runner([str(certbot), 'certonly', '--webroot', '--webroot-path',
+                     '/var/lib/letsencrypt/alsistemas-webroot', '--non-interactive',
+                     '--agree-tos', '--register-unsafely-without-email', '--keep-until-expiring',
+                     '--cert-name',domain,'-d',domain], capture_output=True, text=True, timeout=80)
+    if result.returncode or not all((certificates / item).is_file() for item in ('fullchain.pem','privkey.pem')):
+        raise TaskError('Let’s Encrypt não validou o domínio. Confira o DNS público e se a porta 80 está acessível.')
+    with lock():
+        _, conf, before, after = tls_config(task)
+        if before == after: return {'ok':True,'httpsConfigured':True}
+        atomic_config(conf,after)
+        try:
+            if nginx_validation_result(runner).returncode or runner(['/bin/systemctl','reload','nginx'],capture_output=True,timeout=15).returncode:
+                raise TaskError('Nginx rejeitou o HTTPS. A configuração HTTP foi preservada.')
+        except Exception:
+            atomic_config(conf,before)
+            runner(['/bin/systemctl','reload','nginx'],capture_output=True,timeout=15)
+            raise
+    return {'ok':True,'httpsConfigured':True}
+
+
 def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_ENABLED,
                  runner=subprocess.run):
     if not isinstance(task, dict):
@@ -592,6 +664,12 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return execute_redirect(task, available, enabled, runner)
     if action == 'create_project':
         return create_project(task, root, available, enabled, runner)
+    if action == 'publish_project_zip':
+        name = valid_name(task.get('name'))
+        ensure_safe_root(root)
+        if (PROJECT_BACKUPS / name / 'permissions-original.json').exists():
+            raise TaskError('Restaure a escrita temporária antes de publicar um ZIP.')
+        return deploy(task,root / name,DATA)
     if action == 'set_site_state':
         return set_site_state(task, root, available, enabled, runner)
     if action == 'validate_nginx':
@@ -730,7 +808,7 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     if action == 'install_package':
         if set(task) != {'action', 'package'}:
             raise TaskError('Parâmetros de instalação inválidos.')
-        approved = {'php-curl','php-mbstring','php-xml','php-mysql','php-zip','php-gd','php-intl','composer'}
+        approved = {'php-curl','php-mbstring','php-xml','php-mysql','php-zip','php-gd','php-intl','composer','certbot'}
         package = task.get('package')
         if not isinstance(package, str) or package not in approved:
             raise TaskError('Pacote não autorizado.')
@@ -832,6 +910,19 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     raise TaskError('Ação não autorizada.')
 
 
+@contextmanager
+def task_lock():
+    # Mutex comum a todas as alterações administrativas que tocam projetos ou Nginx.
+    lock_dir = Path('/run/alsistemas-vps')
+    if lock_dir.is_symlink() or not lock_dir.is_dir() or lock_dir.stat().st_uid != 0 or (lock_dir.stat().st_mode & 0o077):
+        raise TaskError('Diretório de bloqueio administrativo inseguro ou ausente.')
+    lock_fd = os.open(lock_dir / 'tasks.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, 'r+', encoding='utf-8') as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
 def main():
     if os.geteuid() != 0:
         raise TaskError('O helper deve executar somente como root pelo sudoers restrito.')
@@ -842,24 +933,17 @@ def main():
         task = json.loads(raw)
     except ValueError:
         raise TaskError('JSON inválido.')
-    # Mutex comum a todas as alterações Nginx feitas por este painel.
-    lock_dir = Path('/run/alsistemas-vps')
-    if lock_dir.is_symlink() or not lock_dir.is_dir() or lock_dir.stat().st_uid != 0 or (lock_dir.stat().st_mode & 0o077):
-        raise TaskError('Diretório de bloqueio administrativo inseguro ou ausente.')
-    lock_fd = os.open(lock_dir / 'tasks.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    try:
-        with os.fdopen(lock_fd, 'r+', encoding='utf-8') as lock:
-            os.fchmod(lock.fileno(), 0o600)
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    if isinstance(task,dict) and task.get('action') == 'enable_project_tls':
+        result = enable_project_tls(task,task_lock)
+    else:
+        with task_lock():
             result = execute_task(task)
-    finally:
-        pass
     print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (TaskError, ProjectError, ProfileError, RedirectError, OSError, subprocess.TimeoutExpired) as err:
+    except (TaskError, ProjectError, ProfileError, RedirectError, HostingError, OSError, ValueError, subprocess.TimeoutExpired) as err:
         print(json.dumps({'ok': False, 'error': str(err)[:300]}, ensure_ascii=False))
         sys.exit(1)
