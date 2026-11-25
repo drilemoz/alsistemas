@@ -21,7 +21,7 @@ from pathlib import Path
 # Testes importam este arquivo diretamente por spec; em produção os módulos são root-owned no libexec.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from project_maintenance import (PROJECT_NAME, BACKUP_ROOT as PROJECT_BACKUPS, ProjectError,
-    inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root)
+    inspect_project, permissions_change, restore_code, backup_code, backup_list, private_backup_root, recovery_guard)
 from other_project_permissions import ProfileError, handle_permissions, configure_profile
 from project_explorer import browse_project, update_mode
 from domain_redirects import RedirectError, execute_redirect
@@ -750,6 +750,7 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         # Bloqueia ZIP novo enquanto o acesso PHP temporário estiver ativo.
         if (PROJECT_BACKUPS / 'permissions-original.json').exists():
             raise TaskError('Restaure as permissões originais antes de atualizar o código.')
+        recovery_guard(PROJECT_BACKUPS)
         inspect_project()
         token = secrets.token_hex(12)
         request = {'id': token, 'name': PROJECT_NAME, 'mode': task['mode']}

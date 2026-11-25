@@ -1,3 +1,5 @@
+**Novo na 2.0.53:** atualizador do IguatamaOnline aceita o manifesto oficial, exporta o banco MariaDB e confere a revisão de schema. Recuperação de schema é assistida, não restauração automática destrutiva. Veja DEPLOY.md.
+
 **Novo na 2.0.52:** ícones nos dados da VPS e da Amazon EC2, com rótulos e endereços legíveis em telas pequenas.
 
 **Novo na 2.0.51:** Amazon EC2 em janela própria, com consulta e criação de snapshots do disco raiz. Veja o [guia](vps/docs/ATUALIZACAO-2.0.51.md).
@@ -60,7 +62,7 @@
 
 **Novo na 2.0.19:** na aba **Atualizações**, o botão `?` abre as novidades em pop-up, com outro pop-up para o README. Os botões **GitHub**, **Arquivo ZIP** e **Andamento** aparecem lado a lado em dispositivos móveis. Quando uma atualização falha, o acompanhamento oferece relatório de erro em janela própria, com copiar e baixar TXT. Corrigido o Nginx para aceitar ZIPs de até 32 MiB apenas nas duas rotas autenticadas, mantendo 64 KiB nas demais; upgrades do núcleo também migrarão o vhost já gerenciado. Falhas de saúde passam a registrar um diagnóstico resumido da versão, serviço e endpoint. Nenhuma alteração foi executada na EC2; veja `vps/docs/ATUALIZACAO-2.0.19.md`.
 
-# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.52 + legado preservado
+# ⚙️ AL Sistemas — Núcleo de Hospedagem VPS 2.0.53 + legado preservado
 
 A versão **2.0.16** adicionou gerenciamento DNS controlado à Spaceship: criar registros A, CNAME e TXT; editar apenas o TTL de registros personalizados; e excluir registros personalizados não protegidos. Antes de escrever, o servidor consulta a zona novamente e valida os registros; requer login, token CSRF e confirmação; a senha adicional foi removida na 2.0.25. Nomes críticos (`@`, `painel`, `www`, `mail`, `migrar` e outros) ficam bloqueados. A versão 2.0.16 **não** alterava automaticamente DNS ao criar projetos, nem permite alterar valores de registros existentes. A API exige `dnsrecords:read` e `dnsrecords:write` para essas ações. Nenhuma mudança DNS foi executada em produção durante o desenvolvimento.
 

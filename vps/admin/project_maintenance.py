@@ -7,6 +7,9 @@ import pwd
 import re
 import shutil
 import stat
+import subprocess
+import resource
+import signal
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -19,7 +22,7 @@ CRITICAL = ('VERSION', 'app/updater.php', 'public/admin.php')
 MAX_ARCHIVE = 32 * 1024 * 1024
 MAX_FILES = 1200
 MAX_UNCOMPRESSED = 96 * 1024 * 1024
-ACTIVE_STAGES = ('queued', 'downloading', 'validating', 'backup', 'installing', 'verifying', 'rolling_back')
+ACTIVE_STAGES = ('queued', 'downloading', 'validating', 'backup', 'installing', 'migrating', 'verifying', 'rolling_back')
 
 class ProjectError(Exception):
     pass
@@ -128,6 +131,8 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
     mutation_allowed, mutation_blocker = True, None
     try:
         guard_mutation_ownership(root)
+        if root == PROJECT_ROOT:
+            recovery_guard(BACKUP_ROOT)
     except ProjectError as exc:
         mutation_allowed, mutation_blocker = False, str(exc)
     version = None
@@ -153,7 +158,7 @@ def private_backup_root(dest=BACKUP_ROOT):
     if dest.is_symlink():
         raise ProjectError('Diretório de backup não confiável.')
     dest.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if dest.resolve(strict=True) != dest or (dest.stat().st_mode & 0o077):
+    if dest.resolve(strict=True) != dest or (dest.stat().st_mode & 0o077) or (dest == BACKUP_ROOT and dest.stat().st_uid != 0):
         raise ProjectError('Diretório de backup deve ser privado (0700).')
     return dest
 
@@ -233,6 +238,10 @@ def permissions_change(task, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
 
 
 def acceptable_rel(rel):
+    if rel in ('public/.user.ini', 'public/.htaccess'):
+        return True
+    if rel in ('public/ads.txt', 'app/config.php', 'public/config.php'):
+        return False
     if '\\' in rel or '\x00' in rel or len(rel) > 280 or rel.startswith('/'):
         return False
     parts = rel.split('/')
@@ -240,7 +249,7 @@ def acceptable_rel(rel):
         return False
     if any(part.lower() in {'uploads', 'upload', 'storage', 'cache', 'logs', 'backup', 'backups', 'vendor', 'node_modules', 'data', 'database', 'private', 'secrets', 'tmp', 'temp', 'sessions', 'media', 'images'} for part in parts):
         return False
-    if any(part.lower().startswith(('config.local', 'settings.local', '.env')) or part.lower().endswith(('.sql','.sqlite','.sqlite3','.db','.pem','.key','.p12','.pfx','.bak','.log')) for part in parts):
+    if any(part.lower() == 'config.php' or part.lower().startswith(('config.local', 'settings.local', '.env')) or part.lower().endswith(('.sql','.sqlite','.sqlite3','.db','.pem','.key','.p12','.pfx','.bak','.log')) for part in parts):
         return False
     return rel in ('VERSION', 'index.php', 'composer.json') or (parts[0] in ('app','public','assets') and len(parts) >= 2)
 
@@ -259,6 +268,7 @@ def validate_archive(archive):
         if 'VERSION' not in non_dirs and len({n.split('/')[0] for n in non_dirs}) == 1:
             wrapper = non_dirs[0].split('/')[0] + '/'
         entries = {}
+        manifest_entries = {}
         total = 0
         for entry in items:
             if entry.flag_bits & 1:
@@ -278,6 +288,10 @@ def validate_archive(archive):
                     raise ProjectError('Diretório não permitido no ZIP: ' + rel[:120])
                 if any(x.lower() in {'uploads', 'upload', 'storage', 'cache', 'logs', 'backup', 'backups', 'vendor', 'node_modules', 'data', 'database', 'private', 'secrets', 'tmp', 'temp', 'sessions', 'media', 'images'} for x in rel.split('/')):
                     raise ProjectError('Diretório protegido no ZIP: ' + rel[:120])
+            elif rel in ('release.json', 'release.sig'):
+                if rel in manifest_entries or entry.file_size > (512 * 1024 if rel == 'release.json' else 64):
+                    raise ProjectError('Manifesto ou assinatura inválido.')
+                manifest_entries[rel] = entry
             elif not acceptable_rel(rel):
                 raise ProjectError('Entrada não permitida: ' + rel[:120])
             mode = (entry.external_attr >> 16) & 0xffff
@@ -289,6 +303,8 @@ def validate_archive(archive):
                 continue
             if stat.S_IFMT(mode) == stat.S_IFDIR:
                 raise ProjectError('Entrada ZIP incompatível com arquivo.')
+            if rel in manifest_entries:
+                continue
             if rel in entries:
                 raise ProjectError('Arquivos duplicados no ZIP.')
             total += entry.file_size
@@ -302,7 +318,150 @@ def validate_archive(archive):
         version_raw = source.read(entries['VERSION'])
         if len(version_raw) > 80 or not re.fullmatch(rb'\s*\d+\.\d+\.\d+(?:[-+][\w.-]+)?\s*', version_raw):
             raise ProjectError('VERSION inválida no pacote.')
-        return {'version': version_raw.decode('ascii').strip(), 'files': len(entries), 'bytes': total, 'entries': entries, 'wrapper': wrapper}
+        version = version_raw.decode('ascii').strip()
+        revision = None
+        if 'app/schema_migrations.php' in entries:
+            revision = schema_from_bytes(source.read(entries['app/schema_migrations.php']))
+        if manifest_entries:
+            if 'release.json' not in manifest_entries:
+                raise ProjectError('Manifesto de Release ausente.')
+            try:
+                manifest = json.loads(source.read(manifest_entries['release.json']))
+                descriptors = manifest['files']
+                if (manifest['format'] != 'meu-site-update-v2' or manifest['version'] != version
+                        or type(manifest['schema_revision']) is not int or revision is None
+                        or manifest['schema_revision'] != revision or manifest['min_php'] != '8.1.0'
+                        or not isinstance(descriptors, list) or len(descriptors) != len(entries)):
+                    raise ValueError()
+                seen = set()
+                for d in descriptors:
+                    path = d['path']
+                    if path in seen or path not in entries or type(d['size']) is not int or d['size'] != entries[path].file_size:
+                        raise ValueError()
+                    if hashlib.sha256(source.read(entries[path])).hexdigest() != d['sha256']:
+                        raise ValueError()
+                    seen.add(path)
+            except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                raise ProjectError('Manifesto SHA-256, versão ou schema divergente.') from exc
+            # A assinatura não é validada por este painel: não confundir integridade com autoria.
+            if 'release.sig' in manifest_entries and manifest_entries['release.sig'].file_size != 64:
+                raise ProjectError('Assinatura com tamanho inválido.')
+        return {'version': version, 'files': len(entries), 'bytes': total, 'entries': entries, 'wrapper': wrapper,
+                'schema': revision, 'manifestVerified': bool(manifest_entries)}
+
+
+
+def schema_from_bytes(raw):
+    matches = re.findall(rb'\bconst\s+IGUA_SCHEMA_REVISION\s*=\s*(\d+)\s*;', raw)
+    if len(matches) != 1 or not 1 <= int(matches[0]) <= 100000:
+        raise ProjectError('Revisão de schema não reconhecida.')
+    return int(matches[0])
+
+
+def installed_schema(root):
+    path = checked_target(root, 'app/schema_migrations.php', must_exist=False, for_write=True)
+    return schema_from_bytes(path.read_bytes()) if path.exists() else None
+
+
+# PHP do portal jamais é executado como root. O worker recebe somente resultado
+# mínimo ou dump via stdout, sem colocar senha em argumentos, logs ou metadados.
+PHP_JOB = r'''<?php
+ini_set('display_errors','0');
+try {
+  $root=$argv[1]; $job=$argv[2];
+  if ($job==='maintenance-on') {
+    $p=$root.'/storage/.update-maintenance';
+    if (is_link($root.'/storage') || !is_dir($root.'/storage')) exit(2);
+    $f=@fopen($p,'x'); if(!$f) exit(2);
+    fwrite($f,"AL Sistemas: atualização em andamento\n"); fclose($f); exit(0);
+  }
+  if ($job==='maintenance-off') {
+    $p=$root.'/storage/.update-maintenance';
+    if (is_link($p) || !is_file($p) || !unlink($p)) exit(2); exit(0);
+  }
+  require $root.'/app/bootstrap.php';
+  require_once $root.'/app/schema_migrations.php';
+  $db=db();
+  if ($job==='probe') { echo igua_schema_revision($db); exit(0); }
+  if ($job==='dump') {
+    $c=config(); $host=$c['host']??'127.0.0.1'; $name=$c['database']??'';
+    if(!in_array($host,['localhost','127.0.0.1','::1'],true) || !preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/D',$name) || !empty($c['tls'])) exit(3);
+    $port=(int)($c['port']??3306);
+    $user=(string)($c['username']??''); if($user==='' || $user==='root') exit(3);
+    if ($db->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE' AND ENGINE<>'InnoDB'")->fetchColumn()>0) exit(3);
+    $cmd=['/usr/bin/mariadb-dump','--no-defaults','--host='.$host,'--port='.$port,'--user='.$user,'--single-transaction','--quick','--skip-lock-tables','--hex-blob','--no-tablespaces'];
+    if ($db->query('SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE()')->fetchColumn()>0) $cmd[]='--routines';
+    if ($db->query('SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA=DATABASE()')->fetchColumn()>0) $cmd[]='--events';
+    $cmd[]='--'; $cmd[]=$name;
+    $proc=proc_open($cmd,[0=>['file','/dev/null','r'],1=>STDOUT,2=>['file','/dev/null','w']],$pipes,null,['PATH'=>'/usr/bin:/bin','MYSQL_PWD'=>(string)($c['password']??'')]);
+    exit(is_resource($proc)?proc_close($proc):4);
+  }
+  if ($job==='migrate') {
+    foreach (['ads.php','news_editor.php','schema.php','article_workflow.php','analytics.php'] as $file) require_once $root.'/app/'.$file;
+    igua_migrate_schema($db);
+    if (igua_schema_revision($db)!==IGUA_SCHEMA_REVISION) exit(5);
+    if (IGUA_SCHEMA_REVISION===38) $db->query('SELECT id,name,contact,title,message,photos,rate_key,status,article_id,created_at FROM story_submissions LIMIT 0');
+    echo igua_schema_revision($db); exit(0);
+  }
+  exit(2);
+} catch(Throwable $e) { exit(6); }
+'''
+
+
+def php_job(root, job, output=None):
+    actor, uid, gid = php_account()
+    if not actor or uid in (None, 0) or gid is None:
+        raise ProjectError('Conta PHP sem privilégios não identificada.')
+    if not Path('/usr/bin/php').is_file():
+        raise ProjectError('PHP CLI indisponível.')
+    if job == 'dump' and not Path('/usr/bin/mariadb-dump').is_file():
+        raise ProjectError('mariadb-dump não instalado; atualização bloqueada antes de alterar o código.')
+    # Limite do dump preserva margem para o sistema e para o backup do código.
+    limit = min(512 * 1024 * 1024, max(0, os.fstatvfs(output.fileno()).f_bavail * os.fstatvfs(output.fileno()).f_frsize - 128 * 1024 * 1024)) if output is not None else None
+    if limit is not None and limit < 1024 * 1024:
+        raise ProjectError('Espaço insuficiente para exportação SQL.')
+    def set_limit():
+        if limit is not None:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    try:
+        with subprocess.Popen(['/usr/bin/php', '-d', 'display_errors=0', '--', str(root), job],
+            stdin=subprocess.PIPE, stdout=output if output is not None else subprocess.PIPE,
+            stderr=subprocess.DEVNULL, user=uid, group=gid, extra_groups=[], cwd=str(root),
+            env={'PATH':'/usr/bin:/bin','HOME':'/tmp'}, start_new_session=True, preexec_fn=set_limit) as proc:
+            try:
+                stdout, _ = proc.communicate(PHP_JOB.encode(), timeout=180)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+                raise
+            code = proc.returncode
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProjectError('Falha ou timeout na etapa PHP: '+job) from exc
+    if code:
+        raise ProjectError('Etapa PHP falhou: '+job+' (código '+str(code)+'). Confira PHP CLI, banco local, permissões e configuração do portal.')
+    if output is None:
+        return stdout.decode('ascii', errors='strict').strip()
+
+
+def database_backup(root, snapshot):
+    dump = snapshot / 'database.sql'
+    with os.fdopen(os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as output:
+        php_job(root, 'dump', output)
+        output.flush(); os.fsync(output.fileno())
+    # O rodapé do mariadb-dump e o exit code devem confirmar que a exportação terminou.
+    with dump.open('rb') as stream:
+        stream.seek(max(0, dump.stat().st_size - 4096))
+        if b'-- Dump completed on ' not in stream.read():
+            raise ProjectError('Dump SQL incompleto; atualização cancelada.')
+        stream.seek(0)
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return {'file': 'database.sql', 'bytes': dump.stat().st_size, 'sha256': digest}
+
+
+def recovery_guard(backups):
+    flag = backups / 'schema-recovery.json'
+    if flag.exists() or flag.is_symlink():
+        raise ProjectError('Recuperação de schema pendente. Confira schema-recovery.json e o backup privado por SSH antes de novas alterações.')
 
 
 def _copy_with_hash(source, destination):
@@ -321,7 +480,16 @@ def _copy_with_hash(source, destination):
 def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_status=lambda s, msg: None):
     root = verify_project(PROJECT_NAME, root)
     guard_mutation_ownership(root)
+    recovery_guard(backups)
     info = validate_archive(archive)
+    old_schema = installed_schema(root)
+    new_schema = info['schema']
+    if old_schema is not None and (new_schema is None or not info['manifestVerified']):
+        raise ProjectError('Use o ZIP oficial gerado por tools/build_update_package.py, com manifesto e schema.')
+    if old_schema is not None and (new_schema < old_schema or new_schema > old_schema + 1):
+        raise ProjectError('Downgrade ou salto de schema não autorizado; instalação assistida necessária.')
+    if root == PROJECT_ROOT and old_schema is None:
+        raise ProjectError('Schema instalado não identificado; instalação assistida necessária.')
     current_version_file = checked_target(root, 'VERSION', for_write=True)
     current = current_version_file.read_text(encoding='utf-8').strip()
     def version_tuple(value):
@@ -343,9 +511,21 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
     snapshot = backup_parent / ('code-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + os.urandom(4).hex())
     snapshot.mkdir(mode=0o700)
     change_log = []
-    metadata = {'project': PROJECT_NAME, 'from': current, 'to': info['version'], 'entries': []}
+    metadata = {'project': PROJECT_NAME, 'from': current, 'to': info['version'], 'entries': [],
+                'schemaFrom': old_schema, 'schemaTo': new_schema}
+    maintenance = False
+    migration_started = False
+    recovery = backup_parent / 'schema-recovery.json'
     update_status('backup', 'Criando cópia privada dos arquivos que serão alterados')
     try:
+        if old_schema is not None:
+            update_status('backup', 'Ativando manutenção e conferindo o schema do banco')
+            if php_job(root, 'probe') != str(old_schema):
+                raise ProjectError('Schema real do banco difere do código instalado.')
+            php_job(root, 'maintenance-on')
+            maintenance = True
+            update_status('backup', 'Exportando banco MariaDB antes da atualização')
+            metadata['database'] = database_backup(root, snapshot)
         for rel, entry in info['entries'].items():
             old = originals.get(rel)
             if old:
@@ -355,9 +535,17 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
             metadata['entries'].append({'path': rel, 'existed': bool(old), 'mode': stat.S_IMODE(old.st_mode) if old else 0o644,
                                         'uid': old.st_uid if old else 0, 'gid': old.st_gid if old else 0})
         _save_json_exclusive(snapshot / 'metadata.json', metadata)
+        if old_schema is not None:
+            _save_json_exclusive(recovery, {'backup': snapshot.name, 'from': old_schema, 'to': new_schema, 'version': info['version']})
         update_status('installing', 'Instalando os arquivos de código verificados')
         with zipfile.ZipFile(archive) as source:
-            for rel, entry in info['entries'].items():
+            # Exponha a nova revisão apenas após todos os demais arquivos.
+            ordered = sorted(info['entries'].items(), key=lambda pair: (pair[0] == 'VERSION', pair[0] == 'app/schema_migrations.php'))
+            for rel, entry in ordered:
+                if old_schema is not None and new_schema != old_schema and rel == 'app/schema_migrations.php':
+                    # Rotas de login antigas podem executar DDL mesmo com manutenção.
+                    # A partir daqui não é seguro reverter código automaticamente.
+                    migration_started = True
                 target = checked_target(root, rel, must_exist=False, for_write=True)
                 if not target.parent.exists():
                     target.parent.mkdir(parents=True, mode=0o755)
@@ -381,10 +569,27 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
                         raise ProjectError('Integridade pós-instalação divergente: ' + rel)
         if (root / 'VERSION').read_text().strip() != info['version']:
             raise ProjectError('Versão não corresponde após atualização.')
+        if old_schema is not None:
+            # A partir deste ponto DDL pode ter sido confirmado pelo MariaDB. Não
+            # restaurar código ou SQL automaticamente: requisições administrativas
+            # já iniciadas podem ter gravado dados após o dump.
+            migration_started = True
+            update_status('migrating', 'Executando migração do banco e verificando revisão')
+            if php_job(root, 'migrate') != str(new_schema) or php_job(root, 'probe') != str(new_schema):
+                raise ProjectError('Revisão do banco não confirmada após migração.')
+            php_job(root, 'maintenance-off')
+            maintenance = False
+            recovery.unlink()
         return {'ok': True, 'version': info['version'], 'previousVersion': current, 'files': len(info['entries']),
-                'backup': snapshot.name, 'note': 'Backup apenas do código alterado. Banco, uploads e storage não são substituídos.'}
-    except Exception:
-        update_status('rolling_back', 'Erro na instalação; revertendo arquivos alterados')
+                'backup': snapshot.name, 'schemaFrom': old_schema, 'schemaTo': new_schema,
+                'databaseBackup': bool(metadata.get('database')), 'manifestVerified': info['manifestVerified'],
+                'note': 'Código verificado; banco exportado e schema conferido quando aplicável. Uploads preservados.'}
+    except Exception as exc:
+        if migration_started:
+            raise ProjectError('Migração/verificação interrompida; código novo e backup '+snapshot.name+' preservados. Recuperação assistida obrigatória; não restaurar somente código.') from exc
+        if maintenance and change_log and php_job(root, 'probe') != str(old_schema):
+            raise ProjectError('Schema alterado por outra execução; código e backup preservados para recuperação assistida.') from exc
+        update_status('rolling_back', 'Erro antes da migração; revertendo arquivos alterados')
         for rel in reversed(change_log):
             target = checked_target(root, rel, must_exist=False, for_write=True)
             if rel in originals:
@@ -401,6 +606,16 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
                     if os.path.exists(tmp): os.unlink(tmp)
             else:
                 target.unlink(missing_ok=True)
+        if maintenance:
+            # Admin/login do portal pode executar migração mesmo durante manutenção.
+            # Caso a revisão tenha mudado, manter o bloqueio de recuperação.
+            if php_job(root, 'probe') != str(old_schema):
+                raise ProjectError('Schema alterado por outra execução; recuperação assistida necessária.') from exc
+            php_job(root, 'maintenance-off')
+        if old_schema is not None:
+            recovery.unlink(missing_ok=True)
+        if not (snapshot / 'metadata.json').exists():
+            shutil.rmtree(snapshot)
         raise
 
 
@@ -409,6 +624,7 @@ def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     guard_mutation_ownership(root)
     if not isinstance(backup_id, str) or not re.fullmatch(r'code-\d{8}T\d{6}Z-[a-f0-9]{8}', backup_id):
         raise ProjectError('Identificador de backup inválido.')
+    recovery_guard(backups)
     folder = private_backup_root(backups) / backup_id
     if folder.is_symlink() or not folder.is_dir():
         raise ProjectError('Backup indisponível.')
@@ -420,6 +636,14 @@ def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
         raise ProjectError('Manifesto de backup inválido.')
     if checked_target(root, 'VERSION', for_write=True).read_text(encoding='utf8').strip() != data.get('to'):
         raise ProjectError('Versão atual mudou após o backup. Reversão automática bloqueada.')
+    actual_schema = installed_schema(root)
+    if actual_schema is not None:
+        previous_schema = data.get('schemaFrom')
+        old_file = folder / 'app/schema_migrations.php'
+        if previous_schema is None and old_file.is_file() and not old_file.is_symlink():
+            previous_schema = schema_from_bytes(old_file.read_bytes())
+        if previous_schema != actual_schema or php_job(root, 'probe') != str(actual_schema):
+            raise ProjectError('Backup incompatível com schema atual; restauração conjunta assistida necessária. Nenhum dado alterado.')
     entries = data['entries']
     if len(entries) > MAX_FILES:
         raise ProjectError('Backup excede limite de arquivos.')
@@ -496,7 +720,7 @@ def backup_list(*, backups=BACKUP_ROOT):
                 continue
             info = json.loads(metadata.read_text(encoding='utf8'))
             if info.get('project') == PROJECT_NAME:
-                found.append({'id': item.name, 'from': info.get('from'), 'to': info.get('to'), 'files': len(info.get('entries', []))})
+                found.append({'id': item.name, 'from': info.get('from'), 'to': info.get('to'), 'files': len(info.get('entries', [])), 'schemaFrom': info.get('schemaFrom'), 'schemaTo': info.get('schemaTo'), 'databaseBackup': bool(info.get('database'))})
         except (OSError, ValueError, TypeError):
             continue
     return found
@@ -507,6 +731,7 @@ def backup_code(*, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     root = verify_project(PROJECT_NAME, root)
     guard_mutation_ownership(root)
     current = checked_target(root, 'VERSION', for_write=True).read_text(encoding='utf8').strip()
+    recovery_guard(backups)
     dest = private_backup_root(backups)
     if shutil.disk_usage(dest).free < 196 * 1024 * 1024:
         raise ProjectError('Espaço insuficiente para backup de código.')
@@ -544,7 +769,7 @@ def backup_code(*, root=PROJECT_ROOT, backups=BACKUP_ROOT):
             backup_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             _copy_with_hash(checked_target(root, item['path'], for_write=True), backup_file)
         _save_json_exclusive(snapshot / 'metadata.json', {
-            'project': PROJECT_NAME, 'from': current, 'to': current, 'entries': entries, 'scope': 'code-only'})
+            'project': PROJECT_NAME, 'from': current, 'to': current, 'entries': entries, 'scope': 'code-only', 'schemaFrom': installed_schema(root), 'schemaTo': installed_schema(root)})
         return {'ok': True, 'backup': snapshot.name, 'version': current,
                 'files': len(entries), 'bytes': aggregate, 'note': 'Backup privado do código. Sem banco, uploads ou armazenamento de usuários.'}
     except Exception:

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Worker isolado: atualizações de código do IguatamaOnline (não toca bancos/uploads)."""
+"""Worker isolado: atualização do IguatamaOnline com backup e migração controlada do banco."""
 import hashlib
 import json
 import os
@@ -121,9 +121,9 @@ def main():
             raise ProjectError('Modo de atualização inválido.')
         status(op_id, 'validating', 'Validando caminhos, arquivos e versão do ZIP', mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
         preview = validate_archive(archive)
-        status(op_id, 'backup', 'Preparando backup do código alterado', version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
+        status(op_id, 'backup', 'Preparando backup do código e do banco', version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
         installed = deploy_archive(archive, update_status=lambda stage, message: status(op_id, stage, message, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo')))
-        status(op_id, 'complete', 'Atualização concluída e arquivos verificados', percent=100, result=installed, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, **details)
+        status(op_id, 'complete', 'Atualização concluída; código e revisão do banco verificados', percent=100, result=installed, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, **details)
     except Exception as exc:
         status(op_id, 'failed', 'Falha na atualização: ' + str(exc)[:210], mode=requested_mode, repo=details.get('repo') or req.get('repo'), archive=archive.name if archive else requested_archive, sha256Prefix=requested_sha, version=preview['version'] if preview else None, errorType=type(exc).__name__)
         raise

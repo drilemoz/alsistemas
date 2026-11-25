@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.52: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.53: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -305,7 +305,7 @@ Type=oneshot
 User=root
 Group=root
 ExecStart=/usr/bin/python3 /usr/local/libexec/project_updater.py
-TimeoutStartSec=600
+TimeoutStartSec=1200
 UMask=0077
 NoNewPrivileges=true
 ProtectHome=true

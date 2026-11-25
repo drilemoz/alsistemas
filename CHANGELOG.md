@@ -1,3 +1,10 @@
+## 2.0.53 — Atualização do IguatamaOnline com proteção de schema (25/11/2026)
+
+- Validação do manifesto oficial v2, SHA-256, versão e revisão do schema.
+- Dump SQL preventivo privado, migração via PHP sem root e verificação da revisão.
+- Bloqueio de downgrade, de saltos de schema e de restauração isolada incompatível.
+- Recuperação assistida em falhas após início da migração; uploads preservados.
+
 ## 2.0.52 — Ícones nas janelas da VPS e da EC2 (18/11/2026)
 
 - Inclui ícones nos dados do Linux, nas interfaces de rede e nas seções e campos da Amazon EC2.

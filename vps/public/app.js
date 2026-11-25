@@ -1560,7 +1560,7 @@ async function reloadExternalInspection() {
     const select = $('external-backups')
     const previousBackup = select.value
     select.replaceChildren(new Option('Escolha um backup', ''))
-    for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}`, item.id))
+    for (const item of data.backups || []) select.append(new Option(`${item.id} · ${item.from || '?'} → ${item.to || '?'}${item.databaseBackup ? ' · SQL' : ''}${item.schemaFrom != null ? ` · schema ${item.schemaFrom} → ${item.schemaTo}` : ''}`, item.id))
     if ([...select.options].some(item => item.value === previousBackup)) select.value = previousBackup
     $('external-restore-code').disabled = !select.value
   } catch (error) {
@@ -1574,7 +1574,7 @@ function stopExternalPolling() {
   externalPoll = null
 }
 function projectUpdateStageLabel(stage) {
-  return ({ queued: 'Na fila', checking: 'Verificando', downloading: 'Baixando', validating: 'Validando', backup: 'Criando backup', installing: 'Instalando', verifying: 'Verificando instalação', rolling_back: 'Revertendo', complete: 'Concluída', failed: 'Falhou' })[stage] || ('Etapa: ' + (stage || 'desconhecida'))
+  return ({ queued: 'Na fila', checking: 'Verificando', downloading: 'Baixando', validating: 'Validando', backup: 'Criando backup', installing: 'Instalando', migrating: 'Migrando banco de dados', verifying: 'Verificando instalação', rolling_back: 'Revertendo', complete: 'Concluída', failed: 'Falhou' })[stage] || ('Etapa: ' + (stage || 'desconhecida'))
 }
 async function checkExternalStatus({ follow = false } = {}) {
   try {
@@ -1651,7 +1651,7 @@ async function externalCritical(mode) {
   const detail = mode === 'allow' ? 'Conceder escrita ao PHP somente aos três arquivos da vistoria? Aumenta o risco até restaurar as permissões.' :
     mode === 'restore' ? 'Restaurar os proprietários, grupos e modos registrados na liberação?' :
     mode === 'backup_code' ? 'Criar cópia privada do código sem banco de dados ou uploads?' :
-    `Restaurar os arquivos da produção a partir de ${backup}? Banco de dados e uploads não serão restaurados.`
+    `Restaurar os arquivos da produção a partir de ${backup}? Banco e uploads não serão restaurados. Se o schema mudou, a restauração automática será bloqueada.`
   // A vistoria não altera nada. Se a árvore for insegura, não pedir código à toa.
   try {
     const inspection = await api(externalRoot + '/maintenance')
@@ -1672,7 +1672,7 @@ async function externalCritical(mode) {
 async function externalGithubUpdate() {
   const repo = $('external-repo').value.trim()
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { externalResult('Informe proprietário/repositório do GitHub.', true); return }
-  if (!await requestExternalConfirmation('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código?`)) return
+  if (!await requestExternalConfirmation('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código e banco e verificação de schema?`)) return
   try {
     const started = await api(externalRoot + '/update/github', 'POST', { repo })
     maintenanceMessage('Atualização iniciada: ' + started.operationId)
@@ -1685,7 +1685,7 @@ async function externalFileUpdate() {
   if (!selected || !selected.name.toLowerCase().endsWith('.zip') || selected.size < 512 || selected.size > 32 * 1024 * 1024) {
     externalResult('Escolha um ZIP válido de 512 B a 32 MiB.', true); return
   }
-  if (!await requestExternalConfirmation('Atualizar pelo ZIP', `Enviar ${selected.name} e instalar no IguatamaOnline? Será criado backup do código.`)) return
+  if (!await requestExternalConfirmation('Atualizar pelo ZIP', `Enviar ${selected.name} e instalar no IguatamaOnline? Será criado backup do código e banco; o schema será verificado.`)) return
   const button = $('external-upload')
   button.disabled = true
   externalUploading = true
@@ -2320,7 +2320,7 @@ async function loadProjectBackupCenter(name) {
     link.type = 'button'
     link.addEventListener('click', () => navigateApp('project/iguatamaonline/aws/backups'))
     $('project-backup-center-list').append(link)
-    $('project-backup-center-status').textContent = 'Cópias privadas do código; banco e uploads não incluídos.'
+    $('project-backup-center-status').textContent = 'Backups manuais: código. Atualizações: código e dump SQL quando disponíveis; uploads preservados.'
   } else if (managedCopy) {
     info('Código público', 'Backups criptografados de public/; não abrangem arquivos privados, banco nem uploads fora de public/.')
     const create = node('button', 'Criar backup criptografado de public/', 'outline')
@@ -2363,7 +2363,7 @@ async function loadProjectBackupCenter(name) {
     info('Código', 'Backup pelo painel indisponível para projetos externos ou não reconhecidos como gerenciados.')
     $('project-backup-center-status').textContent = 'Nenhuma operação de backup autorizada para este projeto.'
   }
-  info('Banco de dados', 'Não incluído. Backup e restauração SQL ainda não estão implementados nesta versão.')
+  info('Banco de dados', name === 'iguatamaonline' ? 'Dump SQL preventivo nas atualizações do portal. Restauração de schema exige recuperação assistida.' : 'Não incluído. Backup e restauração SQL ainda não estão implementados para este projeto.')
   info('Uploads e arquivos privados', 'Não garantidos por backup de public/. É necessária uma estratégia própria e cópia fora da EC2.')
 }
 $('project-backup-center-back').addEventListener('click', () => navigateApp(`project/${currentBackupCenterName}`))

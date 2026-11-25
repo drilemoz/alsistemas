@@ -1,3 +1,19 @@
+## Atualização 2.0.53 — Portal IguatamaOnline e schema
+
+1. Atualize o AL Sistemas antes do portal. Use o ZIP de atualização oficial gerado no checkout do portal por `python3 tools/build_update_package.py --output /tmp/portal-update.zip`, não o ZIP de código-fonte. O manifesto é verificado por SHA-256, mas a autoria/assinatura Ed25519 não é verificada pelo AL Sistemas: use somente pacote de origem confiável.
+2. Faça snapshot externo EBS e cópia de storage/uploads antes do primeiro uso. Confira o banco local configurado em `storage/config.php` (sem exibir senhas), acesso do usuário PHP CLI, `php` com pdo_mysql e `/usr/bin/mariadb-dump` (pacote Ubuntu `mariadb-client`). O usuário do banco precisa das permissões de leitura/exportação e DDL do portal. O painel não instala dependências automaticamente.
+3. Confira que não há atualização pelo worker próprio do portal, cron de migração/backup ou administração concorrente. O marcador de manutenção do portal não bloqueia todas as rotas administrativas; suspenda acessos administrativos e jobs externos durante a operação. Não use o atualizador com banco remoto, TLS, tabelas não InnoDB ou schema divergente.
+4. Em Projetos > IguatamaOnline > Atualizar site, selecione o pacote oficial. O processo verifica a revisão corrente, ativa manutenção, exporta SQL (limite 512 MiB, com margem de disco), copia os arquivos a modificar e executa a migração com o usuário PHP. Só aceita revisão igual ou incremento de uma unidade. Confere revisão e, no schema 38, as colunas de sugestões.
+5. Consulte o progresso, abra o portal e faça teste real de envio e moderação. Não é um teste HTTP automatizado.
+
+### Falha e recuperação
+
+Backups privados em `/var/backups/alsistemas-vps/iguatamaonline/code-*` contêm `metadata.json`, arquivos anteriores e, quando aplicável, `database.sql` com tamanho e SHA-256 no manifesto. O marcador `schema-recovery.json` impede novas atualizações e restauração isolada até revisão humana. A reversão automática antes de DDL tenta restaurar o código; depois do início da migração não há importação SQL automática, pois ela pode apagar gravações posteriores ao dump e DDL MariaDB não é transacional.
+
+Em recuperação, isole o portal de tráfego e jobs, faça outro snapshot externo do estado atual, confira SHA-256 do dump e as entradas do manifesto, e teste o dump em banco isolado. Se a migração foi aplicada, prefira terminar a migração no código novo. Se for necessário retornar, restaure **juntos** o banco anterior e os arquivos/atributos de `metadata.json` (remova somente entradas marcadas `existed=false`). Confirme revisão e versão coincidentes; só então remova o marcador de manutenção `storage/.update-maintenance` e `schema-recovery.json`, libere tráfego e faça teste funcional. Não importe dump automaticamente sobre produção. Backups manuais de código só podem ser restaurados quando compatíveis com a revisão real.
+
+A operação não garante isolamento de clientes SQL externos, não é backup completo de uploads e não substitui snapshot EBS.
+
 ## Atualização 2.0.52 — Ícones nos dados da VPS e da Amazon EC2
 
 Instale o ZIP em **Mais → Atualizar → Arquivo ZIP**. Confira as janelas **Dados da VPS** e **Amazon EC2** em **Início**. Nenhuma configuração adicional é necessária para a mudança visual.
