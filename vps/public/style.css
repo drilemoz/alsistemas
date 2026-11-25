@@ -1036,3 +1036,13 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .ec2-snapshot-row{display:flex;justify-content:space-between;gap:.3rem .62rem;flex-wrap:wrap}
 .ec2-snapshot-row .ec2-pill{align-self:start}
 #ec2-snapshots-feedback{font-weight:600;overflow-wrap:anywhere}
+
+/* Portal: GitHub como fonte principal, ZIP como alternativa. */
+.portal-repository-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:8px}
+.portal-repository-fields label,.portal-repository-fields input{min-width:0;width:100%}
+.portal-release-overview{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px}
+.portal-release-overview strong{display:block;font-size:1.2rem}
+.portal-update-grid .portal-release-overview button{width:auto;margin:0;flex-shrink:0}
+.portal-release-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;padding:8px 0}
+.project-status-panel .project-feature-intro>div{min-width:0;flex:1}
+#external-update-summary{white-space:normal;overflow-wrap:anywhere;display:block;-webkit-line-clamp:unset;max-height:none}

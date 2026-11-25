@@ -15,7 +15,7 @@ fs.writeFileSync(path.join(folder, 'admin.json'), JSON.stringify({ passwordHash:
 
 test('projetos externos: sessão, CSRF, confirmação sem reautenticação e escopo fixo', async () => {
   const tasks = []
-  const server = createServer({ taskRunner: async task => {
+  const server = createServer({ projectReleaseLookup: async repo => ({repo,latest:'1.0.156',assetsReady:true}), taskRunner: async task => {
     tasks.push(task)
     if (task.action === 'inspect_external_project') return { ok: true, name: 'iguatamaonline', files: [], backups: [] }
     return { ok: true, operationId: 'abc'.repeat(8), mode: task.mode }
@@ -48,6 +48,11 @@ test('projetos externos: sessão, CSRF, confirmação sem reautenticação e esc
     assert.equal((await post(suffix + '/update/github', { repo: 'invalido/../../etc' }, cookie, csrf)).status, 400)
     assert.equal((await post(suffix + '/update/github', { repo: 'owner/repo', password, otp: '123456' }, cookie, csrf)).status, 400)
     assert.equal((await post(suffix + '/update/github', { repo: 'owner/repo' }, cookie, csrf)).status, 202)
+    const release = await fetch(base + suffix + '/update/release', { headers: { Cookie: cookie } })
+    assert.equal(release.status, 200)
+    assert.equal((await release.json()).repo, 'drilemoz/Meu-Site')
+    assert.equal((await post(suffix + '/update/github', { repo: 'drilemoz/Meu-Site', expectedVersion: '1.0.156' }, cookie, csrf)).status, 202)
+    assert.equal(tasks.at(-1).expectedVersion, '1.0.156')
     const status = await fetch(base + suffix + '/update/status', { headers: { Cookie: cookie } })
     assert.equal(status.status, 200)
     assert.equal((await status.json()).status, null)

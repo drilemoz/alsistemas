@@ -670,6 +670,7 @@ function showAppRoute(route, { keepPopup = null } = {}) {
   if (matched && matched[1] === 'iguatamaonline') {
     if (!externalUploading && (page === 'project-aws' || page === 'project-updates' || page === 'project-progress')) void checkExternalStatus({ follow: true })
     if (page === 'project-diagnostics' || page === 'project-backups' || page === 'project-updates') void reloadExternalInspection()
+    if (page === 'project-updates') void refreshExternalRelease()
     if (page === 'project-logs') void loadExternalReport()
   }
   if (route === 'updates') {
@@ -1528,6 +1529,8 @@ async function reloadExternalInspection() {
     const data = await api(externalRoot + '/maintenance')
     if (request !== externalInspectionRequest) return
     $('external-current-version').textContent = data.version || 'Não identificada'
+    externalInstalledVersion = data.version || null
+    paintExternalRelease()
     const files = Array.isArray(data.files) ? data.files : []
     const checked = files.filter(file => file.safePath).length
     const danger = data.permissionsGrantActive
@@ -1565,6 +1568,8 @@ async function reloadExternalInspection() {
     $('external-restore-code').disabled = !select.value
   } catch (error) {
     if (request !== externalInspectionRequest) return
+    externalInstalledVersion = null
+    paintExternalRelease()
     for (const area of targets) area.replaceChildren(diagnosticCard('alert','Não foi possível verificar',error.message,'diagnostic-warning'))
   }
 }
@@ -1580,6 +1585,8 @@ async function checkExternalStatus({ follow = false } = {}) {
   try {
     const response = await api(externalRoot + '/update/status')
     const state = response.status
+    externalActiveStage = !!state && !['complete', 'failed'].includes(state.stage)
+    paintExternalRelease()
     if (!state) { if (!externalUploading) { $('external-project-status').textContent = 'Nenhuma atualização registrada.'; $('external-update-summary').textContent = 'Nenhuma atualização registrada.' }; return }
     if (externalUploading) return
     maintenanceMessage(`${state.stage}: ${state.message || ''}`, state.stage === 'failed')
@@ -1643,6 +1650,7 @@ function externalResult(message, error = false) {
   const dest = section === 'permissions' ? $('external-permission-result') : section === 'backups' ? $('external-backup-result') : section === 'updates' ? $('external-update-summary') : $('external-progress-text')
   dest.textContent = message
   dest.classList.toggle('error', error)
+  if (error) { externalLastError = String(message).slice(0, 1000); maintenanceMessage(message, true) }
 }
 async function externalCritical(mode) {
   const backup = $('external-backups').value
@@ -1669,16 +1677,59 @@ async function externalCritical(mode) {
     await reloadExternalInspection()
   } catch (error) { externalResult(error.message, true) }
 }
-async function externalGithubUpdate() {
-  const repo = $('external-repo').value.trim()
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { externalResult('Informe proprietário/repositório do GitHub.', true); return }
-  if (!await requestExternalConfirmation('Atualizar pelo GitHub', `Instalar a última Release pública de ${repo} no IguatamaOnline, com backup automático do código e banco e verificação de schema?`)) return
+let externalInstalledVersion = null
+let externalRelease = null
+let externalReleaseError = ''
+let externalReleaseRequest = 0
+let externalReleaseBusy = false
+let externalGithubBusy = false
+let externalActiveStage = false
+function externalRepository() { return $('external-owner').value.trim() + '/' + $('external-repo').value.trim() }
+function portalVersionOrder(a, b) {
+  if (![a,b].every(v => typeof v === 'string' && /^\d{1,9}\.\d{1,9}\.\d{1,9}$/.test(v))) return null
+  const x = a.split('.').map(Number), y = b.split('.').map(Number)
+  for (let i=0;i<3;i++) if (x[i] !== y[i]) return Math.sign(x[i]-y[i])
+  return 0
+}
+function paintExternalRelease() {
+  const data = externalRelease
+  const order = data ? portalVersionOrder(data.latest, externalInstalledVersion) : null
+  const ready = !!data?.assetsReady && order === 1 && data.repo === externalRepository()
+  $('external-latest-version').textContent = data?.latest || '—'
+  const message = $('external-release-message')
+  message.textContent = externalReleaseBusy ? 'Consultando Release pública…' : externalReleaseError || (!data ? 'Consulte a versão disponível no GitHub.' : !data.assetsReady ? data.message : order === null ? 'Verificando versão instalada…' : order <= 0 ? 'O portal já está atualizado ou possui uma versão superior.' : `Pacote ${data.asset} · ${(data.bytes / 1048576).toFixed(1)} MiB · disponível para instalar.`)
+  message.classList.toggle('error', !!externalReleaseError || (!!data && !data.assetsReady))
+  $('external-release-details').hidden = !data?.notes
+  $('external-release-notes').textContent = data?.notes || ''
+  $('external-check-release').disabled = externalReleaseBusy
+  $('external-github').disabled = !ready || externalReleaseBusy || externalGithubBusy || externalUploading || externalActiveStage
+}
+async function refreshExternalRelease() {
+  const repo = externalRepository(), request = ++externalReleaseRequest
+  externalRelease = null; externalReleaseError = ''; externalReleaseBusy = true
+  paintExternalRelease()
   try {
-    const started = await api(externalRoot + '/update/github', 'POST', { repo })
+    const data = await api(externalRoot + '/update/release?repo=' + encodeURIComponent(repo))
+    if (request === externalReleaseRequest) externalRelease = data
+  } catch (error) { if (request === externalReleaseRequest) externalReleaseError = error.message }
+  finally { if (request === externalReleaseRequest) { externalReleaseBusy = false; paintExternalRelease() } }
+}
+function invalidateExternalRelease() {
+  externalReleaseRequest++; externalReleaseBusy = false; externalRelease = null; externalReleaseError = ''; paintExternalRelease()
+}
+async function externalGithubUpdate() {
+  const release = externalRelease, repo = externalRepository()
+  if (!release?.assetsReady || release.repo !== repo || portalVersionOrder(release.latest, externalInstalledVersion) !== 1 || externalGithubBusy || externalActiveStage || externalUploading) return
+  externalGithubBusy = true; paintExternalRelease()
+  try {
+    if (!await requestExternalConfirmation('Atualizar pelo GitHub', `Instalar ${release.latest} de ${repo} no IguatamaOnline, com backup automático do código e banco e verificação de schema?`)) return
+    const started = await api(externalRoot + '/update/github', 'POST', { repo, expectedVersion: release.latest })
     maintenanceMessage('Atualização iniciada: ' + started.operationId)
+    externalActiveStage = true
     navigateApp('project/iguatamaonline/aws/progress')
     startExternalPolling()
   } catch (error) { externalResult(error.message, true) }
+  finally { externalGithubBusy = false; paintExternalRelease() }
 }
 async function externalFileUpdate() {
   const selected = $('external-zip').files?.[0]
@@ -1723,6 +1774,7 @@ async function externalFileUpdate() {
   } catch (error) { maintenanceMessage(error.message, true) }
   finally {
     externalUploading = false
+    paintExternalRelease()
     syncFilePicker('external-zip', 'external-zip-name')
   }
 }
@@ -1733,10 +1785,12 @@ $('external-restore-code').disabled = true
 $('external-restore-code').addEventListener('click', () => externalCritical('restore_code'))
 $('external-backup-code').addEventListener('click', () => externalCritical('backup_code'))
 $('external-github').addEventListener('click', externalGithubUpdate)
+$('external-check-release').addEventListener('click', refreshExternalRelease)
+for (const id of ['external-owner','external-repo']) $(id).addEventListener('input', invalidateExternalRelease)
 $('external-upload').addEventListener('click', externalFileUpdate)
 $('external-reload').addEventListener('click', () => window.location.reload())
 $('external-check-progress').addEventListener('click', () => void checkExternalStatus())
-$('external-refresh-version').addEventListener('click', () => void reloadExternalInspection())
+$('external-refresh-version').addEventListener('click', () => { void reloadExternalInspection(); void refreshExternalRelease() })
 $('external-refresh-logs').addEventListener('click', () => void loadExternalReport())
 $('external-copy-report').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('external-report-text').textContent); notice('Relatório copiado.') }

@@ -7,6 +7,7 @@ import { once } from 'node:events'
 import { finished } from 'node:stream/promises'
 import { findTrusted, rememberDevice, revokeDevice, revokeAllDevices, trustedDevices, TRUST_MS } from './trusted.js'
 import { updateInfo, checkRelease, createReleaseCache, compareVersion, validateRepo, configureRepo } from './updates.js'
+import { lookupProjectRelease, PORTAL_REPO } from './project_release.js'
 import { audit, dataPath, lastAudit, readJson, writeJson } from './store.js'
 import { base32, constantEquals, hashPassword, matchingTotpStep, randomToken, strongPassword, verifyPassword, verifyTotp } from './security.js'
 import { projects, serviceDiagnostics } from './monitor.js'
@@ -24,7 +25,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.53'
+const VERSION = '2.0.54'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -188,7 +189,11 @@ function runTask(task) {
         const result = JSON.parse(output)
         if (code !== 0 || !result.ok) reject(new Error(result.error || 'Erro na tarefa'))
         else resolve(result)
-      } catch { reject(new Error('Falha no executor restrito: ' + error.slice(0, 100))) }
+      } catch {
+        const kind = error.match(/(?:^|\n)([A-Za-z]+(?:Error|Exception)):/g)?.at(-1)?.trim().replace(/:$/, '')
+        console.error('[executor restrito]', task.action, 'código', code, kind || 'resposta inválida')
+        reject(new Error('Falha interna no executor restrito' + (kind ? ` (${kind})` : '') + '. Consulte o histórico e os logs do serviço AL Sistemas.'))
+      }
     })
     proc.stdin.end(JSON.stringify(task))
   })
@@ -207,7 +212,7 @@ const snapshotMessages={
 }
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
   hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
-  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease,
+  hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease, projectReleaseLookup = lookupProjectRelease,
   ec2Reader = createEc2Reader(), ebsSnapshots = createEbsSnapshots({readEc2:ec2Reader}) } = {}) {
   const releaseCache = createReleaseCache({load:releaseLookup})
   let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
@@ -755,16 +760,24 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
           return fail(res, 422, error.message)
         }
       }
+      if (path === '/api/projects/iguatamaonline/update/release' && req.method === 'GET') {
+        if (!limit(ip, 'external-release', 30)) return fail(res, 429, 'Limite de consultas ao GitHub excedido.')
+        const repo = new URL(req.url, origin).searchParams.get('repo') || PORTAL_REPO
+        if (!validateRepo(repo)) return fail(res, 400, 'Repositório inválido.')
+        try { return json(res, 200, await projectReleaseLookup(repo)) }
+        catch (error) { return fail(res, 422, error.message || 'Consulta indisponível.') }
+      }
       if (path === '/api/projects/iguatamaonline/update/github' && req.method === 'POST') {
         if (!limit(ip, 'external-github', 5)) return fail(res, 429, 'Limite de atualizações excedido')
         const input = await body(req)
-        if (Object.keys(input).sort().join(',') !== 'repo' || !validateRepo(input.repo))
+        if (!['repo', 'expectedVersion,repo'].includes(Object.keys(input).sort().join(',')) || !validateRepo(input.repo) ||
+            ('expectedVersion' in input && (typeof input.expectedVersion !== 'string' || !/^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/.test(input.expectedVersion))))
           return fail(res, 400, 'Repositório ou parâmetros inválidos')
         try {
-          const result = await taskRunner({ action: 'start_project_update', name: 'iguatamaonline', mode: 'github', repo: input.repo })
+          const result = await taskRunner({ action: 'start_project_update', name: 'iguatamaonline', mode: 'github', repo: input.repo, ...(input.expectedVersion ? { expectedVersion: input.expectedVersion } : {}) })
           audit('task_requested', { ip, action: 'start_project_update', name: 'iguatamaonline' })
           return json(res, 202, result)
-        } catch (error) { return fail(res, 422, error.message) }
+        } catch (error) { audit('task_failed', { ip, action: 'start_project_update', name: 'iguatamaonline', reason: error.message }); return fail(res, 422, error.message) }
       }
       if (path === '/api/projects/iguatamaonline/update/upload' && req.method === 'POST') {
         if (!limit(ip, 'external-upload', 5)) return fail(res, 429, 'Limite de uploads excedido')
@@ -775,6 +788,8 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
           const result = await taskRunner({ action: 'start_project_update', name: 'iguatamaonline', mode: 'file', upload: saved.name, sha256: saved.sha256 })
           audit('task_requested', { ip, action: 'start_project_update', name: 'iguatamaonline' })
           return json(res, 202, result)
+        } catch (error) {
+          audit('task_failed', { ip, action: 'start_project_update', name: 'iguatamaonline', reason: error.message }); return fail(res, error.status || 422, error.message)
         } finally { if (saved) fs.rmSync(dataPath(saved.name), { force: true }) }
       }
       if (path === '/api/hosting/ipv4' && req.method === 'GET') {

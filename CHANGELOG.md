@@ -1,3 +1,10 @@
+## 2.0.54 — 2026-11-25
+
+- Corrige importação local de datetime que impedia enfileirar a atualização do portal.
+- GitHub como primeira opção, proprietário e repositório pré-preenchidos, versão disponível e confirmação explícita.
+- Seleciona pacote oficial por nome e verifica versão do manifesto contra a Release.
+- Histórico registra falhas de solicitação sem expor traceback bruto.
+
 ## 2.0.53 — Atualização do IguatamaOnline com proteção de schema (25/11/2026)
 
 - Validação do manifesto oficial v2, SHA-256, versão e revisão do schema.

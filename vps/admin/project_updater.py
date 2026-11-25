@@ -45,7 +45,7 @@ class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def github_download(repo, destination, op_id):
+def github_download(repo, destination, op_id, expected_version=None):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,60}/[A-Za-z0-9_.-]{1,80}', repo) or '..' in repo:
         raise ProjectError('Repositório GitHub inválido.')
     opener = urllib.request.build_opener(RestrictedRedirect())
@@ -58,11 +58,17 @@ def github_download(repo, destination, op_id):
     info = json.loads(payload)
     if info.get('draft') or info.get('prerelease'):
         raise ProjectError('Release não publicada ou de pré-lançamento.')
+    tag = str(info.get('tag_name') or '').removeprefix('v')
+    if not re.fullmatch(r'[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}', tag):
+        raise ProjectError('Tag da Release não é uma versão estável.')
+    if expected_version is not None and tag != expected_version:
+        raise ProjectError('A Release mudou desde a confirmação. Consulte a versão novamente.')
+    names = {f'Atualizacao-v{tag}.zip', f'Meu-Site-update-v{tag}.zip'}
     assets = [x for x in info.get('assets', []) if isinstance(x, dict) and
-              isinstance(x.get('name'), str) and x['name'].lower().endswith('.zip') and
-              isinstance(x.get('browser_download_url'), str) and 512 <= x.get('size', 0) <= MAX_ARCHIVE]
+              isinstance(x.get('name'), str) and x['name'] in names and
+              isinstance(x.get('browser_download_url'), str) and type(x.get('size')) is int and 512 <= x['size'] <= MAX_ARCHIVE]
     if len(assets) != 1:
-        raise ProjectError('Release deve ter exatamente um ZIP permitido (512 B a 32 MiB).')
+        raise ProjectError('Release deve ter exatamente um ZIP oficial de atualização (512 B a 32 MiB).')
     asset = assets[0]
     link = urlparse(asset['browser_download_url'])
     if link.scheme != 'https' or link.hostname != 'github.com' or link.username or link.password:
@@ -80,7 +86,7 @@ def github_download(repo, destination, op_id):
             status(op_id, 'downloading', 'Baixando pacote da Release', int(read * 100 / asset['size']))
     if read != asset['size']:
         raise ProjectError('Tamanho baixado não corresponde à Release.')
-    return {'release': str(info.get('tag_name') or '')[:60], 'repo': repo}
+    return {'release': str(info.get('tag_name') or '')[:60], 'repo': repo, 'releaseVersion': tag}
 
 
 def main():
@@ -116,11 +122,13 @@ def main():
         elif requested_mode == 'github':
             archive = BACKUP_ROOT / ('project-upload-' + op_id + '.zip')
             status(op_id, 'downloading', 'Consultando Release do GitHub', mode=requested_mode, repo=req.get('repo'))
-            details = github_download(req.get('repo'), archive, op_id)
+            details = github_download(req.get('repo'), archive, op_id, req.get('expectedVersion'))
         else:
             raise ProjectError('Modo de atualização inválido.')
         status(op_id, 'validating', 'Validando caminhos, arquivos e versão do ZIP', mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
         preview = validate_archive(archive)
+        if requested_mode == 'github' and preview['version'] != details['releaseVersion']:
+            raise ProjectError('Versão do manifesto não corresponde à Release do GitHub.')
         status(op_id, 'backup', 'Preparando backup do código e do banco', version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo'))
         installed = deploy_archive(archive, update_status=lambda stage, message: status(op_id, stage, message, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, repo=details.get('repo')))
         status(op_id, 'complete', 'Atualização concluída; código e revisão do banco verificados', percent=100, result=installed, version=preview['version'], mode=requested_mode, archive=archive.name if archive else requested_archive, **details)

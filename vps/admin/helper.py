@@ -726,6 +726,10 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         return restore_code(task['backup'])
     if action == 'start_project_update':
         keys = {'action', 'name', 'mode', 'repo'} if task.get('mode') == 'github' else {'action', 'name', 'mode', 'upload', 'sha256'}
+        if task.get('mode') == 'github' and 'expectedVersion' in task:
+            keys.add('expectedVersion')
+            if not isinstance(task['expectedVersion'], str) or not re.fullmatch(r'[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}', task['expectedVersion']):
+                raise TaskError('Versão esperada inválida.')
         if set(task) != keys or task.get('name') != PROJECT_NAME:
             raise TaskError('Tarefa de projeto não autorizada.')
         if task['mode'] == 'github':
@@ -751,12 +755,16 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         if (PROJECT_BACKUPS / 'permissions-original.json').exists():
             raise TaskError('Restaure as permissões originais antes de atualizar o código.')
         recovery_guard(PROJECT_BACKUPS)
-        inspect_project()
+        inspection = inspect_project()
+        if inspection.get('mutationAllowed') is False:
+            raise TaskError(inspection.get('mutationBlocker') or 'Permissões do projeto impedem a atualização.')
         token = secrets.token_hex(12)
         request = {'id': token, 'name': PROJECT_NAME, 'mode': task['mode']}
         staged = None
         if task['mode'] == 'github':
             request['repo'] = task['repo']
+            if 'expectedVersion' in task:
+                request['expectedVersion'] = task['expectedVersion']
         else:
             source = DATA / task['upload']
             if source.is_symlink():
@@ -787,26 +795,39 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
             finally:
                 os.close(fd)
                 source.unlink(missing_ok=True)
+        temp = DATA / ('.project-status-' + token + '.tmp')
+        queued = False
+        def write_status(stage, message):
+            status = {'operationId': token, 'project': PROJECT_NAME, 'stage': stage,
+                      'message': message, 'updatedAt': datetime.now(timezone.utc).isoformat()}
+            try:
+                with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as output:
+                    json.dump(status, output, ensure_ascii=False)
+                    account = pwd.getpwnam('alsistemas')
+                    os.fchown(output.fileno(), account.pw_uid, account.pw_gid)
+                    output.flush(); os.fsync(output.fileno())
+                os.replace(temp, existing)
+            finally:
+                temp.unlink(missing_ok=True)
         try:
             with os.fdopen(os.open(request_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as output:
                 json.dump(request, output)
                 output.flush(); os.fsync(output.fileno())
-            temp = DATA / ('.project-status-' + token + '.tmp')
-            status = {'operationId': token, 'project': PROJECT_NAME, 'stage': 'queued',
-                      'message': 'Atualização enfileirada, aguardando serviço root',
-                      'updatedAt': datetime.now(timezone.utc).isoformat()}
-            with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as output:
-                json.dump(status, output, ensure_ascii=False)
-                account = pwd.getpwnam('alsistemas')
-                os.fchown(output.fileno(), account.pw_uid, account.pw_gid)
-            os.replace(temp, existing)
+            write_status('queued', 'Atualização enfileirada, aguardando serviço root')
+            queued = True
             result = subprocess.run(['/usr/bin/systemctl', 'start', '--no-block',
                                      'alsistemas-project-updater.service'], capture_output=True, timeout=12)
             if result.returncode:
                 raise TaskError('Serviço de atualização do projeto não iniciou.')
         except Exception:
-            request_file.unlink(missing_ok=True)
-            if staged: staged.unlink(missing_ok=True)
+            # Se o worker já consumiu o pedido, não remova seu arquivo nem sobrescreva seu progresso.
+            if request_file.exists():
+                request_file.unlink(missing_ok=True)
+                if staged: staged.unlink(missing_ok=True)
+                if queued:
+                    write_status('failed', 'Não foi possível iniciar o serviço de atualização. Consulte o histórico.')
+            elif not queued and staged:
+                staged.unlink(missing_ok=True)
             raise
         return {'ok': True, 'operationId': token, 'started': True}
     if action == 'control_service':
@@ -909,12 +930,11 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
             with os.fdopen(os.open(request_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as out:
                 json.dump(request, out)
                 out.flush(); os.fsync(out.fileno())
-            import datetime
             status_file = DATA / 'update-status.json'
             temp_status = DATA / f'.update-status-{token}.tmp'
             data = {'id': token, 'mode': request['mode'], 'stage': 'queued',
                     'message': 'Atualização autorizada; aguardando o serviço iniciar',
-                    'time': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                    'time': datetime.now(timezone.utc).isoformat()}
             with os.fdopen(os.open(temp_status, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as out:
                 json.dump(data, out)
                 os.fchown(out.fileno(), pwd.getpwnam('alsistemas').pw_uid, pwd.getpwnam('alsistemas').pw_gid)

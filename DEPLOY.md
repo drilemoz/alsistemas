@@ -1,3 +1,7 @@
+## Atualização 2.0.54 — Atualizador do portal
+
+Atualize o painel antes do portal. Abra Projetos → IguatamaOnline → Atualizar site. A fonte padrão é `drilemoz/Meu-Site`. Consulte a Release pública estável, confirme a versão e acompanhe o progresso. ZIP oficial continua disponível como alternativa. Os bloqueios de schema e backups da 2.0.53 permanecem.
+
 ## Atualização 2.0.53 — Portal IguatamaOnline e schema
 
 1. Atualize o AL Sistemas antes do portal. Use o ZIP de atualização oficial gerado no checkout do portal por `python3 tools/build_update_package.py --output /tmp/portal-update.zip`, não o ZIP de código-fonte. O manifesto é verificado por SHA-256, mas a autoria/assinatura Ed25519 não é verificada pelo AL Sistemas: use somente pacote de origem confiável.
