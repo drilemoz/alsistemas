@@ -28,7 +28,7 @@ from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
 from package_policy import ALLOWED as APPROVED_PACKAGES, package_status, package_gate, read_job, write_job
 from host_reboot import RebootError, schedule as schedule_host_reboot
-from project_diagnostics import collect as collect_diagnostics, repair_timer, GROUPS
+from project_diagnostics import collect as collect_diagnostics, repair_timer, repair_project, GROUPS
 from project_upload_limits import execute as upload_limits
 from admin_services import ServiceError, control_service
 
@@ -676,8 +676,8 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
         if not target.is_dir() or target.is_symlink() or target.resolve() != target:
             raise TaskError('Projeto indisponível.')
         if action == 'project_diagnostic_repair':
-            if set(task) != {'action','name'}: raise TaskError('Reparo inválido.')
-            return repair_timer(target, runner)
+            if set(task) - {'action','name','repair'}: raise TaskError('Reparo inválido.')
+            return repair_project(target, task.get('repair','deploy-timer'), runner)
         if set(task) - {'action','name','group'} or task.get('group','all') not in GROUPS:
             raise TaskError('Consulta inválida.')
         return collect_diagnostics(target, runner, task.get('group','all'))

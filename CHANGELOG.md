@@ -1,3 +1,15 @@
+## 2.0.61 — Diagnóstico de migração e atualização
+
+- Relatório do IguatamaOnline compara schema declarado e real via PHP CLI sem privilégios, sem migração ou dump durante a consulta; mostra estado do backup privado.
+- Progresso e falha do worker registram revisões de schema, manifesto e etapa; coleta inclui logs do worker do painel.
+- Mantidos backup SQL obrigatório, lock e bloqueio de saltos de schema não validados. Não substitui o atualizador próprio do portal.
+
+## 2.0.60 — Reparos assistidos
+
+- Central de diagnóstico: iniciar serviços parados (Nginx, PHP-FPM, MariaDB, socket do terminal) e ativar timer do IguatamaOnline. Nginx/PHP validados antes da inicialização; serviços ativos preservados. Confirmação, ação fixa e estado antes/depois no relatório.
+- Controle de implantação informa caminho e errno, dono/modo/links incompatíveis; erros posteriores à aquisição do lock não são rotulados como falhas do lock.
+- Não altera permissões, não remove locks, não executa migrações novas, não oferece root no terminal. Serviços são compartilhados; inicialização assíncrona pode ainda estar em andamento.
+
 ## 2.0.59 — Terminal VPS
 
 - Módulo global em Mais → Terminal VPS no celular e menu lateral no desktop. Bash real em PTY, com comandos livres, Ctrl+C/D, último comando, cópia e TXT.

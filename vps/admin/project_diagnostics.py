@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from project_maintenance import PROJECT_ROOT, schema_diagnostics
 
 GROUPS = ('all', 'files', 'services', 'web', 'database', 'host', 'deploy')
 
@@ -110,15 +111,18 @@ def collect(root, runner=subprocess.run, group='all'):
     if selected('web'): cmds += [('Nginx',['nginx','-t']),('PHP CLI',['php','-v']),('Extensões PHP CLI',['php','-m']),('Validação PHP-FPM',['php-fpm8.3','-t'])]
     if selected('services','deploy'):
         units=['nginx.service','php8.3-fpm.service','mariadb.service','alsistemas-terminal.socket']
-        if special: units+=['iguatama-deploy.service','iguatama-deploy.timer']
+        if special: units+=['iguatama-deploy.service','iguatama-deploy.timer','alsistemas-project-updater.service']
         cmds += [('Serviços',['systemctl','show',*units,'-p','Id,LoadState,ActiveState,SubState,Result,UnitFileState,ExecMainStatus'])]
         if special: cmds += [
             ('Timer de implantação',['systemctl','list-timers','iguatama-deploy.timer','--all','--no-pager']),
             ('Conta de implantação',['id','iguanews-deploy']),
             ('Detalhes da unidade de implantação',['systemctl','show','iguatama-deploy.service','-p','User,Group,FragmentPath,WorkingDirectory,ExecMainCode,ExecMainStatus,Result,ActiveEnterTimestamp,InactiveExitTimestamp']),
             ('Eventos recentes do serviço de implantação (revise antes de compartilhar)',['journalctl','-u','iguatama-deploy.service','-n','30','--no-pager','-o','short-iso']),
-            ('Eventos recentes do timer de implantação',['journalctl','-u','iguatama-deploy.timer','-n','15','--no-pager','-o','short-iso'])]
+            ('Eventos recentes do timer de implantação',['journalctl','-u','iguatama-deploy.timer','-n','15','--no-pager','-o','short-iso']),
+            ('Eventos do atualizador AL Sistemas',['journalctl','-u','alsistemas-project-updater.service','-n','20','--no-pager','-o','short-iso'])]
     if selected('files'): cmds += [('Atributos',['lsattr','-d',str(root)])]
+    if root == PROJECT_ROOT and selected('database','deploy'):
+        results.extend(schema_diagnostics(root))
     if selected('database'): cmds += [('MariaDB versão do cliente',['mariadb','--version']),('MariaDB conexão local (admin, sem credenciais do projeto)',['mariadb-admin','--no-defaults','--protocol=socket','--user=root','--connect-timeout=3','ping'])]
     with ThreadPoolExecutor(max_workers=4) as pool: results.extend(pool.map(run,cmds))
     if selected('web'):
@@ -159,3 +163,42 @@ def repair_timer(root, runner=subprocess.run):
     p=runner(['systemctl','enable','--now','iguatama-deploy.timer'],capture_output=True,text=True,timeout=15)
     if p.returncode: raise ValueError('Não foi possível ativar o timer: '+redact(p.stderr or '')[:200])
     return {'ok':True,'message':'Timer habilitado. Confira o diagnóstico de serviços.'}
+
+# Fixed recovery actions only. Never accept a command or unit from the browser.
+REPAIRS = {
+    'nginx-start': ('nginx.service', ('/usr/sbin/nginx','-t')),
+    'php-start': ('php8.3-fpm.service', ('/usr/sbin/php-fpm8.3','-t')),
+    'mariadb-start': ('mariadb.service', None),
+    'terminal-start': ('alsistemas-terminal.socket', None),
+}
+REPAIR_IDS = ('deploy-timer', *REPAIRS)
+
+
+def repair_project(root, repair, runner=subprocess.run):
+    if repair == 'deploy-timer':
+        return repair_timer(root, runner)
+    if not isinstance(repair,str) or repair not in REPAIRS:
+        raise ValueError('Reparo desconhecido.')
+    unit, validation = REPAIRS[repair]
+    def call(args, timeout=6):
+        return runner(args,capture_output=True,text=True,timeout=timeout,
+                      env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C','LC_ALL':'C'})
+    def state():
+        p=call(['/bin/systemctl','show',unit,'-p','LoadState,ActiveState,UnitFileState,SubState'])
+        if p.returncode: raise ValueError('Não foi possível consultar '+unit+': '+redact(p.stderr or '')[:250])
+        return dict(line.split('=',1) for line in p.stdout.splitlines() if '=' in line)
+    before=state()
+    if before.get('LoadState')!='loaded' or before.get('UnitFileState','').startswith('masked'):
+        raise ValueError('Serviço não instalado ou mascarado: '+unit)
+    if before.get('ActiveState')=='active':
+        return {'ok':True,'changed':False,'message':unit+' já está ativo. Nenhuma alteração realizada.','before':before,'after':before}
+    if before.get('ActiveState') not in ('inactive','failed'):
+        raise ValueError('Serviço em transição ou estado desconhecido. Consulte novamente.')
+    if validation:
+        p=call(list(validation),8)
+        if p.returncode: raise ValueError('Configuração inválida; serviço não iniciado: '+redact((p.stderr or '')+(p.stdout or ''))[:500])
+    p=call(['/bin/systemctl','--no-block','start',unit],8)
+    if p.returncode: raise ValueError('Systemd recusou a inicialização: '+redact(p.stderr or '')[:300])
+    after=state()
+    return {'ok':True,'changed':True,'submitted':True,'before':before,'after':after,
+            'message':unit+(' está ativo.' if after.get('ActiveState')=='active' else ': inicialização solicitada; confira o estado após a execução.')}

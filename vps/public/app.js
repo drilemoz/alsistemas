@@ -1595,7 +1595,9 @@ async function checkExternalStatus({ follow = false } = {}) {
     $('external-project-status').textContent = 'Última atualização: ' + state.stage + ' · ' + (state.message || '')
     $('external-update-summary').textContent = projectUpdateStageLabel(state.stage) + (state.message ? ' · ' + state.message : '')
     $('external-update-summary').className = 'small project-update-state ' + (state.stage === 'failed' ? 'bad' : state.stage === 'complete' ? 'good' : 'muted')
-    $('external-progress-step').textContent = state.stage === 'failed' ? 'A atualização falhou. Consulte Histórico e relatórios.' : state.stage === 'complete' ? 'Atualização concluída.' : 'Etapa atual: ' + state.stage
+    const schemaDetail = Number.isInteger(state.schemaFrom) && Number.isInteger(state.schemaTo) ? ` · Schema ${state.schemaFrom} → ${state.schemaTo}` : ''
+    if (schemaDetail) $('external-update-summary').textContent += schemaDetail
+    $('external-progress-step').textContent = state.stage === 'failed' ? ('Falha em: ' + projectUpdateStageLabel(state.failedStage || 'failed') + '. Consulte Histórico e relatórios.') : state.stage === 'complete' ? 'Atualização concluída.' : 'Etapa atual: ' + state.stage
     const bar = $('external-progress')
     if (typeof state.percent === 'number' && Number.isFinite(state.percent)) {
       bar.hidden = false
@@ -1879,7 +1881,9 @@ function openDiagnosticCenter(item) {
   diagnosticProject = item.name
   $('diagnostic-center-title').textContent = 'Diagnóstico · ' + (item.displayName || item.name)
   $('diagnostic-center-group').value = 'all'
-  $('diagnostic-center-repair').hidden = item.name !== 'iguatamaonline'
+  const repairs = $('diagnostic-center-repair-kind')
+  repairs.options[0].disabled = item.name !== 'iguatamaonline'
+  repairs.selectedIndex = item.name === 'iguatamaonline' ? 0 : 1
   $('diagnostic-center').showModal()
   void runDiagnosticCenter()
 }
@@ -1925,12 +1929,21 @@ $('diagnostic-center-download').addEventListener('click',()=>{
   document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
 })
 $('diagnostic-center-repair').addEventListener('click',async()=>{
-  if (diagnosticProject!=='iguatamaonline') return
-  if (!await confirmAction('Ativar o timer de atualização já instalado? Não altera arquivos do site.','Ativar timer')) return
+  const name=diagnosticProject, kind=$('diagnostic-center-repair-kind'), repair=kind.value
+  if (!name) return
+  if (!await confirmAction(kind.selectedOptions[0].textContent+'? A operação pode afetar serviços compartilhados pela VPS. Não modifica arquivos do site.','Executar reparo') || name!==diagnosticProject) return
   const button=$('diagnostic-center-repair');button.disabled=true
-  try { const result=await api('/api/projects/iguatamaonline/diagnostics/repair','POST',{});notice(result.message);await runDiagnosticCenter() }
-  catch(error) { $('diagnostic-center-output').textContent+='\nReparo: '+error.message;notice(error.message,true) }
-  finally {button.disabled=false}
+  $('diagnostic-center-run').disabled=true
+  try {
+    const result=await api('/api/projects/'+encodeURIComponent(name)+'/diagnostics/repair','POST',{repair})
+    notice(result.message)
+    if (name===diagnosticProject) {
+      await runDiagnosticCenter()
+      $('diagnostic-center-output').textContent+='\n\nResultado do reparo: '+JSON.stringify(result,null,2)
+    }
+  }
+  catch(error) { if(name===diagnosticProject) $('diagnostic-center-output').textContent+='\nReparo: '+error.message;notice(error.message,true) }
+  finally { if(name===diagnosticProject) {button.disabled=false;$('diagnostic-center-run').disabled=false} }
 })
 
 function renderProjectCatalog() {

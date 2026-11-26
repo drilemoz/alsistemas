@@ -163,9 +163,13 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
 def private_backup_root(dest=BACKUP_ROOT):
     if dest.is_symlink():
         raise ProjectError('Diretório de backup não confiável.')
-    dest.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if dest.resolve(strict=True) != dest or (dest.stat().st_mode & 0o077) or (dest == BACKUP_ROOT and dest.stat().st_uid != 0):
-        raise ProjectError('Diretório de backup deve ser privado (0700).')
+    try:
+        dest.mkdir(parents=True, exist_ok=True, mode=0o700)
+        st = dest.stat()
+        if dest.resolve(strict=True) != dest or (st.st_mode & 0o077) or (dest == BACKUP_ROOT and st.st_uid != 0):
+            raise ProjectError(f'Diretório de backup inseguro: {dest}; uid={st.st_uid}, modo={stat.S_IMODE(st.st_mode):04o}; esperado privado (0700).')
+    except OSError as exc:
+        raise ProjectError(f'Não foi possível preparar a cópia privada: {dest}; errno {exc.errno}.') from exc
     return dest
 
 
@@ -323,30 +327,42 @@ def site_worker_lock(root):
         yield; return
     # Mesmo lock usado pelo atualizador PHP. Nunca criar/alterar controles do portal.
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open(root, flags)
+    fd = None
     lock = None
+    stage = str(root)
     try:
+        fd = os.open(root, flags)
         for part in ('storage', 'updater', 'vps', 'private'):
+            stage += "/" + part
             child = os.open(part, flags, dir_fd=fd)
             os.close(fd); fd = child
         st = os.fstat(fd)
         if st.st_uid != account.pw_uid or st.st_mode & 0o022:
-            raise ProjectError('Controle privado do atualizador do site inseguro.')
+            raise ProjectError(f'Controle privado inseguro: {stage}; uid={st.st_uid}, esperado={account.pw_uid}, modo={stat.S_IMODE(st.st_mode):04o}.')
+        stage += '/.code.lock'
         lock = os.open('.code.lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
         st = os.fstat(lock)
         if not stat.S_ISREG(st.st_mode) or st.st_uid != account.pw_uid or st.st_nlink != 1 or st.st_mode & 0o077:
-            raise ProjectError('Lock do atualizador do site inseguro.')
+            raise ProjectError(f'Lock inseguro: {stage}; uid={st.st_uid}, esperado={account.pw_uid}, modo={stat.S_IMODE(st.st_mode):04o}, links={st.st_nlink}.')
         try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc: raise ProjectError('Atualizador do site em execução; tente novamente após concluir.') from exc
+        stage = str(root / 'storage/updater/vps/private/maintenance')
         try: os.stat('maintenance', dir_fd=fd, follow_symlinks=False)
         except FileNotFoundError: pass
         else: raise ProjectError('Recuperação pendente no atualizador do site.')
-        yield
     except OSError as exc:
-        raise ProjectError(f'Controle do atualizador indisponível: {exc.strerror} (errno {exc.errno}). Confira storage/updater/vps/private/.code.lock.') from exc
+        if lock is not None: os.close(lock)
+        if fd is not None: os.close(fd)
+        raise ProjectError(f'Controle do atualizador indisponível: {stage}; {exc.strerror} (errno {exc.errno}).') from exc
+    except BaseException:
+        if lock is not None: os.close(lock)
+        if fd is not None: os.close(fd)
+        raise
+    try:
+        yield
     finally:
         if lock is not None: os.close(lock)
-        os.close(fd)
+        if fd is not None: os.close(fd)
 
 
 def coordinated(operation):
@@ -585,7 +601,7 @@ try {
 '''
 
 
-def php_job(root, job, output=None):
+def php_job(root, job, output=None, *, timeout=180):
     actor, uid, gid = php_account()
     if not actor or uid in (None, 0) or gid is None:
         raise ProjectError('Conta PHP sem privilégios não identificada.')
@@ -606,7 +622,7 @@ def php_job(root, job, output=None):
             stderr=subprocess.DEVNULL, user=uid, group=gid, extra_groups=[], cwd=str(root),
             env={'PATH':'/usr/bin:/bin','HOME':'/tmp'}, start_new_session=True, preexec_fn=set_limit) as proc:
             try:
-                stdout, _ = proc.communicate(PHP_JOB.encode(), timeout=180)
+                stdout, _ = proc.communicate(PHP_JOB.encode(), timeout=timeout)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate()
@@ -615,9 +631,57 @@ def php_job(root, job, output=None):
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProjectError('Falha ou timeout na etapa PHP: '+job) from exc
     if code:
-        raise ProjectError('Etapa PHP falhou: '+job+' (código '+str(code)+'). Confira PHP CLI, banco local, permissões e configuração do portal.')
+        reason = {2: 'controle de manutenção ou operação indisponível',
+                  3: 'banco incompatível com exportação local segura',
+                  4: 'não foi possível iniciar a exportação',
+                  5: 'revisão final não confirmada',
+                  6: 'exceção PHP ou banco'}.get(code, 'processo PHP ou ferramenta de banco falhou')
+        raise ProjectError(f'Etapa PHP {job} falhou (código {code}): {reason}.')
     if output is None:
         return stdout.decode('ascii', errors='strict').strip()
+
+
+def schema_diagnostics(root=PROJECT_ROOT, backups=BACKUP_ROOT):
+    """Read-only report; never call migrate, dump or maintenance jobs here."""
+    checks = []
+    def add(label, code, output):
+        checks.append(dict(label=label, code=code, output=output))
+    revision = None
+    try:
+        verify_project(PROJECT_NAME, root)
+        guard_mutation_ownership(root)
+        revision = installed_schema(root)
+        add('Schema declarado no código', 0 if revision is not None else 1,
+            str(revision) if revision is not None else 'Não identificado')
+    except (OSError, ProjectError, ValueError) as exc:
+        add('Schema declarado no código', 1, str(exc)[:300])
+    if revision is not None:
+        try:
+            actual = php_job(root, 'probe', timeout=8)
+            if not re.fullmatch(r'(?:0|[1-9][0-9]{0,17})', actual):
+                raise ProjectError('Resposta de revisão inválida.')
+            actual = int(actual)
+            add('Schema real do banco', 0 if actual == revision else 1,
+                f'{actual} · código {revision} · ' + ('compatível' if actual == revision else 'divergente; atualização bloqueada'))
+        except (OSError, ProjectError, ValueError) as exc:
+            add('Schema real do banco', 1, str(exc)[:300])
+    else:
+        add('Schema real do banco', 1, 'Não consultado: código não validado.')
+    # Não criar diretórios nem expor dados do backup durante um diagnóstico.
+    try:
+        st = backups.lstat()
+        ok = stat.S_ISDIR(st.st_mode) and not st.st_mode & 0o077 and st.st_uid == 0 and backups.resolve() == backups
+        add('Pasta privada de backup', 0 if ok else 1,
+            f'{backups}; uid={st.st_uid}; modo={stat.S_IMODE(st.st_mode):04o}' + ('' if ok else '; insegura'))
+        if ok:
+            flag = backups / 'schema-recovery.json'
+            pending = flag.exists() or flag.is_symlink()
+            add('Recuperação de schema', 1 if pending else 0, 'Pendente; preservar código e SQL' if pending else 'Sem marcador de recuperação')
+    except FileNotFoundError:
+        add('Pasta privada de backup', 0, 'Ainda não existe; criada apenas na implantação.')
+    except OSError as exc:
+        add('Pasta privada de backup', 1, f'Falha de acesso (errno {exc.errno})')
+    return checks
 
 
 def database_backup(root, snapshot):
@@ -665,7 +729,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
     if old_schema is not None and (new_schema is None or not info['manifestVerified']):
         raise ProjectError('Use o ZIP oficial gerado por tools/build_update_package.py, com manifesto e schema.')
     if old_schema is not None and (new_schema < old_schema or new_schema > old_schema + 1):
-        raise ProjectError('Downgrade ou salto de schema não autorizado; instalação assistida necessária.')
+        raise ProjectError(f'Downgrade ou salto de schema não autorizado: {old_schema} → {new_schema}; instalação assistida necessária.')
     if root == PROJECT_ROOT and old_schema is None:
         raise ProjectError('Schema instalado não identificado; instalação assistida necessária.')
     current_version_file = checked_target(root, 'VERSION', for_write=True)
@@ -699,7 +763,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
         if old_schema is not None:
             update_status('backup', 'Ativando manutenção e conferindo o schema do banco')
             if php_job(root, 'probe') != str(old_schema):
-                raise ProjectError('Schema real do banco difere do código instalado.')
+                raise ProjectError(f'Schema real do banco difere do código instalado (esperado {old_schema}). Consulte o diagnóstico do banco.')
             php_job(root, 'maintenance-on')
             maintenance = True
             update_status('backup', 'Exportando banco MariaDB antes da atualização')
@@ -756,7 +820,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
                 'note': 'Código verificado; banco exportado e schema conferido quando aplicável. Uploads preservados.'}
     except Exception as exc:
         if migration_started:
-            raise ProjectError('Migração/verificação interrompida; código novo e backup '+snapshot.name+' preservados. Recuperação assistida obrigatória; não restaurar somente código.') from exc
+            raise ProjectError('Migração/verificação interrompida; backup '+snapshot.name+' preservado. Recuperação assistida obrigatória. Causa: '+(str(exc)[:160] if isinstance(exc, ProjectError) else type(exc).__name__)) from exc
         if maintenance and change_log and php_job(root, 'probe') != str(old_schema):
             raise ProjectError('Schema alterado por outra execução; código e backup preservados para recuperação assistida.') from exc
         update_status('rolling_back', 'Erro antes da migração; revertendo arquivos alterados')

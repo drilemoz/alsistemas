@@ -37,3 +37,36 @@ class DiagnosticsTests(unittest.TestCase):
                 calls.append(args);return CompletedProcess(args,0,'loaded\n','')
             self.assertTrue(repair_timer(root,runner)['ok'])
             self.assertEqual(calls[-1],['systemctl','enable','--now','iguatama-deploy.timer'])
+
+class RecoveryTests(unittest.TestCase):
+    def test_active_no_change(self):
+        from project_diagnostics import repair_project
+        calls=[]
+        def runner(args,**kw):
+            calls.append(args)
+            return CompletedProcess(args,0,'LoadState=loaded\nActiveState=active\nUnitFileState=enabled\n','')
+        result=repair_project(Path('/tmp/project'),'nginx-start',runner)
+        self.assertFalse(result['changed']);self.assertEqual(len(calls),1)
+    def test_invalid_config_blocks_start(self):
+        from project_diagnostics import repair_project
+        calls=[]
+        def runner(args,**kw):
+            calls.append(args)
+            if args[0]=='/usr/sbin/nginx': return CompletedProcess(args,1,'','bad config')
+            return CompletedProcess(args,0,'LoadState=loaded\nActiveState=failed\n','')
+        with self.assertRaisesRegex(ValueError,'Configuração inválida'): repair_project(Path('/tmp/project'),'nginx-start',runner)
+        self.assertEqual(len(calls),2)
+    def test_start_inactive_and_check_state(self):
+        from project_diagnostics import repair_project
+        calls=[]
+        def runner(args,**kw):
+            calls.append(args)
+            if '--no-block' in args: return CompletedProcess(args,0,'','')
+            return CompletedProcess(args,0,'LoadState=loaded\nActiveState='+('inactive' if len(calls)==1 else 'activating')+'\n','')
+        result=repair_project(Path('/tmp/project'),'mariadb-start',runner)
+        self.assertTrue(result['submitted']);self.assertEqual(result['after']['ActiveState'],'activating')
+        self.assertEqual(calls[1],['/bin/systemctl','--no-block','start','mariadb.service'])
+    def test_reject_unlisted_and_masked(self):
+        from project_diagnostics import repair_project
+        with self.assertRaises(ValueError): repair_project(Path('/tmp/project'),'ssh-start',lambda *a,**k:self.fail('unexpected command'))
+        with self.assertRaises(ValueError): repair_project(Path('/tmp/project'),'php-start',lambda args,**kw:CompletedProcess(args,0,'LoadState=loaded\nActiveState=inactive\nUnitFileState=masked\n',''))

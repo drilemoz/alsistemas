@@ -26,7 +26,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.59'
+const VERSION = '2.0.61'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -861,13 +861,16 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         const params = new URL(req.url,'http://localhost').searchParams
         const group = params.get('group') || 'all'
         if ([...params.keys()].some(k=>k!=='group') || !['all','files','services','web','database','host','deploy'].includes(group)) return fail(res,400,'Consulta inválida.')
+        const input = repair ? await body(req) : {}
+        const operation = input.repair ?? 'deploy-timer'
+        if (repair && (Object.keys(input).some(k=>k!=='repair') || !['deploy-timer','nginx-start','php-start','mariadb-start','terminal-start'].includes(operation) || (operation==='deploy-timer' && name!=='iguatamaonline'))) return fail(res,400,'Reparo inválido.')
         try {
-          const task = repair ? {action:'project_diagnostic_repair',name} : {action:'project_diagnostics',name,group}
+          const task = repair ? {action:'project_diagnostic_repair',name,repair:operation} : {action:'project_diagnostics',name,group}
           const result = await taskRunner(task)
-          if (repair) audit('project_diagnostic_repair',{name,ip,success:true})
+          if (repair) audit('project_diagnostic_repair',{name,ip,repair:operation,success:true})
           return json(res,200,result)
         } catch (error) {
-          if (repair) audit('project_diagnostic_repair',{name,ip,success:false})
+          if (repair) audit('project_diagnostic_repair',{name,ip,repair:operation,success:false})
           return fail(res,422,error.message)
         }
       }

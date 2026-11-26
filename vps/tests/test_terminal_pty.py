@@ -30,8 +30,9 @@ class TerminalPtyTests(unittest.TestCase):
             try:
                 read_until(b'als-terminal:')
                 client.sendall(b'printf "%s\\n" "$((17+25))"\n')
-                read_until(b'42\r\n')
+                read_until(b'42\r\nals-terminal:')
                 client.sendall(b'sleep 60\n');time.sleep(.3);client.sendall(b'\x03')
+                read_until(b'als-terminal:')
                 client.sendall(b'echo PTY_OK\n');read_until(b'\r\nPTY_OK\r\n')
                 client.sendall(b'exit\n');p.wait(timeout=6);self.assertEqual(p.returncode,0)
             finally:

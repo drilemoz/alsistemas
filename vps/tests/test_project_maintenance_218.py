@@ -42,6 +42,20 @@ class ProjectMaintenanceTests(unittest.TestCase):
         with zipfile.ZipFile(self.zip, 'w') as z:
             for name, data in files.items(): z.writestr(wrapper + name, data)
 
+    def test_lock_diagnostic_names_missing_component(self):
+        from types import SimpleNamespace
+        with patch.object(p, 'PROJECT_ROOT', self.root), patch.object(p, 'dedicated_owner', return_value=SimpleNamespace(pw_uid=os.getuid())):
+            with self.assertRaisesRegex(p.ProjectError, r'/storage; .*errno 2'):
+                with p.site_worker_lock(self.root): self.fail('missing control')
+
+    def test_lock_does_not_mislabel_operation_error(self):
+        from types import SimpleNamespace
+        private=self.root/'storage/updater/vps/private';private.mkdir(parents=True,mode=0o700)
+        lock=private/'.code.lock';lock.touch(mode=0o600)
+        with patch.object(p, 'PROJECT_ROOT', self.root), patch.object(p, 'dedicated_owner', return_value=SimpleNamespace(pw_uid=os.getuid())):
+            with self.assertRaisesRegex(OSError, 'operation failed'):
+                with p.site_worker_lock(self.root): raise OSError('operation failed')
+
     def test_inspection_fixed_project_and_missing_files(self):
         report = p.inspect_project(root=self.root)
         self.assertEqual(report['version'], '1.0.0')
