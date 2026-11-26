@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AL Sistemas VPS 2.0.58: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
+# AL Sistemas VPS 2.0.59: instalador Ubuntu 24.04 (uma VPS, sem multisservidor)
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 umask 027
@@ -423,7 +423,17 @@ sed -i "/^Environment=ALS_PORT=/a Environment=ALS_ORIGIN=$ORIGIN" /etc/systemd/s
 # Caso falhe a ativação, a rotina de estágio restaura o diretório anterior.
 PREVIOUS_CORE="$(python3 "$BASE/vps/admin/core_switch.py" activate "$STAGED_CORE" /opt/alsistemas-vps/current)" || fail 'Não foi possível ativar a versão preparada.'
 CORE_ACTIVATED=1
+# Terminal em UID separado; nenhuma alteração no sudoers ou no confinamento do painel.
+for unit in alsistemas-terminal.socket alsistemas-terminal@.service; do
+  target="/etc/systemd/system/$unit"
+  [[ ! -L "$target" ]] || fail 'Unidade do terminal é link simbólico.'
+  if [[ -e "$target" ]]; then
+    grep -Fq 'Description=AL Sistemas - ' "$target" || fail 'Unidade do terminal não pertence ao painel.'
+  fi
+  install -o root -g root -m 0644 "$BASE/vps/systemd/$unit" "$target"
+done
 systemctl daemon-reload
+systemctl enable --now alsistemas-terminal.socket || log 'Aviso: terminal indisponível; diagnóstico e painel permanecem ativos.'
 systemctl enable --now alsistemas-vps
 systemctl restart alsistemas-vps
 systemctl enable --now alsistemas-inbox.path || log 'Aviso: caixa de entrada não ativada; o painel e o atualizar-vps.sh seguem disponíveis.'

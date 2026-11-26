@@ -1,0 +1,16 @@
+[Unit]
+Description=AL Sistemas - socket privado do terminal Bash
+After=systemd-tmpfiles-setup.service
+
+[Socket]
+ListenStream=/run/alsistemas-terminal/terminal.sock
+SocketUser=alsistemas
+SocketGroup=alsistemas
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=2
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

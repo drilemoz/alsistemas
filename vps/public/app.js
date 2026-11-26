@@ -620,7 +620,7 @@ const projectOverviewCache = new Map()
 const projectOverviewTtlMs = 30_000
 const projectNumber = new Intl.NumberFormat('pt-BR')
 let currentAppRoute = 'overview'
-const mainTabs = new Set(['overview', 'projects', 'services', 'backups', 'updates', 'dependencies', 'integrations', 'domains', 'security', 'audit', 'help'])
+const mainTabs = new Set(['overview', 'projects', 'services', 'terminal', 'backups', 'updates', 'dependencies', 'integrations', 'domains', 'security', 'audit', 'help'])
 const projectSections = new Set(['diagnostics', 'permissions', 'updates', 'backups', 'logs', 'progress'])
 function appRouteFromUrl() {
   try { return decodeURIComponent(location.hash.replace(/^#/, '')) || 'overview' }
@@ -2383,6 +2383,7 @@ $('refresh').addEventListener('click', () => { clearNotice(); void loadDashboard
 $('logout').addEventListener('click', async () => {
   try {
     await api('/api/logout', 'POST')
+    resetTerminalView()
     csrf = ''
     stopReleaseWatch()
     clearTimeout(aptTimer)
@@ -3078,6 +3079,7 @@ $('revoke-devices').addEventListener('submit', e => {
     if (!await confirmAction('Revogar o acesso confiável de todos os dispositivos?', 'Revogar todos')) return
     await api('/api/security/revoke-all', 'POST', {})
     e.target.reset()
+    resetTerminalView()
     csrf = ''
     stopReleaseWatch()
     shown('login')
@@ -3579,3 +3581,81 @@ async function openUploadLimits(item) {
 }
 
 $('upload-limits-close').addEventListener('click',()=> $('upload-limits-dialog').close())
+
+// Bash real, com transporte HTTP autenticado e renderização exclusivamente textual.
+let terminalId='', terminalCursor=0, terminalGeneration=0, terminalTimer=null, terminalBusy=false
+let terminalLast='', terminalText='', terminalEscape=''
+function terminalStatus(message){$('terminal-status').textContent=message}
+function terminalControls(active){
+  $('terminal-open').disabled=active||terminalBusy
+  for(const id of ['terminal-close','terminal-input','terminal-send','terminal-interrupt','terminal-eof']) $(id).disabled=!active||terminalBusy
+}
+function resetTerminalView(){
+  terminalGeneration++;clearTimeout(terminalTimer);terminalId='';terminalCursor=0;terminalBusy=false;terminalLast='';terminalText='';terminalEscape='';$('terminal-output').textContent='';$('terminal-input').value='';terminalControls(false);terminalStatus('Desconectado')
+}
+function terminalAppend(raw){
+  // Descartar sequências ANSI, incluindo OSC (clipboard/título), mesmo divididas entre respostas.
+  let clean=''
+  for(const c of raw){
+    if(terminalEscape==='esc'){terminalEscape=c==='['?'csi':c===']'||c==='P'||c==='_'||c==='^'?'str':'';continue}
+    if(terminalEscape==='csi'){if(c>='@'&&c<='~')terminalEscape='';continue}
+    if(terminalEscape==='str'){if(c==='\x07')terminalEscape='';else if(c==='\x1b')terminalEscape='str-esc';continue}
+    if(terminalEscape==='str-esc'){terminalEscape=c==='\\'?'':'str';continue}
+    if(c==='\x1b'){terminalEscape='esc';continue}
+    if(c==='\r')continue
+    if(c==='\b'){if(clean&&!clean.endsWith('\n'))clean=clean.slice(0,-1);continue}
+    if(c==='\n'||c==='\t'||c>=' '&&c!=='\x7f'&&!(c>='\x80'&&c<='\x9f'))clean+=c
+  }
+  terminalText=(terminalText+clean).slice(-262144)
+  const out=$('terminal-output'), atBottom=out.scrollHeight-out.scrollTop-out.clientHeight<50
+  out.textContent=terminalText
+  if(atBottom)out.scrollTop=out.scrollHeight
+}
+async function terminalPoll(generation){
+  if(generation!==terminalGeneration||!terminalId||!csrf)return
+  try{
+    const data=await api(`/api/terminal/${terminalId}/poll`,'POST',{cursor:terminalCursor},{timeoutMs:5000})
+    if(generation!==terminalGeneration)return
+    if(data.truncated){terminalEscape='';terminalAppend('\n[Saída anterior truncada]\n')}
+    terminalAppend(data.output||'');terminalCursor=data.cursor
+    if(data.closed){terminalId='';terminalControls(false);terminalStatus(data.reason||'Encerrado');return}
+    terminalStatus('Conectado · Bash isolado')
+  }catch(e){
+    if(generation!==terminalGeneration)return
+    if([401,403,404,410].includes(e.httpStatus)){terminalId='';terminalControls(false);terminalStatus(e.message);return}
+    terminalStatus('Conexão temporariamente indisponível. Tentando novamente…')
+  }
+  if(generation===terminalGeneration&&terminalId)terminalTimer=setTimeout(()=>terminalPoll(generation),document.hidden||currentAppRoute!=='terminal'?2500:700)
+}
+$('terminal-open').addEventListener('click',async()=>{
+  if(terminalBusy||terminalId)return
+  if(!window.confirm('Abrir Bash isolado nesta VPS? Os comandos serão executados de verdade, sem privilégios root.'))return
+  terminalBusy=true;terminalControls(false);const g=++terminalGeneration
+  terminalStatus('Conectando…')
+  try{
+    const data=await api('/api/terminal/open','POST',{confirm:'ABRIR'},{timeoutMs:6000})
+    if(g!==terminalGeneration)return
+    terminalId=data.id;terminalCursor=0;terminalText='';terminalEscape='';$('terminal-output').textContent='';terminalBusy=false;terminalControls(true);terminalStatus('Conectado · Bash isolado');void terminalPoll(g)
+  }catch(e){if(g===terminalGeneration){terminalBusy=false;terminalControls(false);terminalStatus(e.message)}}
+})
+async function terminalSend(value){
+  if(!terminalId||terminalBusy)return false
+  const g=terminalGeneration
+  try{await api(`/api/terminal/${terminalId}/input`,'POST',{value},{timeoutMs:5000});return g===terminalGeneration}
+  catch(e){if(g===terminalGeneration)terminalStatus(e.message);return false}
+}
+$('terminal-form').addEventListener('submit',async e=>{e.preventDefault();const field=$('terminal-input'), value=field.value;if(await terminalSend(value+'\n')){terminalLast=value;if(field.value===value)field.value=''}})
+$('terminal-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('terminal-form').requestSubmit()}else if(e.ctrlKey&&e.key==='c'&&e.target.selectionStart===e.target.selectionEnd){e.preventDefault();void terminalSend('\x03')}})
+$('terminal-interrupt').addEventListener('click',()=>void terminalSend('\x03'))
+$('terminal-eof').addEventListener('click',()=>void terminalSend('\x04'))
+$('terminal-history').addEventListener('click',()=>{$('terminal-input').value=terminalLast;$('terminal-input').focus()})
+$('terminal-clear').addEventListener('click',()=>{terminalText='';$('terminal-output').textContent=''})
+$('terminal-close').addEventListener('click',async()=>{
+  if(!terminalId||terminalBusy)return
+  const g=terminalGeneration;terminalBusy=true;terminalControls(false)
+  try{await api(`/api/terminal/${terminalId}/close`,'POST',{}, {timeoutMs:5000});if(g===terminalGeneration){terminalId='';clearTimeout(terminalTimer);terminalGeneration++;terminalStatus('Encerrado')}}catch(e){if(g===terminalGeneration)terminalStatus(e.message)}finally{terminalBusy=false;terminalControls(!!terminalId)}
+})
+$('terminal-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(terminalText);terminalStatus('Saída copiada')}catch(e){terminalStatus('Não foi possível copiar: '+e.message)}})
+$('terminal-download').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([terminalText],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`terminal-vps-${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)})
+
+$('terminal-preset').addEventListener('change',e=>{if(e.target.value){$('terminal-input').value=e.target.value;e.target.value='';if(terminalId)$('terminal-input').focus()}})

@@ -1046,3 +1046,6 @@ button.depend-history-row{display:grid;text-align:left;grid-template-columns:min
 .portal-release-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;padding:8px 0}
 .project-status-panel .project-feature-intro>div{min-width:0;flex:1}
 #external-update-summary{white-space:normal;overflow-wrap:anywhere;display:block;-webkit-line-clamp:unset;max-height:none}
+
+/* Terminal VPS: console de texto sem HTML/ANSI ativo. */
+.terminal-panel{min-width:0}.terminal-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.terminal-toolbar button{flex:0 1 auto}.terminal-output{background:#101820;color:#d7efdc;border:1px solid #344556;border-radius:10px;padding:12px;min-height:240px;height:clamp(240px,42vh,560px);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,monospace;user-select:text;tab-size:4}.terminal-panel textarea{width:100%;font-family:ui-monospace,monospace;resize:vertical;box-sizing:border-box}.terminal-panel p{margin:8px 0}

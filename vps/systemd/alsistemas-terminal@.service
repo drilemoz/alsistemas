@@ -1,0 +1,37 @@
+[Unit]
+Description=AL Sistemas - sessão Bash isolada
+
+[Service]
+Type=exec
+DynamicUser=yes
+User=als-terminal
+StateDirectory=alsistemas-terminal
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/alsistemas-vps/current/src/terminal_pty.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+InaccessiblePaths=-/var/lib/alsistemas -/etc/alsistemas-vps -/var/backups/alsistemas -/var/backups/alsistemas-vps -/run/alsistemas-vps -/run/alsistemas-terminal -/var/lib/private/alsistemas
+# Evita obter credenciais da instância AWS via metadados.
+IPAddressDeny=169.254.169.254/32 fd00:ec2::254/128
+UMask=0077
+TasksMax=48
+MemoryMax=160M
+CPUQuota=50%
+RuntimeMaxSec=30min
+TimeoutStopSec=3s
+KillMode=control-group

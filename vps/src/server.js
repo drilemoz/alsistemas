@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { createTerminalManager } from './terminal.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +26,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.58'
+const VERSION = '2.0.59'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -213,7 +214,7 @@ const snapshotMessages={
 export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosticOptions,
   hostingCatalog = () => projects(undefined,{withDomains:false}), retryDelay,
   hostStatus = hostRebootStatus, hostMonitor = hostOverview, siteHealth = hostSites, releaseLookup = checkRelease, projectReleaseLookup = lookupProjectRelease,
-  ec2Reader = createEc2Reader(), ebsSnapshots = createEbsSnapshots({readEc2:ec2Reader}) } = {}) {
+  ec2Reader = createEc2Reader(), ebsSnapshots = createEbsSnapshots({readEc2:ec2Reader}), terminalOptions = {} } = {}) {
   const releaseCache = createReleaseCache({load:releaseLookup})
   let rebootRequesting = false, activeTransfers = 0, activeTasks = 0
   const executeTask = taskRunner
@@ -226,7 +227,8 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
   }
   const hostingProvider = { ...spaceshipOptions, panelHost }
   const hosting = hostingWorkflow({runner:taskRunner, provider:hostingProvider, diagnosticOptions, catalog:hostingCatalog, note:audit, retryDelay})
-  return http.createServer(async (req, res) => {
+  const terminal = createTerminalManager({...terminalOptions,isSessionActive:key=>!!activeSessions()[key],audit})
+  const server = http.createServer(async (req, res) => {
     res.setHeader('x-content-type-options', 'nosniff')
     res.setHeader('referrer-policy', 'no-referrer')
     res.setHeader('x-frame-options', 'DENY')
@@ -295,7 +297,7 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       if (!csrfSafe.has(req.method) && !constantEquals(req.headers['x-csrf-token'], sess.csrf)) return fail(res, 403, 'CSRF inválido')
       if (path === '/api/session' && req.method === 'GET') return json(res, 200, { ok: true, csrf: sess.csrf, expires: sess.expires })
       if (path === '/api/logout' && req.method === 'POST') {
-        invalidateSession(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
+        terminal.closeOwner(sess.key); invalidateSession(sess.key); res.setHeader('set-cookie', `als_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${origin.startsWith('https://') ? '; Secure' : ''}`)
         audit('logout', { ip }); return json(res, 200, { ok: true })
       }
       if (path === '/api/host/ec2' && req.method === 'GET') {
@@ -325,6 +327,24 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       }
       if (!csrfSafe.has(req.method) && (rebootRequesting || rebootPending(hostStatus())))
         return fail(res,409,'Há um reinício solicitado. Aguarde a VPS voltar antes de fazer alterações.')
+      // Todas as operações, inclusive leitura de saída, exigem origem, sessão e CSRF.
+      if (path.startsWith('/api/terminal/')) {
+        if (req.method !== 'POST') return fail(res,405,'Método não permitido.')
+        if (!origin.startsWith('https://')) return fail(res,403,'O terminal exige o painel configurado com HTTPS.')
+        const input=await body(req)
+        if (path === '/api/terminal/open') {
+          if(Object.keys(input).length!==1||input.confirm!=='ABRIR') return fail(res,400,'Confirme a abertura do terminal.')
+          if(!limit(ip,'terminal-open',12)) return fail(res,429,'Muitas aberturas de terminal.')
+          return json(res,200,await terminal.open(sess.key,sess.expires))
+        }
+        const match=/^\/api\/terminal\/([a-f0-9]{48})\/(poll|input|close)$/.exec(path)
+        if(!match) return fail(res,404,'Rota de terminal inválida.')
+        const [,id,op]=match
+        if(op==='poll'&&Object.keys(input).length===1) return json(res,200,terminal.poll(sess.key,id,input.cursor))
+        if(op==='input'&&Object.keys(input).length===1) return json(res,200,terminal.input(sess.key,id,input.value))
+        if(op==='close'&&!Object.keys(input).length) return json(res,200,terminal.close(sess.key,id))
+        return fail(res,400,'Parâmetros inválidos.')
+      }
       if (path === '/api/host/ec2/snapshots' && ['GET','POST'].includes(req.method)) {
         if (new URL(req.url,'http://localhost').search) return fail(res,400,'A operação usa somente o disco raiz local.')
         const create=req.method==='POST'
@@ -371,6 +391,7 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         if (Object.keys(input).length !== 0) return fail(res, 400, 'Parâmetros inesperados')
         // A sessão autenticada + origem + CSRF autorizam a revogação.
         revokeAllDevices()
+        terminal.closeAll()
         writeJson('sessions.json', {}) // Revogação geral invalida também sessões persistidas.
         const secure = origin.startsWith('https://') ? '; Secure' : ''
         res.setHeader('set-cookie', [
@@ -899,6 +920,8 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
       return fail(res, err.status || 500, err.status ? err.message : 'Falha interna')
     }
   })
+  server.on('close',()=>terminal.dispose())
+  return server
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

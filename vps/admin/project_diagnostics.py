@@ -109,10 +109,15 @@ def collect(root, runner=subprocess.run, group='all'):
     if selected('host'): cmds += [('Disco',['df','-h',str(root)]),('Memória',['free','-m']),('Sistema',['uname','-sr']),('Carga',['uptime']),('Reinicialização',['test','-f','/run/reboot-required'])]
     if selected('web'): cmds += [('Nginx',['nginx','-t']),('PHP CLI',['php','-v']),('Extensões PHP CLI',['php','-m']),('Validação PHP-FPM',['php-fpm8.3','-t'])]
     if selected('services','deploy'):
-        units=['nginx.service','php8.3-fpm.service','mariadb.service']
+        units=['nginx.service','php8.3-fpm.service','mariadb.service','alsistemas-terminal.socket']
         if special: units+=['iguatama-deploy.service','iguatama-deploy.timer']
         cmds += [('Serviços',['systemctl','show',*units,'-p','Id,LoadState,ActiveState,SubState,Result,UnitFileState,ExecMainStatus'])]
-        if special: cmds += [('Timer de implantação',['systemctl','list-timers','iguatama-deploy.timer','--all','--no-pager']),('Conta de implantação',['id','iguanews-deploy'])]
+        if special: cmds += [
+            ('Timer de implantação',['systemctl','list-timers','iguatama-deploy.timer','--all','--no-pager']),
+            ('Conta de implantação',['id','iguanews-deploy']),
+            ('Detalhes da unidade de implantação',['systemctl','show','iguatama-deploy.service','-p','User,Group,FragmentPath,WorkingDirectory,ExecMainCode,ExecMainStatus,Result,ActiveEnterTimestamp,InactiveExitTimestamp']),
+            ('Eventos recentes do serviço de implantação (revise antes de compartilhar)',['journalctl','-u','iguatama-deploy.service','-n','30','--no-pager','-o','short-iso']),
+            ('Eventos recentes do timer de implantação',['journalctl','-u','iguatama-deploy.timer','-n','15','--no-pager','-o','short-iso'])]
     if selected('files'): cmds += [('Atributos',['lsattr','-d',str(root)])]
     if selected('database'): cmds += [('MariaDB versão do cliente',['mariadb','--version']),('MariaDB conexão local (admin, sem credenciais do projeto)',['mariadb-admin','--no-defaults','--protocol=socket','--user=root','--connect-timeout=3','ping'])]
     with ThreadPoolExecutor(max_workers=4) as pool: results.extend(pool.map(run,cmds))

@@ -1,3 +1,11 @@
+## 2.0.59 — Terminal VPS
+
+- Módulo global em Mais → Terminal VPS no celular e menu lateral no desktop. Bash real em PTY, com comandos livres, Ctrl+C/D, último comando, cópia e TXT.
+- Transporte HTTP autenticado, mesma origem, CSRF em todas as operações, HTTPS obrigatório e confirmação de abertura. Sem nova senha após login. Uma sessão por login, até duas na VPS, 30 min totais e 10 min sem entrada; encerra com logout/revogação. Saída limitada a 256 KiB e exibida como texto, sem interpretar ANSI.
+- Socket Unix privado e unidade systemd com usuário dinâmico separado, sem sudo, sistema de arquivos protegido e diretórios privados do painel inacessíveis. O terminal não substitui SSH root; programas de tela cheia não são renderizados. O bloqueio de metadados AWS por IP depende do suporte do kernel/systemd. Operações privilegiadas continuam nos módulos predefinidos.
+- Instalador ativa o socket sem adicionar dependências NPM/Python, regras sudo ou alterações ao Nginx. Se o socket não iniciar, o painel permanece disponível. Diagnóstico de serviços inclui o socket e eventos recentes do worker/timer do IguatamaOnline (redação básica, revisar antes de compartilhar). Atalhos preenchem comandos de consulta sem executá-los automaticamente.
+- Nenhuma migração do site, alteração de donos ou desbloqueio automático nesta versão. Revisar saída antes de compartilhar.
+
 ## 2.0.58 — Central de diagnóstico e reparo
 
 - Consultas administrativas por projeto não protegido com seleção de grupos e exportação TXT.

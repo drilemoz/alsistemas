@@ -18,7 +18,7 @@ test('Domínios usa o quarto atalho no celular e Atualizar abre o módulo por Ma
 
 test('Outros módulos é uma lista em uma coluna e todos os itens têm ícone', () => {
   const rows = [...more.matchAll(/<li>(.*?)<\/li>/g)]
-  assert.equal(rows.length, 7)
+  assert.equal(rows.length, 8)
   for (const [,row] of rows) assert.match(row, /<button.*data-tab=.*<svg.*<use href="#i-.*<\/button>$/)
   assert.match(css, /\.more-links\{[^}]*grid-template-columns:minmax\(0,1fr\)[^}]*overflow-y:auto/)
   assert.doesNotMatch(css, /\.more-links\{[^}]*grid-template-columns:1fr 1fr/)
