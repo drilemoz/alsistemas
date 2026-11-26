@@ -1,5 +1,8 @@
 """Manutenção limitada ao IguatamaOnline. Sem comandos arbitrários nem escrita em outros sites."""
 import grp
+import fcntl
+from contextlib import contextmanager
+from functools import wraps
 import hashlib
 import json
 import os
@@ -16,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 PROJECT_NAME = 'iguatamaonline'
+DEPLOY_ACCOUNT = 'iguanews-deploy'
 PROJECT_ROOT = Path('/var/www/projetos/iguatamaonline')
 BACKUP_ROOT = Path('/var/backups/alsistemas-vps/iguatamaonline')
 CRITICAL = ('VERSION', 'app/updater.php', 'public/admin.php')
@@ -60,9 +64,7 @@ def checked_target(root, rel, *, must_exist=True, for_write=False):
                 if php_uid is None or st.st_uid == php_uid:
                     raise ProjectError('Subdiretório controlado pelo PHP ou usuário PHP desconhecido: ' + rel)
                 if root == PROJECT_ROOT:
-                    trusted = {0}
-                    try: trusted.add(pwd.getpwnam('ubuntu').pw_uid)
-                    except KeyError: pass
+                    trusted = trusted_code_owners(root)
                     if st.st_uid not in trusted:
                         raise ProjectError('Subdiretório com dono não autorizado: ' + rel)
         elif must_exist:
@@ -74,6 +76,8 @@ def checked_target(root, rel, *, must_exist=True, for_write=False):
         st = target.lstat()
         if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
             raise ProjectError('Arquivo não regular/hardlink: ' + rel)
+        if for_write and root == PROJECT_ROOT and st.st_uid not in trusted_code_owners(root):
+            raise ProjectError('Arquivo com dono não autorizado: ' + rel)
     elif must_exist:
         raise ProjectError('Arquivo ausente: ' + rel)
     return target
@@ -133,11 +137,13 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
         guard_mutation_ownership(root)
         if root == PROJECT_ROOT:
             recovery_guard(BACKUP_ROOT)
+            with site_worker_lock(root):
+                pass
     except ProjectError as exc:
         mutation_allowed, mutation_blocker = False, str(exc)
     version = None
     try:
-        version = checked_target(root, 'VERSION').read_text(encoding='utf-8').strip()[:60]
+        version = read_code(root, 'VERSION').decode('utf-8').strip()[:60]
     except (OSError, ProjectError, UnicodeError):
         pass
     # O gerenciador de perfis da 2.0.29 aceita donos de implantação distintos
@@ -151,7 +157,7 @@ def inspect_project(name=PROJECT_NAME, root=PROJECT_ROOT):
             'panelPermissionsAvailable': panel_permissions_available,
             'files': fields, 'writablePaths': [f['path'] for f in fields if f.get('phpWritableEstimate')],
             'note': 'Estimativa do pool padrão. Se o Nginx usar outro pool, confirmar o usuário antes de liberar escrita.',
-            'webUpdaterSafe': False}
+            'dedicatedDeployOwner': bool(root == PROJECT_ROOT and dedicated_owner(root)), 'webUpdaterSafe': False}
 
 
 def private_backup_root(dest=BACKUP_ROOT):
@@ -170,19 +176,188 @@ def _save_json_exclusive(target, value):
         file.flush(); os.fsync(file.fileno())
 
 
+def dedicated_owner(root):
+    try:
+        account = pwd.getpwnam(DEPLOY_ACCOUNT)
+    except KeyError:
+        return None
+    if account.pw_uid == 0 or root.stat().st_uid != account.pw_uid:
+        return None
+    return account
+
+
+def trusted_code_owners(root):
+    trusted = {0}
+    try: trusted.add(pwd.getpwnam('ubuntu').pw_uid)
+    except KeyError: pass
+    account = dedicated_owner(root)
+    if account is not None:
+        trusted.add(account.pw_uid)
+    return trusted
+
+
 def guard_mutation_ownership(root):
     actor, actor_uid, _ = php_account()
     if actor_uid is None:
-        raise ProjectError('Usuário PHP-FPM padrão não identificado; manutenção privilegiada recusada.')
+        raise ProjectError('Usuário PHP-FPM sem privilégios não identificado; manutenção recusada.')
     if root.stat().st_uid == actor_uid or root.parent.stat().st_uid == actor_uid:
         raise ProjectError('Diretório controlado pelo usuário do PHP-FPM; faça revisão manual do proprietário antes de qualquer alteração root.')
+    if actor_uid == 0:
+        raise ProjectError('Usuário PHP-FPM não pode ser root.')
     if root == PROJECT_ROOT:
-        trusted = {0}
-        try: trusted.add(pwd.getpwnam('ubuntu').pw_uid)
-        except KeyError: pass
-        if root.stat().st_uid not in trusted or root.parent.stat().st_uid != 0:
-            raise ProjectError('A pasta de produção pertence a um usuário diferente de root/ubuntu. Confira o dono real por SSH (stat -c %U:%G /var/www/projetos/iguatamaonline); alteração automática como root bloqueada.')
+        if root.stat().st_uid not in trusted_code_owners(root) or root.parent.stat().st_uid != 0:
+            raise ProjectError('Proprietário não autorizado para implantação ou diretório pai não pertence a root.')
+        account = dedicated_owner(root)
+        if account is not None:
+            # Não aceitar a conta de deploy como identidade de qualquer pool web.
+            for cfg in Path('/etc/php').glob('*/fpm/pool.d/*.conf'):
+                try:
+                    if re.search(r'(?m)^\s*user\s*=\s*'+re.escape(DEPLOY_ACCOUNT)+r'\s*(?:[;#].*)?$', cfg.read_text()):
+                        raise ProjectError('Conta de implantação também utilizada pelo PHP-FPM.')
+                except OSError:
+                    continue
     return actor
+
+
+@contextmanager
+def code_parent(root, rel, create=False):
+    # Caminhos de código abertos componente por componente, sem seguir links.
+    # Operações root são relativas a descritores, não caminhos trocáveis pelo deploy.
+    parts = PurePosixPath(rel).parts
+    if not acceptable_rel(rel):
+        raise ProjectError('Caminho de código não autorizado: ' + rel)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(root, flags)
+    try:
+        approved = trusted_code_owners(root) if root == PROJECT_ROOT else {os.fstat(fd).st_uid}
+        root_st = os.fstat(fd)
+        if root_st.st_uid not in approved or root_st.st_mode & 0o022:
+            raise ProjectError('Raiz de código insegura.')
+        for part in parts[:-1]:
+            try:
+                child = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                if not create: raise
+                os.mkdir(part, 0o755, dir_fd=fd)
+                child = os.open(part, flags, dir_fd=fd)
+                try:
+                    if os.fstat(child).st_uid != os.geteuid():
+                        raise ProjectError('Diretório novo substituído durante a implantação.')
+                    os.fchown(child, root_st.st_uid, root_st.st_gid)
+                    os.fchmod(child, 0o755)
+                except Exception:
+                    os.close(child); raise
+            os.close(fd); fd = child
+            st = os.fstat(fd)
+            if st.st_uid not in approved or st.st_mode & 0o022:
+                raise ProjectError('Subdiretório de código inseguro: ' + rel)
+        yield fd, parts[-1], approved
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def open_code(root, rel):
+    with code_parent(root, rel) as (fd, name, approved):
+        file = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        try:
+            st = os.fstat(file)
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_uid not in approved or st.st_mode & 0o022:
+                raise ProjectError('Arquivo de código inseguro: ' + rel)
+            with os.fdopen(file, 'rb', closefd=False) as stream:
+                yield stream
+        finally:
+            os.close(file)
+
+
+def read_code(root, rel):
+    with open_code(root, rel) as stream:
+        return stream.read()
+
+
+def copy_code(root, rel, destination):
+    with open_code(root, rel) as inp, open(destination, 'xb') as out:
+        shutil.copyfileobj(inp, out, 131072)
+        out.flush(); os.fsync(out.fileno())
+
+
+def install_code(root, rel, content, uid, gid, mode):
+    with code_parent(root, rel, create=True) as (fd, name, approved):
+        if uid not in approved or mode & 0o7022:
+            raise ProjectError('Metadados de código inseguros: ' + rel)
+        try:
+            existing = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1 or existing.st_uid not in approved or existing.st_mode & 0o022:
+                raise ProjectError('Destino de código inseguro: ' + rel)
+        except FileNotFoundError:
+            pass
+        temp = '.als-deploy-' + os.urandom(12).hex()
+        out_fd = os.open(temp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+        try:
+            with os.fdopen(out_fd, 'wb') as out:
+                shutil.copyfileobj(content, out, 131072)
+                out.flush(); os.fsync(out.fileno())
+                os.fchown(out.fileno(), uid, gid)
+                os.fchmod(out.fileno(), mode)
+                # O nome temporário tem de continuar apontando para o FD criado.
+                if os.stat(temp, dir_fd=fd, follow_symlinks=False).st_ino != os.fstat(out.fileno()).st_ino:
+                    raise ProjectError('Arquivo temporário substituído.')
+                os.replace(temp, name, src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            try: os.unlink(temp, dir_fd=fd)
+            except FileNotFoundError: pass
+
+
+def remove_code(root, rel):
+    try:
+        with code_parent(root, rel) as (fd, name, approved):
+            os.unlink(name, dir_fd=fd)
+    except FileNotFoundError:
+        pass
+
+
+@contextmanager
+def site_worker_lock(root):
+    account = dedicated_owner(root) if root == PROJECT_ROOT else None
+    if account is None:
+        yield; return
+    # Mesmo lock usado pelo atualizador PHP. Nunca criar/alterar controles do portal.
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(root, flags)
+    lock = None
+    try:
+        for part in ('storage', 'updater', 'vps', 'private'):
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd); fd = child
+        st = os.fstat(fd)
+        if st.st_uid != account.pw_uid or st.st_mode & 0o022:
+            raise ProjectError('Controle privado do atualizador do site inseguro.')
+        lock = os.open('.code.lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        st = os.fstat(lock)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != account.pw_uid or st.st_nlink != 1 or st.st_mode & 0o077:
+            raise ProjectError('Lock do atualizador do site inseguro.')
+        try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc: raise ProjectError('Atualizador do site em execução; tente novamente após concluir.') from exc
+        try: os.stat('maintenance', dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError: pass
+        else: raise ProjectError('Recuperação pendente no atualizador do site.')
+        yield
+    except OSError as exc:
+        raise ProjectError('Controle do atualizador do site indisponível. Confira o serviço iguatama-deploy e o lock privado.') from exc
+    finally:
+        if lock is not None: os.close(lock)
+        os.close(fd)
+
+
+def coordinated(operation):
+    @wraps(operation)
+    def call(*args, **kwargs):
+        root = kwargs.get('root', PROJECT_ROOT)
+        verify_project(PROJECT_NAME, root)
+        guard_mutation_ownership(root)
+        with site_worker_lock(root):
+            return operation(*args, **kwargs)
+    return call
 
 
 def permissions_change(task, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
@@ -193,6 +368,8 @@ def permissions_change(task, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     dest = private_backup_root(backups)
     saved = dest / 'permissions-original.json'
     if task['mode'] == 'allow':
+        if root == PROJECT_ROOT and dedicated_owner(root) is not None:
+            raise ProjectError('O atualizador do site utiliza iguanews-deploy; não precisa liberar escrita de código ao PHP.')
         if saved.exists() or saved.is_symlink():
             raise ProjectError('Acesso temporário já preparado. Restaure-o antes de repetir.')
         user, uid, gid = php_account()
@@ -360,7 +537,7 @@ def schema_from_bytes(raw):
 
 def installed_schema(root):
     path = checked_target(root, 'app/schema_migrations.php', must_exist=False, for_write=True)
-    return schema_from_bytes(path.read_bytes()) if path.exists() else None
+    return schema_from_bytes(read_code(root, 'app/schema_migrations.php')) if path.exists() else None
 
 
 # PHP do portal jamais é executado como root. O worker recebe somente resultado
@@ -477,6 +654,7 @@ def _copy_with_hash(source, destination):
     return digest.hexdigest()
 
 
+@coordinated
 def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_status=lambda s, msg: None):
     root = verify_project(PROJECT_NAME, root)
     guard_mutation_ownership(root)
@@ -491,7 +669,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
     if root == PROJECT_ROOT and old_schema is None:
         raise ProjectError('Schema instalado não identificado; instalação assistida necessária.')
     current_version_file = checked_target(root, 'VERSION', for_write=True)
-    current = current_version_file.read_text(encoding='utf-8').strip()
+    current = read_code(root, 'VERSION').decode('utf-8').strip()
     def version_tuple(value):
         m = re.match(r'^(\d+)\.(\d+)\.(\d+)', value)
         return tuple(map(int, m.groups())) if m else None
@@ -531,9 +709,9 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
             if old:
                 backup_file = snapshot / rel
                 backup_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                _copy_with_hash(root / rel, backup_file)
+                copy_code(root, rel, backup_file)
             metadata['entries'].append({'path': rel, 'existed': bool(old), 'mode': stat.S_IMODE(old.st_mode) if old else 0o644,
-                                        'uid': old.st_uid if old else 0, 'gid': old.st_gid if old else 0})
+                                        'uid': old.st_uid if old else root.stat().st_uid, 'gid': old.st_gid if old else root.stat().st_gid})
         _save_json_exclusive(snapshot / 'metadata.json', metadata)
         if old_schema is not None:
             _save_json_exclusive(recovery, {'backup': snapshot.name, 'from': old_schema, 'to': new_schema, 'version': info['version']})
@@ -547,27 +725,19 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
                     # A partir daqui não é seguro reverter código automaticamente.
                     migration_started = True
                 target = checked_target(root, rel, must_exist=False, for_write=True)
-                if not target.parent.exists():
-                    target.parent.mkdir(parents=True, mode=0o755)
-                fd, temporary = tempfile.mkstemp(prefix='.als-deploy-', dir=target.parent)
-                try:
-                    with os.fdopen(fd, 'wb') as output, source.open(entry) as content:
-                        shutil.copyfileobj(content, output, 131072)
-                        output.flush(); os.fsync(output.fileno())
-                    old = originals.get(rel)
-                    os.chown(temporary, old.st_uid if old else 0, old.st_gid if old else 0)
-                    os.chmod(temporary, (stat.S_IMODE(old.st_mode) & ~0o022) if old else 0o644)
-                    os.replace(temporary, target)
-                    change_log.append(rel)
-                finally:
-                    if os.path.exists(temporary): os.unlink(temporary)
+                old = originals.get(rel)
+                with source.open(entry) as content:
+                    install_code(root, rel, content, old.st_uid if old else root.stat().st_uid,
+                                 old.st_gid if old else root.stat().st_gid,
+                                 (stat.S_IMODE(old.st_mode) & ~0o022) if old else 0o644)
+                change_log.append(rel)
         update_status('verifying', 'Verificando arquivos e versão instalada')
         with zipfile.ZipFile(archive) as source:
             for rel, entry in info['entries'].items():
-                with source.open(entry) as inp, open(checked_target(root, rel, for_write=True), 'rb') as deployed:
+                with source.open(entry) as inp, open_code(root, rel) as deployed:
                     if hashlib.sha256(inp.read()).digest() != hashlib.file_digest(deployed, 'sha256').digest():
                         raise ProjectError('Integridade pós-instalação divergente: ' + rel)
-        if (root / 'VERSION').read_text().strip() != info['version']:
+        if read_code(root, 'VERSION').decode('utf-8').strip() != info['version']:
             raise ProjectError('Versão não corresponde após atualização.')
         if old_schema is not None:
             # A partir deste ponto DDL pode ter sido confirmado pelo MariaDB. Não
@@ -594,18 +764,11 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
             target = checked_target(root, rel, must_exist=False, for_write=True)
             if rel in originals:
                 before = snapshot / rel
-                fd, tmp = tempfile.mkstemp(prefix='.als-restore-', dir=target.parent)
-                try:
-                    with os.fdopen(fd, 'wb') as dest, open(before, 'rb') as src:
-                        shutil.copyfileobj(src, dest)
-                    old = originals[rel]
-                    os.chown(tmp, old.st_uid, old.st_gid)
-                    os.chmod(tmp, stat.S_IMODE(old.st_mode))
-                    os.replace(tmp, target)
-                finally:
-                    if os.path.exists(tmp): os.unlink(tmp)
+                old = originals[rel]
+                with open(before, 'rb') as src:
+                    install_code(root, rel, src, old.st_uid, old.st_gid, stat.S_IMODE(old.st_mode))
             else:
-                target.unlink(missing_ok=True)
+                remove_code(root, rel)
         if maintenance:
             # Admin/login do portal pode executar migração mesmo durante manutenção.
             # Caso a revisão tenha mudado, manter o bloqueio de recuperação.
@@ -619,6 +782,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
         raise
 
 
+@coordinated
 def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     root = verify_project(PROJECT_NAME, root)
     guard_mutation_ownership(root)
@@ -634,7 +798,7 @@ def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     data = json.loads(metadata_file.read_text(encoding='utf8'))
     if data.get('project') != PROJECT_NAME or not isinstance(data.get('entries'), list):
         raise ProjectError('Manifesto de backup inválido.')
-    if checked_target(root, 'VERSION', for_write=True).read_text(encoding='utf8').strip() != data.get('to'):
+    if read_code(root, 'VERSION').decode('utf-8').strip() != data.get('to'):
         raise ProjectError('Versão atual mudou após o backup. Reversão automática bloqueada.')
     actual_schema = installed_schema(root)
     if actual_schema is not None:
@@ -658,33 +822,27 @@ def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
                 raise ProjectError('Arquivo de backup ausente ou inseguro.')
     stage = Path(tempfile.mkdtemp(prefix='restore-', dir=private_backup_root(backups)))
     applied = []
+    prior = {}
     try:
         # Guarda estado atual antes de qualquer escrita para rollback se o restore falhar.
         for item in entries:
             rel = item['path']
             current = root / rel
             if current.exists():
+                prior[rel] = current.stat()
                 stage_file = stage / rel
                 stage_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                _copy_with_hash(current, stage_file)
+                copy_code(root, rel, stage_file)
         for item in entries:
             rel = item['path']
             dest = checked_target(root, rel, must_exist=False, for_write=True)
             if not item['existed']:
-                dest.unlink(missing_ok=True)
+                remove_code(root, rel)
             else:
-                fd, temp = tempfile.mkstemp(prefix='.als-restore-', dir=dest.parent)
-                try:
-                    with os.fdopen(fd, 'wb') as output, open(folder / rel, 'rb') as old:
-                        shutil.copyfileobj(old, output)
-                        output.flush(); os.fsync(output.fileno())
-                    os.chown(temp, item['uid'], item['gid'])
-                    os.chmod(temp, item['mode'])
-                    os.replace(temp, dest)
-                finally:
-                    if os.path.exists(temp): os.unlink(temp)
+                with open(folder / rel, 'rb') as old:
+                    install_code(root, rel, old, item['uid'], item['gid'], item['mode'])
             applied.append(rel)
-        if checked_target(root, 'VERSION', for_write=True).read_text(encoding='utf8').strip() != data.get('from'):
+        if read_code(root, 'VERSION').decode('utf-8').strip() != data.get('from'):
             raise ProjectError('Reversão não passou na verificação de versão.')
         return {'ok': True, 'restored': data['from'], 'backup': backup_id, 'note': 'Somente código foi revertido; banco e uploads não foram modificados.'}
     except Exception:
@@ -692,15 +850,11 @@ def restore_code(backup_id, *, root=PROJECT_ROOT, backups=BACKUP_ROOT):
             original = stage / rel
             dest = checked_target(root, rel, must_exist=False, for_write=True)
             if original.exists():
-                fd, temp = tempfile.mkstemp(prefix='.als-recover-', dir=dest.parent)
-                try:
-                    with os.fdopen(fd, 'wb') as output, open(original, 'rb') as src:
-                        shutil.copyfileobj(src, output)
-                    os.replace(temp, dest)
-                finally:
-                    if os.path.exists(temp): os.unlink(temp)
+                st = prior[rel]
+                with open(original, 'rb') as src:
+                    install_code(root, rel, src, st.st_uid, st.st_gid, stat.S_IMODE(st.st_mode))
             else:
-                dest.unlink(missing_ok=True)
+                remove_code(root, rel)
         raise
     finally:
         shutil.rmtree(stage)
@@ -726,11 +880,12 @@ def backup_list(*, backups=BACKUP_ROOT):
     return found
 
 
+@coordinated
 def backup_code(*, root=PROJECT_ROOT, backups=BACKUP_ROOT):
     """Snapshot restrito de arquivos de código; não inclui banco, uploads ou segredos."""
     root = verify_project(PROJECT_NAME, root)
     guard_mutation_ownership(root)
-    current = checked_target(root, 'VERSION', for_write=True).read_text(encoding='utf8').strip()
+    current = read_code(root, 'VERSION').decode('utf-8').strip()
     recovery_guard(backups)
     dest = private_backup_root(backups)
     if shutil.disk_usage(dest).free < 196 * 1024 * 1024:
@@ -767,7 +922,7 @@ def backup_code(*, root=PROJECT_ROOT, backups=BACKUP_ROOT):
         for item in entries:
             backup_file = snapshot / item['path']
             backup_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            _copy_with_hash(checked_target(root, item['path'], for_write=True), backup_file)
+            copy_code(root, item['path'], backup_file)
         _save_json_exclusive(snapshot / 'metadata.json', {
             'project': PROJECT_NAME, 'from': current, 'to': current, 'entries': entries, 'scope': 'code-only', 'schemaFrom': installed_schema(root), 'schemaTo': installed_schema(root)})
         return {'ok': True, 'backup': snapshot.name, 'version': current,

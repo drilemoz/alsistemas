@@ -1534,10 +1534,10 @@ async function reloadExternalInspection() {
     const files = Array.isArray(data.files) ? data.files : []
     const checked = files.filter(file => file.safePath).length
     const danger = data.permissionsGrantActive
-    const blocked = data.mutationAllowed === false && !data.panelPermissionsAvailable
+    const blocked = data.mutationAllowed === false
     const state = danger ? 'Escrita temporária ativa' : blocked ? 'Alterações bloqueadas' : 'Vistoria concluída'
     const description = danger ? 'Restaure as permissões em Arquivos quando terminar.' : blocked
-      ? 'A política de propriedade bloqueou alterações nesta pasta.' : ''
+      ? (data.mutationBlocker || 'A política de propriedade bloqueou alterações nesta pasta.') : data.dedicatedDeployOwner ? 'Conta de implantação dedicada reconhecida; não é necessário liberar escrita ao PHP.' : ''
     for (const area of targets) {
       const counters = node('div', '', 'diagnostic-overview')
       counters.append(projectInfoField('Versão',data.version || 'Não identificada'), projectInfoField('Arquivos verificados',checked + ' de ' + files.length))

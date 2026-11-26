@@ -1,3 +1,16 @@
+## Atualização 2.0.55 — Compatibilidade com o worker do portal
+
+Instale o painel atualizado primeiro. Preserve `iguanews-deploy` como proprietário da raiz, `app/` e `public/`; não use `chown -R ubuntu` nem libere escrita ao PHP-FPM. Em instalações com essa conta, o AL Sistemas usa o mesmo `.code.lock` privado do atualizador do site. Se o controle estiver ausente ou houver recuperação pendente, investigue antes de continuar; não apague o lock nem o marcador. Arquivos novos usam dono/grupo da raiz; arquivos existentes preservam os atributos anteriores. Verifique a vistoria do portal antes e depois da atualização e não inicie duas atualizações simultaneamente.
+
+Diagnóstico por SSH (sem alterar código existente):
+
+```bash
+sudo systemctl status iguatama-deploy.timer --no-pager
+sudo -u iguanews-deploy env IGUA_DEPLOY_VPS=1 /usr/bin/php8.3 /var/www/projetos/iguatamaonline/bin/aws-deploy-check.php
+```
+
+Se a vistoria falhar, examine o resultado antes de ajustar permissões. O painel não altera o worker próprio do site. As restrições de schema, backups e integridade permanecem. Validação local não substitui teste na EC2.
+
 ## Atualização 2.0.54 — Atualizador do portal
 
 Atualize o painel antes do portal. Abra Projetos → IguatamaOnline → Atualizar site. A fonte padrão é `drilemoz/Meu-Site`. Consulte a Release pública estável, confirme a versão e acompanhe o progresso. ZIP oficial continua disponível como alternativa. Os bloqueios de schema e backups da 2.0.53 permanecem.

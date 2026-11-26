@@ -1,3 +1,10 @@
+## 2.0.55 — 2026-11-25
+
+- Reconhece a conta dedicada `iguanews-deploy` no IguatamaOnline sem liberar escrita do código ao PHP-FPM.
+- Preserva donos e grupos existentes e atribui novos arquivos/pastas ao dono da implantação.
+- Coordena atualização, backup e restauração com o lock privado do atualizador do portal.
+- Operações de código usam descritores de diretório e rejeitam links e proprietários não autorizados.
+
 ## 2.0.54 — 2026-11-25
 
 - Corrige importação local de datetime que impedia enfileirar a atualização do portal.
