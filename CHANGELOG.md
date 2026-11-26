@@ -1,3 +1,8 @@
+## 2.0.56 — 2026-11-26
+
+- Configurações de upload por projeto, com validação e reversão do Nginx.
+- Limites PHP por FastCGI, sem modificar o php.ini global.
+
 ## 2.0.55 — 2026-11-25
 
 - Reconhece a conta dedicada `iguanews-deploy` no IguatamaOnline sem liberar escrita do código ao PHP-FPM.

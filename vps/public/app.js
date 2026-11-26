@@ -759,6 +759,7 @@ function renderProjectPage(name) {
   status.hidden = true
   const route = 'project/' + item.name
   const capabilities = item.capabilities || {}
+  if (capabilities.files) actions.append(projectTool('Configurações do servidor','activity',()=>openUploadLimits(item),'Limites de upload Nginx e PHP'))
   if (capabilities.files) actions.append(projectTool('Arquivos', 'folder', route + '/permissions'))
   if (capabilities.hosting) {
     const publish = projectTool('Publicação e domínio','globe',() => openManagedHosting(item),'Enviar ZIP, testar DNS e acompanhar HTTPS')
@@ -3484,3 +3485,29 @@ $('update-apply-form').addEventListener('submit', async e => {
     showUpdateProgress({ stage:'failed', message:error.message, mode:updateMethod, httpStatus:error.httpStatus })
   } finally { button.disabled = false }
 })
+
+async function openUploadLimits(item) {
+  const dialog = $('upload-limits-dialog'), form = $('upload-limits-form'), note = $('upload-limits-note')
+  const url = '/api/projects/'+encodeURIComponent(item.name)+'/upload-limits'
+  $('upload-limits-title').textContent = item.displayName || item.name
+  note.textContent = 'Consultando configurações…'; form.hidden = true
+  dialog.showModal()
+  try {
+    const current = await api(url)
+    note.textContent = `Atual: Nginx ${current.nginx}; PHP ${current.upload}; POST ${current.post}. Valores PHP do arquivo de configuração, sujeitos a overrides.`
+    form.hidden = false
+    $('upload-limits-php').hidden = !current.php
+    form.elements.nginx.value = 80; form.elements.upload.value = 64; form.elements.post.value = 80
+    form.onsubmit = async event => {
+      event.preventDefault()
+      const values = Object.fromEntries(['nginx','upload','post'].map(k=>[k,Number(form.elements[k].value)]))
+      if (current.php && !(values.nginx >= values.post && values.post > values.upload)) { note.textContent='Use Nginx ≥ POST > upload.'; return }
+      const button = $('upload-limits-save'); button.disabled = true; note.textContent='Aplicando e validando Nginx…'
+      try { const result = await api(url,'POST',values,{timeoutMs:50000}); note.textContent=`Configuração aplicada: Nginx ${result.nginx}; PHP ${result.upload}; POST ${result.post}.` }
+      catch(error) { note.textContent=error.message }
+      finally { button.disabled=false }
+    }
+  } catch(error) { note.textContent=error.message }
+}
+
+$('upload-limits-close').addEventListener('click',()=> $('upload-limits-dialog').close())

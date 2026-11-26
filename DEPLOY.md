@@ -1,3 +1,7 @@
+## Atualização 2.0.56
+
+Em Projetos → Configurações do servidor, aplique 80 MiB Nginx, 64 MiB upload PHP e 80 MiB POST. Vhosts personalizados incompatíveis são recusados. Limites específicos de localização são preservados. Não altera php.ini global.
+
 ## Atualização 2.0.55 — Compatibilidade com o worker do portal
 
 Instale o painel atualizado primeiro. Preserve `iguanews-deploy` como proprietário da raiz, `app/` e `public/`; não use `chown -R ubuntu` nem libere escrita ao PHP-FPM. Em instalações com essa conta, o AL Sistemas usa o mesmo `.code.lock` privado do atualizador do site. Se o controle estiver ausente ou houver recuperação pendente, investigue antes de continuar; não apague o lock nem o marcador. Arquivos novos usam dono/grupo da raiz; arquivos existentes preservam os atributos anteriores. Verifique a vistoria do portal antes e depois da atualização e não inicie duas atualizações simultaneamente.

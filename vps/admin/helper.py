@@ -28,6 +28,7 @@ from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
 from package_policy import ALLOWED as APPROVED_PACKAGES, package_status, package_gate, read_job, write_job
 from host_reboot import RebootError, schedule as schedule_host_reboot
+from project_upload_limits import execute as upload_limits
 from admin_services import ServiceError, control_service
 
 DATA = Path('/var/lib/alsistemas')
@@ -665,6 +666,8 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     action = task.get('action')
     if action in ('list_domain_redirects', 'save_domain_redirect', 'delete_domain_redirect'):
         return execute_redirect(task, available, enabled, runner)
+    if action == 'project_upload_limits':
+        return upload_limits(task, root, available, enabled, runner, atomic_config)
     if action == 'create_project':
         return create_project(task, root, available, enabled, runner)
     if action == 'publish_project_zip':

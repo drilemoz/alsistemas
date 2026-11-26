@@ -1,3 +1,5 @@
+**Novo na 2.0.56:** limites de upload por projeto em Configurações do servidor.
+
 **Novo na 2.0.55:** compatibilidade com a conta dedicada `iguanews-deploy`, preservação de proprietários e lock compartilhado com o atualizador do portal.
 
 **Novo na 2.0.53:** atualizador do IguatamaOnline aceita o manifesto oficial, exporta o banco MariaDB e confere a revisão de schema. Recuperação de schema é assistida, não restauração automática destrutiva. Veja DEPLOY.md.

@@ -25,7 +25,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.55'
+const VERSION = '2.0.56'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -830,6 +830,19 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
           } finally { if (saved) fs.rmSync(dataPath(saved.name),{force:true}) }
         }
         return fail(res,405,'Método não permitido.')
+      }
+      const uploadLimitsRoute = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/upload-limits$/.exec(path)
+      if (uploadLimitsRoute && ['GET','POST'].includes(req.method)) {
+        if (!limit(ip,'upload-limits',30)) return fail(res,429,'Muitas consultas.')
+        const name = uploadLimitsRoute[1]
+        const task = {action:'project_upload_limits',name,mode:'inspect'}
+        if (req.method === 'POST') {
+          const input = await body(req)
+          if (!input || Object.keys(input).length !== 3 || !['nginx','upload','post'].every(k=>Number.isInteger(input[k]) && input[k]>=1 && input[k]<=320)) return fail(res,400,'Limites inválidos.')
+          Object.assign(task,{mode:'apply',nginx:input.nginx,upload:input.upload,post:input.post})
+        }
+        try { const result = await taskRunner(task); if (req.method==='POST') audit('project_upload_limits',{ip,name,success:true}); return json(res,200,result) }
+        catch (error) { return fail(res,422,error.message) }
       }
       if (path === '/api/projects' && req.method === 'GET') return json(res, 200, { projects: projects() })
       if (path === '/api/audit' && req.method === 'GET') return json(res, 200, { events: lastAudit() })
