@@ -343,7 +343,7 @@ def site_worker_lock(root):
         else: raise ProjectError('Recuperação pendente no atualizador do site.')
         yield
     except OSError as exc:
-        raise ProjectError('Controle do atualizador do site indisponível. Confira o serviço iguatama-deploy e o lock privado.') from exc
+        raise ProjectError(f'Controle do atualizador indisponível: {exc.strerror} (errno {exc.errno}). Confira storage/updater/vps/private/.code.lock.') from exc
     finally:
         if lock is not None: os.close(lock)
         os.close(fd)

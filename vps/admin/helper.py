@@ -28,6 +28,7 @@ from domain_redirects import RedirectError, execute_redirect
 from managed_hosting import HostingError, deploy, read_hosting
 from package_policy import ALLOWED as APPROVED_PACKAGES, package_status, package_gate, read_job, write_job
 from host_reboot import RebootError, schedule as schedule_host_reboot
+from project_diagnostics import collect as collect_diagnostics, repair_timer, GROUPS
 from project_upload_limits import execute as upload_limits
 from admin_services import ServiceError, control_service
 
@@ -666,6 +667,20 @@ def execute_task(task, root=PROJECTS, available=SITES_AVAILABLE, enabled=SITES_E
     action = task.get('action')
     if action in ('list_domain_redirects', 'save_domain_redirect', 'delete_domain_redirect'):
         return execute_redirect(task, available, enabled, runner)
+    if action in ('project_diagnostics', 'project_diagnostic_repair'):
+        name = task.get('name')
+        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}',name) or name in ('alsistemas','iguatama-teste'):
+            raise TaskError('Projeto inválido ou protegido.')
+        ensure_safe_root(root)
+        target = root / name
+        if not target.is_dir() or target.is_symlink() or target.resolve() != target:
+            raise TaskError('Projeto indisponível.')
+        if action == 'project_diagnostic_repair':
+            if set(task) != {'action','name'}: raise TaskError('Reparo inválido.')
+            return repair_timer(target, runner)
+        if set(task) - {'action','name','group'} or task.get('group','all') not in GROUPS:
+            raise TaskError('Consulta inválida.')
+        return collect_diagnostics(target, runner, task.get('group','all'))
     if action == 'project_upload_limits':
         return upload_limits(task, root, available, enabled, runner, atomic_config)
     if action == 'create_project':

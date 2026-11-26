@@ -1,3 +1,16 @@
+## 2.0.58 — Central de diagnóstico e reparo
+
+- Consultas administrativas por projeto não protegido com seleção de grupos e exportação TXT.
+- Coleta independente de histórico, logs e diagnóstico, com limite ampliado de resposta.
+- Vistoria do lock e do worker, serviços, Nginx, PHP, MariaDB local e recursos da VPS.
+- Reparo pontual: ativação do timer de implantação já instalado; não instala unidades, não altera donos nem remove locks.
+- Console de consultas predefinidas; não oferece shell Bash livre ou PTY.
+- MariaDB: verifica conexão local, não associa banco ao projeto nem lê credenciais; migrações automáticas permanecem fora desta versão.
+
+## 2.0.57 — Diagnóstico de implantação
+
+Relatório técnico do IguatamaOnline inclui metadados de permissões, lock, serviços, limites declarados e contagem de erros Nginx. Consulta somente leitura; terminal interativo e reparos automáticos não incluídos.
+
 ## Atualização 2.0.56
 
 Em Projetos → Configurações do servidor, aplique 80 MiB Nginx, 64 MiB upload PHP e 80 MiB POST. Vhosts personalizados incompatíveis são recusados. Limites específicos de localização são preservados. Não altera php.ini global.

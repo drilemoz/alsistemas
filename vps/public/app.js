@@ -768,6 +768,7 @@ function renderProjectPage(name) {
   if (capabilities.updates) actions.append(projectTool('Atualizar site', 'updates', route + '/aws/updates', 'ZIP ou GitHub'))
   if (capabilities.diagnostics) actions.append(
     projectTool('Diagnóstico', 'activity', route + '/insights'),
+    projectTool('Central de diagnóstico', 'activity', () => openDiagnosticCenter(item), 'Relatório completo, consultas e reparos'),
     projectTool('Logs e erros', 'list', route + '/runtime-logs'),
     projectTool('Histórico', 'file', route + '/activity'),
   )
@@ -1841,9 +1842,9 @@ async function loadExternalReport() {
   current.replaceChildren(node('p', 'Consultando última atualização…', 'small muted'))
   eventsArea.replaceChildren(node('p', 'Carregando eventos…', 'small muted'))
   try {
-    const [status, auditData] = await Promise.all([api(externalRoot + '/update/status'), api('/api/audit')])
-    const s = status.status
-    const events = (auditData.events || []).filter(ev => ev.name === 'iguatamaonline' || (typeof ev.action === 'string' && /project_update|project_permissions|restore_project_code|backup_external_code|start_project_update/.test(ev.action)))
+    const [statusResult, auditResult] = await Promise.allSettled([api(externalRoot + '/update/status'), api('/api/audit')])
+    const s = statusResult.value?.status
+    const events = (auditResult.value?.events || []).filter(ev => ev.name === 'iguatamaonline' || (typeof ev.action === 'string' && /project_update|project_permissions|restore_project_code|backup_external_code|start_project_update/.test(ev.action)))
     current.replaceChildren()
     const statusGlyph = node('span', '', 'project-feature-icon ' + (s?.stage === 'failed' ? 'tone-alert' : s?.stage === 'complete' ? 'tone-good' : ''))
     statusGlyph.append(iconGraphic(s?.stage === 'failed' ? 'alert' : s?.stage === 'complete' ? 'success' : 'activity'))
@@ -1855,8 +1856,15 @@ async function loadExternalReport() {
     if (!events.length) eventsArea.append(node('p', 'Nenhum evento administrativo encontrado no histórico disponível.', 'small muted'))
     for (const ev of events.slice(0, 30)) eventsArea.append(renderProjectAuditEvent(ev))
     const lines = ['AL Sistemas · IguatamaOnline', 'Relatório consultado: ' + new Date().toLocaleString('pt-BR'), '', 'Última atualização:', s ? JSON.stringify(s, null, 2) : 'Nenhuma atualização registrada.', '', ...(externalLastError ? ['Último erro observado na interface:', externalLastError, ''] : []), 'Eventos administrativos recentes:']
+    if (statusResult.status === 'rejected') lines.push('Falha ao consultar última atualização: ' + statusResult.reason.message)
+    if (auditResult.status === 'rejected') lines.push('Falha ao consultar histórico: ' + auditResult.reason.message)
     if (!events.length) lines.push('Nenhum evento relacionado ao projeto encontrado no histórico disponível.')
     for (const ev of events.slice(0, 30)) lines.push(JSON.stringify(ev))
+    raw.textContent = lines.join('\n') + '\n\nColetando diagnóstico do servidor…'
+    try {
+      const diagnostic = await api(externalRoot + '/diagnostics', 'GET', undefined, {timeoutMs: 55000})
+      for (const check of diagnostic.checks || []) lines.push('\n[' + check.code + '] ' + check.label, check.output)
+    } catch (error) { lines.push('Diagnóstico indisponível: ' + error.message) }
     raw.textContent = lines.join('\n')
   } catch (error) {
     current.replaceChildren()
@@ -1864,6 +1872,66 @@ async function loadExternalReport() {
     raw.textContent = 'Falha ao consultar o relatório: ' + error.message
   }
 }
+
+let diagnosticProject = null
+let diagnosticRequest = 0
+function openDiagnosticCenter(item) {
+  diagnosticProject = item.name
+  $('diagnostic-center-title').textContent = 'Diagnóstico · ' + (item.displayName || item.name)
+  $('diagnostic-center-group').value = 'all'
+  $('diagnostic-center-repair').hidden = item.name !== 'iguatamaonline'
+  $('diagnostic-center').showModal()
+  void runDiagnosticCenter()
+}
+async function runDiagnosticCenter() {
+  const name = diagnosticProject
+  if (!name) return
+  const request = ++diagnosticRequest
+  const status = $('diagnostic-center-status'), output = $('diagnostic-center-output')
+  const group = $('diagnostic-center-group').value
+  status.textContent = 'Consultando servidor…'
+  $('diagnostic-center-run').disabled = true
+  $('diagnostic-center-copy').disabled = true
+  $('diagnostic-center-download').disabled = true
+  $('diagnostic-center-repair').disabled = true
+  output.textContent = ''
+  const url = '/api/projects/' + encodeURIComponent(name)
+  const jobs = [api(url + '/diagnostics?group=' + group, 'GET', undefined, {timeoutMs:55000})]
+  if (group === 'all') jobs.push(api(url + '/overview'), api(url + '/activity'), api(url + '/logs'))
+  const result = await Promise.allSettled(jobs)
+  if (request !== diagnosticRequest || name !== diagnosticProject) return
+  const lines = ['AL Sistemas · ' + name, new Date().toLocaleString('pt-BR'), 'Consulta: ' + group]
+  const data = result[0].value
+  const checks = data?.checks || []
+  for (const check of checks) lines.push('', '['+check.code+'] '+check.label, check.output)
+  if (result[0].status === 'rejected') lines.push('', 'Diagnóstico indisponível: '+result[0].reason.message)
+  const labels = ['','Visão geral','Histórico','Logs do projeto']
+  for (let i=1;i<result.length;i++) {
+    // APIs existentes já limitam e filtram o conteúdo de cada projeto.
+    lines.push('',labels[i]+':',result[i].status === 'fulfilled' ? JSON.stringify(result[i].value,null,2) : 'Indisponível: '+result[i].reason.message)
+  }
+  output.textContent = lines.join('\n')
+  status.textContent = data ? `${checks.length} verificações coletadas. Código 0 indica consulta concluída; outros códigos exigem interpretação.` : 'Coleta parcial ou indisponível. O relatório registra a falha.'
+  for (const id of ['run','copy','download','repair']) $('diagnostic-center-'+id).disabled=false
+}
+$('diagnostic-center-run').addEventListener('click',()=>void runDiagnosticCenter())
+$('diagnostic-center-copy').addEventListener('click',async()=>{
+  try { await navigator.clipboard.writeText($('diagnostic-center-output').textContent); notice('Relatório copiado.') }
+  catch { notice('Use a opção Baixar TXT.',true) }
+})
+$('diagnostic-center-download').addEventListener('click',()=>{
+  const url=URL.createObjectURL(new Blob([$('diagnostic-center-output').textContent],{type:'text/plain;charset=utf-8'}))
+  const a=document.createElement('a'); a.href=url; a.download=diagnosticProject+'-diagnostico-'+new Date().toISOString().slice(0,10)+'.txt'
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
+})
+$('diagnostic-center-repair').addEventListener('click',async()=>{
+  if (diagnosticProject!=='iguatamaonline') return
+  if (!await confirmAction('Ativar o timer de atualização já instalado? Não altera arquivos do site.','Ativar timer')) return
+  const button=$('diagnostic-center-repair');button.disabled=true
+  try { const result=await api('/api/projects/iguatamaonline/diagnostics/repair','POST',{});notice(result.message);await runDiagnosticCenter() }
+  catch(error) { $('diagnostic-center-output').textContent+='\nReparo: '+error.message;notice(error.message,true) }
+  finally {button.disabled=false}
+})
 
 function renderProjectCatalog() {
   const list = $('projects')
@@ -2143,7 +2211,7 @@ for (const button of document.querySelectorAll('[data-context-inline]')) {
 for (const button of document.querySelectorAll('[data-project-help]')) {
   button.addEventListener('click', () => $(button.dataset.projectHelp).showModal())
 }
-$('external-open-technical-report').addEventListener('click', () => $('external-technical-report-dialog').showModal())
+$('external-open-technical-report').addEventListener('click', () => { $('external-technical-report-dialog').showModal(); void loadExternalReport() })
 // Nomes de arquivo não são caminhos: são dados visuais fornecidos pelo navegador.
 function formatBytes(size) {
   if (!Number.isFinite(size) || size < 0) return 'tamanho desconhecido'

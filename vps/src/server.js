@@ -25,7 +25,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.56'
+const VERSION = '2.0.58'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -180,7 +180,7 @@ function runTask(task) {
     let output = ''; let error = ''
     const deadline = task.action === 'enable_project_tls' ? 130000 : task.action.endsWith('_domain_redirect') ? 60000 : task.action === 'backup_project' ? 120000 : ['restore_project_code', 'backup_external_code'].includes(task.action) ? 120000 : 45000
     const timer = setTimeout(() => { killSubprocessGroup(); reject(new Error('Tarefa excedeu limite de execução')) }, deadline)
-    proc.stdout.on('data', c => { output += c; if (output.length > (task.action === 'project_file_explorer' ? 262144 : task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
+    proc.stdout.on('data', c => { output += c; if (output.length > (['project_file_explorer','project_diagnostics'].includes(task.action) ? 262144 : task.action === 'list_domain_redirects' ? 98304 : task.action === 'other_project_permissions' ? 65536 : 8192)) killSubprocessGroup() })
     proc.stderr.on('data', c => { error += c; if (error.length > 8192) killSubprocessGroup() })
     proc.on('error', err => { clearTimeout(timer); reject(err) })
     proc.on('close', code => {
@@ -830,6 +830,25 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
           } finally { if (saved) fs.rmSync(dataPath(saved.name),{force:true}) }
         }
         return fail(res,405,'Método não permitido.')
+      }
+      const diagnosticRoute = /^\/api\/projects\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/diagnostics(?:\/(repair))?$/.exec(path)
+      if (diagnosticRoute) {
+        const [,name,repair] = diagnosticRoute
+        if (['alsistemas','iguatama-teste'].includes(name)) return fail(res,404,'Projeto protegido.')
+        if (!limit(ip,'project-diagnostics',30)) return fail(res,429,'Muitas consultas.')
+        if (repair ? req.method !== 'POST' : req.method !== 'GET') return fail(res,405,'Método não permitido.')
+        const params = new URL(req.url,'http://localhost').searchParams
+        const group = params.get('group') || 'all'
+        if ([...params.keys()].some(k=>k!=='group') || !['all','files','services','web','database','host','deploy'].includes(group)) return fail(res,400,'Consulta inválida.')
+        try {
+          const task = repair ? {action:'project_diagnostic_repair',name} : {action:'project_diagnostics',name,group}
+          const result = await taskRunner(task)
+          if (repair) audit('project_diagnostic_repair',{name,ip,success:true})
+          return json(res,200,result)
+        } catch (error) {
+          if (repair) audit('project_diagnostic_repair',{name,ip,success:false})
+          return fail(res,422,error.message)
+        }
       }
       const uploadLimitsRoute = /^\/api\/projects\/([a-z][a-z0-9-]{1,39})\/upload-limits$/.exec(path)
       if (uploadLimitsRoute && ['GET','POST'].includes(req.method)) {
