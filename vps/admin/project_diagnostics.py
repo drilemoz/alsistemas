@@ -69,7 +69,8 @@ def collect(root, runner=subprocess.run, group='all'):
                 except KeyError: user = str(s.st_uid)
                 try: group_name = grp.getgrgid(s.st_gid).gr_name
                 except KeyError: group_name = str(s.st_gid)
-                add(str(root/rel),0,f'{stat.filemode(s.st_mode)} {user}:{group_name} uid={s.st_uid} gid={s.st_gid} links={s.st_nlink}')
+                expected = {'storage/updater':'iguanews-deploy:www-data 3770','storage/updater/vps':'iguanews-deploy:www-data 3770','storage/updater/vps/private':'iguanews-deploy:www-data 2750','storage/updater/vps/private/.code.lock':'iguanews-deploy:www-data 0600','storage/updater/vps/.dispatch.lock':'iguanews-deploy:www-data 0660'}.get(rel) if special else None
+                add(str(root/rel),0,f'{stat.filemode(s.st_mode)} {user}:{group_name} uid={s.st_uid} gid={s.st_gid} links={s.st_nlink}'+(f'; esperado: {expected}' if expected else ''))
             except OSError as e:
                 add(str(root/rel), e.errno, e.strerror)
         try:
@@ -171,10 +172,16 @@ REPAIRS = {
     'mariadb-start': ('mariadb.service', None),
     'terminal-start': ('alsistemas-terminal.socket', None),
 }
-REPAIR_IDS = ('deploy-timer', *REPAIRS)
+REPAIR_IDS = ('deploy-timer', *REPAIRS, 'deploy-control-permissions', 'deploy-backup-permissions')
 
 
 def repair_project(root, repair, runner=subprocess.run):
+    if not isinstance(repair,str): raise ValueError('Reparo desconhecido.')
+    if repair in DEPLOY_REPAIR_IDS:
+        if root.name != 'iguatamaonline': raise ValueError('Reparo exclusivo do IguatamaOnline.')
+        try:
+            return repair_control_permissions(root) if repair == DEPLOY_REPAIR_IDS[0] else repair_backup_permissions(root)
+        except KeyError as exc: raise ValueError('Conta de implantação ou PHP ausente.') from exc
     if repair == 'deploy-timer':
         return repair_timer(root, runner)
     if not isinstance(repair,str) or repair not in REPAIRS:
@@ -202,3 +209,141 @@ def repair_project(root, repair, runner=subprocess.run):
     after=state()
     return {'ok':True,'changed':True,'submitted':True,'before':before,'after':after,
             'message':unit+(' está ativo.' if after.get('ActiveState')=='active' else ': inicialização solicitada; confira o estado após a execução.')}
+
+# Perfil baseado no instalador AWS do Meu-Site 1.0.158. Não executa arquivos do portal.
+DEPLOY_REPAIR_IDS = ('deploy-control-permissions', 'deploy-backup-permissions')
+
+
+def _snapshot(fd):
+    s = os.fstat(fd)
+    return {'uid': s.st_uid, 'gid': s.st_gid, 'mode': f'{stat.S_IMODE(s.st_mode):04o}', 'inode': s.st_ino}
+
+
+def _assert_idle(fd):
+    try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc: raise ValueError('Lock ocupado: nenhuma permissão alterada.') from exc
+
+
+def _missing(fd, name):
+    try: os.stat(name, dir_fd=fd, follow_symlinks=False)
+    except FileNotFoundError: return
+    raise ValueError('Atualização ou recuperação pendente: '+name)
+
+
+def _open_at(stack, fd, name, directory=False):
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    if directory: flags |= os.O_DIRECTORY
+    child = os.open(name, flags, dir_fd=fd)
+    stack.callback(os.close, child)
+    return child
+
+
+def _regular_lock(fd, uid, gid, allow_root=False):
+    s = os.fstat(fd)
+    if (not stat.S_ISREG(s.st_mode) or s.st_nlink != 1 or s.st_size != 0
+            or s.st_uid not in ({uid, 0} if allow_root else {uid}) or s.st_gid not in ({gid, 0} if allow_root else {gid})):
+        raise ValueError('Lock com tipo, dono, grupo, conteúdo ou links inesperados; revisão manual necessária.')
+    if s.st_uid == 0 and s.st_mode & 0o022:
+        raise ValueError('Lock de root com escrita compartilhada; revisão manual necessária.')
+    return s
+
+
+def _same_entry(parent, name, fd):
+    a, b = os.stat(name,dir_fd=parent,follow_symlinks=False), os.fstat(fd)
+    if (a.st_dev,a.st_ino)!=(b.st_dev,b.st_ino): raise ValueError('Controle substituído durante a operação.')
+
+
+def repair_control_permissions(root, *, deploy=None, web=None):
+    from contextlib import ExitStack
+    from project_maintenance import verify_project, guard_mutation_ownership
+    verify_project(root=root)
+    guard_mutation_ownership(root)
+    deploy = deploy or pwd.getpwnam('iguanews-deploy')
+    web = web or pwd.getpwnam('www-data')
+    if deploy.pw_uid in (0,web.pw_uid) or web.pw_uid==0 or root.stat().st_uid!=deploy.pw_uid or root.parent.stat().st_uid!=0:
+        raise ValueError('Conta dedicada ou proprietário da produção incompatível; nenhuma alteração.')
+    with ExitStack() as stack:
+        base = os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW); stack.callback(os.close,base)
+        if os.fstat(base).st_uid!=deploy.pw_uid or os.fstat(base).st_mode & 0o022: raise ValueError('Raiz do projeto insegura.')
+        storage = _open_at(stack,base,'storage',True)
+        s=os.fstat(storage)
+        if (s.st_uid,s.st_gid)!=(web.pw_uid,web.pw_gid) or s.st_mode & 0o027:
+            raise ValueError('storage fora do perfil esperado; revisão manual necessária.')
+        _missing(storage,'.update-maintenance')
+        updater = _open_at(stack,storage,'updater',True)
+        vps = _open_at(stack,updater,'vps',True)
+        for fd in (updater,vps):
+            s=os.fstat(fd)
+            if (s.st_uid,s.st_gid)!=(deploy.pw_uid,web.pw_gid) or stat.S_IMODE(s.st_mode)!=0o3770:
+                raise ValueError('Diretório da fila fora do perfil 3770; revisão manual necessária.')
+        dispatch = _open_at(stack,vps,'.dispatch.lock')
+        s=_regular_lock(dispatch,deploy.pw_uid,web.pw_gid)
+        if stat.S_IMODE(s.st_mode)!=0o660: raise ValueError('Lock da fila fora do perfil 0660; revisão manual necessária.')
+        _assert_idle(dispatch)
+        private = _open_at(stack,vps,'private',True)
+        s=os.fstat(private)
+        if (s.st_uid,s.st_gid)!=(deploy.pw_uid,web.pw_gid) or s.st_mode & 0o022:
+            raise ValueError('Pasta privada possui dono/grupo inesperado ou escrita compartilhada; revisão manual necessária.')
+        for name in ('request.json','running.json'): _missing(vps,name)
+        _missing(private,'maintenance'); _missing(storage,'.update-maintenance')
+        try: lock = _open_at(stack,private,'.code.lock')
+        except FileNotFoundError:
+            raise ValueError('Lock privado ausente. Não será recriado durante reparo de permissões; consulte o instalador do portal.')
+        _regular_lock(lock,deploy.pw_uid,web.pw_gid,allow_root=True)
+        _assert_idle(lock)
+        before={'private':_snapshot(private),'lock':_snapshot(lock)}
+        # Verificar todos os nomes antes de operar em descritores já abertos.
+        for p,n,f in ((base,'storage',storage),(storage,'updater',updater),(updater,'vps',vps),(vps,'.dispatch.lock',dispatch),(vps,'private',private),(private,'.code.lock',lock)):
+            _same_entry(p,n,f)
+        for name in ('request.json','running.json'): _missing(vps,name)
+        _missing(private,'maintenance'); _missing(storage,'.update-maintenance')
+        changed=[]
+        try:
+            for fd,key,uid,gid,mode in ((private,'private',deploy.pw_uid,web.pw_gid,0o2750),(lock,'lock',deploy.pw_uid,web.pw_gid,0o600)):
+                old=before[key]
+                if (old['uid'],old['gid'],int(old['mode'],8))==(uid,gid,mode): continue
+                changed.append((fd,old))
+                if (old['uid'],old['gid'])!=(uid,gid): os.fchown(fd,uid,gid)
+                os.fchmod(fd,mode)
+            _same_entry(vps,'private',private); _same_entry(private,'.code.lock',lock)
+            after={'private':_snapshot(private),'lock':_snapshot(lock)}
+            if after['private']['mode']!='2750' or after['lock']['mode']!='0600' or after['lock']['uid']!=deploy.pw_uid or after['lock']['gid']!=web.pw_gid:
+                raise ValueError('Validação das permissões falhou.')
+        except Exception as exc:
+            errors=[]
+            for fd,old in reversed(changed):
+                try:
+                    if (_snapshot(fd)['uid'],_snapshot(fd)['gid'])!=(old['uid'],old['gid']): os.fchown(fd,old['uid'],old['gid'])
+                    os.fchmod(fd,int(old['mode'],8))
+                except OSError as rollback: errors.append(str(rollback))
+            if errors: raise ValueError('Reversão de permissões incompleta: '+ '; '.join(errors)) from exc
+            raise
+        return {'ok':True,'changed':bool(changed),'before':before,'after':after,'message':'Permissões do controle privado verificadas. Nenhum lock foi removido.'}
+
+
+def repair_backup_permissions(root, backup=None):
+    from contextlib import ExitStack
+    from project_maintenance import BACKUP_ROOT
+    backup = backup or BACKUP_ROOT
+    if root.name!='iguatamaonline': raise ValueError('Reparo exclusivo do IguatamaOnline.')
+    with ExitStack() as stack:
+        # Abrir cada componente absoluto sem seguir links; só pastas root sem escrita alheia.
+        parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY); stack.callback(os.close,parent)
+        for part in backup.parent.parts[1:]:
+            parent=_open_at(stack,parent,part,True)
+            s=os.fstat(parent)
+            if s.st_uid!=0 or s.st_mode & 0o022: raise ValueError('Ancestral do backup não confiável.')
+        if stat.S_IMODE(os.fstat(parent).st_mode)!=0o700: raise ValueError('Pasta geral de backups deve ser privada (0700).')
+        try: fd=_open_at(stack,parent,backup.name,True)
+        except FileNotFoundError:
+            os.mkdir(backup.name,0o700,dir_fd=parent)
+            fd=_open_at(stack,parent,backup.name,True)
+            created=True
+        else: created=False
+        before=_snapshot(fd)
+        if before['uid']!=0 or before['gid']!=0 or int(before['mode'],8)&0o022:
+            raise ValueError('Pasta de backup com dono/grupo inesperado ou escrita compartilhada; revisão manual necessária.')
+        _same_entry(parent,backup.name,fd)
+        if before['mode']!='0700': os.fchmod(fd,0o700)
+        after=_snapshot(fd)
+        return {'ok':True,'changed':created or before!=after,'created':created,'before':None if created else before,'after':after,'message':'Pasta privada de backups verificada (0700). Nenhum backup foi alterado.'}

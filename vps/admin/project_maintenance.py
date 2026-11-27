@@ -513,6 +513,7 @@ def validate_archive(archive):
             raise ProjectError('VERSION inválida no pacote.')
         version = version_raw.decode('ascii').strip()
         revision = None
+        migration_policy = None
         if 'app/schema_migrations.php' in entries:
             revision = schema_from_bytes(source.read(entries['app/schema_migrations.php']))
         if manifest_entries:
@@ -526,6 +527,13 @@ def validate_archive(archive):
                         or manifest['schema_revision'] != revision or manifest['min_php'] != '8.1.0'
                         or not isinstance(descriptors, list) or len(descriptors) != len(entries)):
                     raise ValueError()
+                if 'schema_migration' in manifest:
+                    policy = manifest['schema_migration']
+                    if (not isinstance(policy, dict) or set(policy) != {'mode', 'min_from'}
+                            or policy['mode'] != 'cumulative' or type(policy['min_from']) is not int
+                            or not 1 <= policy['min_from'] <= revision):
+                        raise ValueError()
+                    migration_policy = policy
                 seen = set()
                 for d in descriptors:
                     path = d['path']
@@ -540,7 +548,7 @@ def validate_archive(archive):
             if 'release.sig' in manifest_entries and manifest_entries['release.sig'].file_size != 64:
                 raise ProjectError('Assinatura com tamanho inválido.')
         return {'version': version, 'files': len(entries), 'bytes': total, 'entries': entries, 'wrapper': wrapper,
-                'schema': revision, 'manifestVerified': bool(manifest_entries)}
+                'schema': revision, 'manifestVerified': bool(manifest_entries), 'migrationPolicy': migration_policy}
 
 
 
@@ -589,11 +597,13 @@ try {
     $proc=proc_open($cmd,[0=>['file','/dev/null','r'],1=>STDOUT,2=>['file','/dev/null','w']],$pipes,null,['PATH'=>'/usr/bin:/bin','MYSQL_PWD'=>(string)($c['password']??'')]);
     exit(is_resource($proc)?proc_close($proc):4);
   }
-  if ($job==='migrate') {
+  if ($job==='migrate' || $job==='migrate-verified') {
     foreach (['ads.php','news_editor.php','schema.php','article_workflow.php','analytics.php'] as $file) require_once $root.'/app/'.$file;
+    if ($job==='migrate-verified' && !function_exists('igua_verify_schema')) exit(7);
     igua_migrate_schema($db);
     if (igua_schema_revision($db)!==IGUA_SCHEMA_REVISION) exit(5);
     if (IGUA_SCHEMA_REVISION===38) $db->query('SELECT id,name,contact,title,message,photos,rate_key,status,article_id,created_at FROM story_submissions LIMIT 0');
+    if (function_exists('igua_verify_schema') && igua_verify_schema($db)!==true) exit(8);
     echo igua_schema_revision($db); exit(0);
   }
   exit(2);
@@ -635,7 +645,9 @@ def php_job(root, job, output=None, *, timeout=180):
                   3: 'banco incompatível com exportação local segura',
                   4: 'não foi possível iniciar a exportação',
                   5: 'revisão final não confirmada',
-                  6: 'exceção PHP ou banco'}.get(code, 'processo PHP ou ferramenta de banco falhou')
+                  6: 'exceção PHP ou banco',
+                  7: 'pacote cumulativo sem função igua_verify_schema',
+                  8: 'verificação estrutural do pacote falhou'}.get(code, 'processo PHP ou ferramenta de banco falhou')
         raise ProjectError(f'Etapa PHP {job} falhou (código {code}): {reason}.')
     if output is None:
         return stdout.decode('ascii', errors='strict').strip()
@@ -728,8 +740,20 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
     new_schema = info['schema']
     if old_schema is not None and (new_schema is None or not info['manifestVerified']):
         raise ProjectError('Use o ZIP oficial gerado por tools/build_update_package.py, com manifesto e schema.')
-    if old_schema is not None and (new_schema < old_schema or new_schema > old_schema + 1):
-        raise ProjectError(f'Downgrade ou salto de schema não autorizado: {old_schema} → {new_schema}; instalação assistida necessária.')
+    policy = info.get('migrationPolicy')
+    if old_schema is not None and new_schema < old_schema:
+        raise ProjectError(f'Downgrade de schema não autorizado: {old_schema} → {new_schema}.')
+    if old_schema is not None and policy and old_schema < policy['min_from']:
+        raise ProjectError(f'Pacote cumulativo exige schema inicial {policy["min_from"]} ou superior; instalado {old_schema}.')
+    if old_schema is not None and new_schema > old_schema + 1 and not policy:
+        raise ProjectError(f'Atualização com salto de schema {old_schema} → {new_schema} sem declaração cumulativa no manifesto; use pacote compatível.')
+    if policy and old_schema is not None:
+        # Falhar antes do backup e da escrita se o contrato estiver incompleto.
+        # A presença textual é apenas pré-validação; o PHP confirma a função em execução.
+        with zipfile.ZipFile(archive) as source:
+            migration_source = source.read(info['entries']['app/schema_migrations.php'])
+        if not re.search(rb'\bfunction\s+igua_verify_schema\s*\(', migration_source):
+            raise ProjectError('Pacote cumulativo sem função igua_verify_schema em app/schema_migrations.php.')
     if root == PROJECT_ROOT and old_schema is None:
         raise ProjectError('Schema instalado não identificado; instalação assistida necessária.')
     current_version_file = checked_target(root, 'VERSION', for_write=True)
@@ -754,7 +778,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
     snapshot.mkdir(mode=0o700)
     change_log = []
     metadata = {'project': PROJECT_NAME, 'from': current, 'to': info['version'], 'entries': [],
-                'schemaFrom': old_schema, 'schemaTo': new_schema}
+                'schemaFrom': old_schema, 'schemaTo': new_schema, 'migrationPolicy': policy}
     maintenance = False
     migration_started = False
     recovery = backup_parent / 'schema-recovery.json'
@@ -808,8 +832,8 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
             # restaurar código ou SQL automaticamente: requisições administrativas
             # já iniciadas podem ter gravado dados após o dump.
             migration_started = True
-            update_status('migrating', 'Executando migração do banco e verificando revisão')
-            if php_job(root, 'migrate') != str(new_schema) or php_job(root, 'probe') != str(new_schema):
+            update_status('migrating', f'Executando migração {old_schema} → {new_schema} e verificando revisão')
+            if php_job(root, 'migrate-verified' if policy else 'migrate') != str(new_schema) or php_job(root, 'probe') != str(new_schema):
                 raise ProjectError('Revisão do banco não confirmada após migração.')
             php_job(root, 'maintenance-off')
             maintenance = False
@@ -817,6 +841,7 @@ def deploy_archive(archive, *, root=PROJECT_ROOT, backups=BACKUP_ROOT, update_st
         return {'ok': True, 'version': info['version'], 'previousVersion': current, 'files': len(info['entries']),
                 'backup': snapshot.name, 'schemaFrom': old_schema, 'schemaTo': new_schema,
                 'databaseBackup': bool(metadata.get('database')), 'manifestVerified': info['manifestVerified'],
+                'migrationPolicy': policy,
                 'note': 'Código verificado; banco exportado e schema conferido quando aplicável. Uploads preservados.'}
     except Exception as exc:
         if migration_started:

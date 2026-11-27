@@ -26,7 +26,7 @@ import { listDomains, getDomain, changeDomainSettings, changeDnsLocked, changePo
 import { dnsDiagnostics, recordHost } from './dns_diagnostics.js'
 import { hostingWorkflow, ipv4Hint, validateHosting } from './hosting.js'
 
-const VERSION = '2.0.61'
+const VERSION = '2.0.63'
 const PORT = Number(process.env.ALS_PORT || 8181)
 const HOST = '127.0.0.1' // Nunca expor Node diretamente à Internet.
 const origin = process.env.ALS_ORIGIN || 'http://localhost:8181'
@@ -863,7 +863,7 @@ export function createServer({ taskRunner = runTask, spaceshipOptions, diagnosti
         if ([...params.keys()].some(k=>k!=='group') || !['all','files','services','web','database','host','deploy'].includes(group)) return fail(res,400,'Consulta inválida.')
         const input = repair ? await body(req) : {}
         const operation = input.repair ?? 'deploy-timer'
-        if (repair && (Object.keys(input).some(k=>k!=='repair') || !['deploy-timer','nginx-start','php-start','mariadb-start','terminal-start'].includes(operation) || (operation==='deploy-timer' && name!=='iguatamaonline'))) return fail(res,400,'Reparo inválido.')
+        if (repair && (Object.keys(input).some(k=>k!=='repair') || !['deploy-timer','nginx-start','php-start','mariadb-start','terminal-start','deploy-control-permissions','deploy-backup-permissions'].includes(operation) || (operation.startsWith('deploy-') && name!=='iguatamaonline'))) return fail(res,400,'Reparo inválido.')
         try {
           const task = repair ? {action:'project_diagnostic_repair',name,repair:operation} : {action:'project_diagnostics',name,group}
           const result = await taskRunner(task)

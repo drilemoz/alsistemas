@@ -139,7 +139,7 @@ def main():
         preview = validate_archive(archive)
         if requested_mode == 'github' and preview['version'] != details['releaseVersion']:
             raise ProjectError('Versão do manifesto não corresponde à Release do GitHub.')
-        schema.update(schemaTo=preview['schema'], manifestVerified=preview['manifestVerified'])
+        schema.update(schemaTo=preview['schema'], manifestVerified=preview['manifestVerified'], migrationPolicy=preview.get('migrationPolicy'))
         verify_project(PROJECT_NAME, PROJECT_ROOT)
         guard_mutation_ownership(PROJECT_ROOT)
         schema['schemaFrom'] = installed_schema(PROJECT_ROOT)

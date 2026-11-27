@@ -1597,6 +1597,7 @@ async function checkExternalStatus({ follow = false } = {}) {
     $('external-update-summary').className = 'small project-update-state ' + (state.stage === 'failed' ? 'bad' : state.stage === 'complete' ? 'good' : 'muted')
     const schemaDetail = Number.isInteger(state.schemaFrom) && Number.isInteger(state.schemaTo) ? ` · Schema ${state.schemaFrom} → ${state.schemaTo}` : ''
     if (schemaDetail) $('external-update-summary').textContent += schemaDetail
+    if (state.migrationPolicy?.mode === 'cumulative') $('external-update-summary').textContent += ` · Migração cumulativa (a partir de ${state.migrationPolicy.min_from})`
     $('external-progress-step').textContent = state.stage === 'failed' ? ('Falha em: ' + projectUpdateStageLabel(state.failedStage || 'failed') + '. Consulte Histórico e relatórios.') : state.stage === 'complete' ? 'Atualização concluída.' : 'Etapa atual: ' + state.stage
     const bar = $('external-progress')
     if (typeof state.percent === 'number' && Number.isFinite(state.percent)) {
@@ -1882,7 +1883,7 @@ function openDiagnosticCenter(item) {
   $('diagnostic-center-title').textContent = 'Diagnóstico · ' + (item.displayName || item.name)
   $('diagnostic-center-group').value = 'all'
   const repairs = $('diagnostic-center-repair-kind')
-  repairs.options[0].disabled = item.name !== 'iguatamaonline'
+  for (const option of repairs.options) option.disabled = option.value.startsWith('deploy-') && item.name !== 'iguatamaonline'
   repairs.selectedIndex = item.name === 'iguatamaonline' ? 0 : 1
   $('diagnostic-center').showModal()
   void runDiagnosticCenter()
@@ -1931,7 +1932,7 @@ $('diagnostic-center-download').addEventListener('click',()=>{
 $('diagnostic-center-repair').addEventListener('click',async()=>{
   const name=diagnosticProject, kind=$('diagnostic-center-repair-kind'), repair=kind.value
   if (!name) return
-  if (!await confirmAction(kind.selectedOptions[0].textContent+'? A operação pode afetar serviços compartilhados pela VPS. Não modifica arquivos do site.','Executar reparo') || name!==diagnosticProject) return
+  if (!await confirmAction(kind.selectedOptions[0].textContent+'? '+(repair.endsWith('-permissions') ? 'Ajusta somente as permissões de controle ou backup aprovadas. Não apaga locks nem altera conteúdo.' : 'A operação pode afetar serviços compartilhados pela VPS. Não modifica arquivos do site.'),'Executar reparo') || name!==diagnosticProject) return
   const button=$('diagnostic-center-repair');button.disabled=true
   $('diagnostic-center-run').disabled=true
   try {

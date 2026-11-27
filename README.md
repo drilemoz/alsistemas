@@ -1,3 +1,17 @@
+## 2.0.63 — Migrações cumulativas declaradas pelo pacote
+
+- ZIP oficial v2 continua compatível com atualização de código e avanço de uma revisão. Pacotes que declarem migração cumulativa podem atravessar várias revisões, sem alteração do painel para cada número novo.
+- O manifesto `release.json` pode declarar `"schema_migration": {"mode":"cumulative","min_from":38}` (38 é exemplo; use a menor revisão realmente testada). O arquivo `app/schema_migrations.php` deve conter `igua_verify_schema(PDO $db): bool`, que verifica a estrutura real exigida pelo código novo e retorna `true` apenas quando íntegra. A rotina existente `igua_migrate_schema` deve ser cumulativa, idempotente e gravar a revisão por último. O painel não gera DDL nem altera o marcador diretamente.
+- Antes da implantação: valida hashes, origem de schema suportada, presença textual do verificador, revisão instalada, backup SQL e código. Depois: executa a migração e exige a verificação estrutural e a revisão final; mantém manutenção e backup em caso de falha. Não autoriza downgrade nem salto sem declaração. Pacotes legados preservam o comportamento anterior, inclusive a verificação específica da revisão 38.
+- Progresso mostra o contrato de migração e as revisões. SHA-256 do manifesto verifica integridade, não autoria. O gerador de ZIP do Meu-Site precisa adotar o contrato para saltos; o portal 1.0.161 não foi inspecionado. Testes locais com PHP real e banco simulado; MariaDB/EC2 real pendente.
+
+## 2.0.62 — Reparos de permissões da implantação
+
+- Central de diagnóstico → Reparo assistido: verificar e corrigir controle privado do IguatamaOnline e pasta de backups do AL Sistemas. Ações fixas autenticadas, exclusivas desse projeto, com confirmação e resultado antes/depois.
+- Perfil do instalador AWS do portal 1.0.158: diretório privado 2750 e lock existente 0600, conta iguanews-deploy e grupo www-data. Valida donos, fila 3770, lock de despacho 0660, marcadores pendentes, tipo/inode e bloqueio exclusivo. Corrige somente diretório privado e lock existente; admite lock vazio pertencente a root, sem escrita compartilhada. Não segue links, não recria locks ausentes, não aplica chown recursivo, não remove marcadores. Reverte metadados em falha; situações fora do perfil exigem revisão.
+- Pasta /var/backups/alsistemas-vps/iguatamaonline: cria se ausente ou restringe a 0700 quando root:root e sem escrita compartilhada; valida ancestrais e não altera arquivos internos. Não libera PHP para escrever código.
+- Relatório informa permissões esperadas dos controles do portal. Não instala serviços do site nem altera schema, notícias, uploads ou banco. Requer teste na EC2 real; o perfil 1.0.161 não foi verificado.
+
 ## 2.0.61 — Diagnóstico de migração e atualização
 
 - Relatório do IguatamaOnline compara schema declarado e real via PHP CLI sem privilégios, sem migração ou dump durante a consulta; mostra estado do backup privado.
